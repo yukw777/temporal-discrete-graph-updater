@@ -1,0 +1,75 @@
+name: CI testing
+
+# see: https://help.github.com/en/actions/reference/events-that-trigger-workflows
+on:
+  # Trigger the workflow on push or pull request, but only for the master branch
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  pytest:
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04]
+        python-version: [3.7, 3.8]
+
+    # Timeout: https://stackoverflow.com/a/59076067/4521646
+    timeout-minutes: 35
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    # Github Actions: Run step on specific OS: https://stackoverflow.com/a/57948488/4521646
+    # - name: Setup macOS
+    #   if: runner.os == 'macOS'
+    #   run: |
+    #     brew install libomp  # https://github.com/pytorch/pytorch/issues/20030
+
+    # https://github.com/actions/cache/blob/master/examples.md#multiple-oss-in-a-workflow
+    - uses: actions/cache@v2
+      name: Pip cache
+      if: startsWith(runner.os, 'Linux')
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        pip install --requirement requirements.txt --upgrade --quiet
+        pip install --requirement requirements-dev.txt --upgrade --quiet
+        python --version
+        pip --version
+        pip list
+      shell: bash
+
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --show-source --statistics
+
+    # TODO: change package name
+    - name: Lint with mypy
+      run: |
+        mypy project --ignore-missing-imports --follow-imports=silent --show-column-numbers
+
+    # TODO: change directory name
+    - name: Tests
+      run: |
+        coverage run --source project -m py.test project tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
+
+    - name: Statistics
+      if: success()
+      run: |
+        coverage report
