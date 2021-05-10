@@ -6,9 +6,8 @@ def requirements():
         return f.read().splitlines()
 
 
-# TODO: change name
 setup(
-    name="project",
+    name="dgu",
     version="0.1.0",
     packages=find_packages(),
     install_requires=requirements(),

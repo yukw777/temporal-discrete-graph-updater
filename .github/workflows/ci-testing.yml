@@ -48,7 +48,12 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install --requirement requirements.txt --upgrade --quiet
+        export CUDA=cu102
+        pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.8.0+${CUDA}.html
+        pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-1.8.0+${CUDA}.html
+        pip install torch-cluster -f https://pytorch-geometric.com/whl/torch-1.8.0+${CUDA}.html
+        pip install torch-spline-conv -f https://pytorch-geometric.com/whl/torch-1.8.0+${CUDA}.html
+        pip install .
         pip install --requirement requirements-dev.txt --upgrade --quiet
         python --version
         pip --version
@@ -59,15 +64,13 @@ jobs:
       run: |
         flake8 . --count --show-source --statistics
 
-    # TODO: change package name
     - name: Lint with mypy
       run: |
-        mypy project --ignore-missing-imports --follow-imports=silent --show-column-numbers
+        mypy dgu --ignore-missing-imports --follow-imports=silent --show-column-numbers
 
-    # TODO: change directory name
     - name: Tests
       run: |
-        coverage run --source project -m py.test project tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
+        coverage run --source dgu -m py.test dgu tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
 
     - name: Statistics
       if: success()
