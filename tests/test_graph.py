@@ -258,23 +258,23 @@ def test_tw_graph_triplet_cmd():
     }
 
     # same game, different walkthrough step, so should be added
-    events = g.process_triplet_cmd("game0", 1, 1, "add , player , kitchen , in")
+    events = g.process_triplet_cmd("game0", 1, 0, "add , player , kitchen , in")
     assert events == [
         {
             "type": "node-add",
             "node_id": 8,
-            "timestamp": 2,
+            "timestamp": 0,
         },
         {
             "type": "node-add",
             "node_id": 9,
-            "timestamp": 2,
+            "timestamp": 0,
         },
         {
             "type": "edge-add",
             "src_id": 8,
             "dst_id": 9,
-            "timestamp": 2,
+            "timestamp": 0,
         },
     ]
     assert g.get_node_labels() == [
@@ -299,18 +299,18 @@ def test_tw_graph_triplet_cmd():
         (5, 7, "is"),
         (8, 9, "in"),
     }
-    events = g.process_triplet_cmd("game0", 1, 2, "add , exit , kitchen , east_of")
+    events = g.process_triplet_cmd("game0", 1, 1, "add , exit , kitchen , east_of")
     assert events == [
         {
             "type": "node-add",
             "node_id": 10,
-            "timestamp": 3,
+            "timestamp": 1,
         },
         {
             "type": "edge-add",
             "src_id": 10,
             "dst_id": 9,
-            "timestamp": 3,
+            "timestamp": 1,
         },
     ]
     assert g.get_node_labels() == [

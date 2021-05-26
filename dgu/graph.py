@@ -43,12 +43,11 @@ class TextWorldGraph:
         self,
         game: str,
         walkthrough_step: int,
-        random_step: int,
+        timestamp: int,
         src_label: str,
         rel_label: str,
         dst_label: str,
     ) -> List[Dict[str, Any]]:
-        timestamp = walkthrough_step + random_step
         events: List[Dict[str, Any]] = []
         # get the source node id
         if src_label == "exit":
@@ -126,12 +125,11 @@ class TextWorldGraph:
         self,
         game: str,
         walkthrough_step: int,
-        random_step: int,
+        timestamp: int,
         src_label: str,
         rel_label: str,
         dst_label: str,
     ) -> List[Dict[str, Any]]:
-        timestamp = walkthrough_step + random_step
         events: List[Dict[str, Any]] = []
         # get the source node id
         if src_label == "exit":
@@ -191,7 +189,7 @@ class TextWorldGraph:
         return events
 
     def process_triplet_cmd(
-        self, game: str, walkthrough_step: int, random_step: int, cmd: str
+        self, game: str, walkthrough_step: int, timestamp: int, cmd: str
     ) -> List[Dict[str, Any]]:
         """
         Update the internal graph based on the given triplet command and return
@@ -205,7 +203,7 @@ class TextWorldGraph:
             return self.process_add_triplet_cmd(
                 game,
                 walkthrough_step,
-                random_step,
+                timestamp,
                 src_label,
                 rel_label.replace("_", " "),
                 dst_label,
@@ -214,7 +212,7 @@ class TextWorldGraph:
             return self.process_delete_triplet_cmd(
                 game,
                 walkthrough_step,
-                random_step,
+                timestamp,
                 src_label,
                 rel_label.replace("_", " "),
                 dst_label,
