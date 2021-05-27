@@ -606,3 +606,241 @@ def test_tw_graph_triplet_cmd():
         (4, 6, "is"),
         (13, 12, "in"),
     }
+
+
+def test_tw_graph_triplet_cmd_delete():
+    # make sure we handle deletion correctly by deleting a node and adding back in
+    # set up a graph
+    g = TextWorldGraph()
+    g.process_triplet_cmd("game0", 0, 0, "add , apple , kitchen , in")
+    g.process_triplet_cmd("game0", 0, 0, "add , exit , kitchen , east_of")
+    g.process_triplet_cmd("game0", 0, 0, "add , fridge , kitchen , in")
+    g.process_triplet_cmd("game0", 0, 0, "add , fridge , closed , is")
+    g.process_triplet_cmd("game0", 0, 0, "add , kitchen , living room , east_of")
+
+    # regular source node
+    assert g.process_triplet_cmd("game0", 0, 1, "delete , apple , kitchen , in") == [
+        {
+            "type": "edge-delete",
+            "src_id": 0,
+            "dst_id": 1,
+            "timestamp": 1,
+        },
+        {
+            "type": "node-delete",
+            "node_id": 0,
+            "timestamp": 1,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (3, 4, "is"),
+        (1, 5, "east of"),
+    }
+    assert g.process_triplet_cmd("game0", 0, 2, "add , apple , kitchen , in") == [
+        {
+            "type": "node-add",
+            "node_id": 0,
+            "timestamp": 2,
+        },
+        {
+            "type": "edge-add",
+            "src_id": 0,
+            "dst_id": 1,
+            "timestamp": 2,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (3, 4, "is"),
+        (1, 5, "east of"),
+    }
+
+    # regular destination node
+    assert g.process_triplet_cmd(
+        "game0", 0, 3, "delete , kitchen , living room , east_of"
+    ) == [
+        {
+            "type": "edge-delete",
+            "src_id": 1,
+            "dst_id": 5,
+            "timestamp": 3,
+        },
+        {
+            "type": "node-delete",
+            "node_id": 5,
+            "timestamp": 3,
+        },
+    ]
+    assert g.get_node_labels() == ["apple", "kitchen", "exit", "fridge", "closed", ""]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (3, 4, "is"),
+    }
+    assert g.process_triplet_cmd(
+        "game0", 0, 4, "add , kitchen , living room , east_of"
+    ) == [
+        {
+            "type": "node-add",
+            "node_id": 5,
+            "timestamp": 4,
+        },
+        {
+            "type": "edge-add",
+            "src_id": 1,
+            "dst_id": 5,
+            "timestamp": 4,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (3, 4, "is"),
+        (1, 5, "east of"),
+    }
+
+    # is source node
+    assert g.process_triplet_cmd("game0", 0, 5, "delete , fridge , closed , is") == [
+        {
+            "type": "edge-delete",
+            "src_id": 3,
+            "dst_id": 4,
+            "timestamp": 5,
+        },
+        {
+            "type": "node-delete",
+            "node_id": 4,
+            "timestamp": 5,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (1, 5, "east of"),
+    }
+    assert g.process_triplet_cmd("game0", 0, 6, "add , fridge , closed , is") == [
+        {
+            "type": "node-add",
+            "node_id": 4,
+            "timestamp": 6,
+        },
+        {
+            "type": "edge-add",
+            "src_id": 3,
+            "dst_id": 4,
+            "timestamp": 6,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (1, 5, "east of"),
+        (3, 4, "is"),
+    }
+
+    # exit source node
+    assert g.process_triplet_cmd(
+        "game0", 0, 7, "delete , exit , kitchen , east_of"
+    ) == [
+        {
+            "type": "edge-delete",
+            "src_id": 2,
+            "dst_id": 1,
+            "timestamp": 7,
+        },
+        {
+            "type": "node-delete",
+            "node_id": 2,
+            "timestamp": 7,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "",
+        "fridge",
+        "closed",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (3, 1, "in"),
+        (1, 5, "east of"),
+        (3, 4, "is"),
+    }
+    assert g.process_triplet_cmd("game0", 0, 8, "add , exit , kitchen , east_of") == [
+        {
+            "type": "node-add",
+            "node_id": 2,
+            "timestamp": 8,
+        },
+        {
+            "type": "edge-add",
+            "src_id": 2,
+            "dst_id": 1,
+            "timestamp": 8,
+        },
+    ]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
+    assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
+        (1, 5, "east of"),
+        (3, 4, "is"),
+    }

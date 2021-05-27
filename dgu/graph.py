@@ -170,6 +170,12 @@ class TextWorldGraph:
         # if there are no edges, delete the nodes
         if self.graph.in_degree(dst_id) == 0 and self.graph.out_degree(dst_id) == 0:
             self.remove_node(dst_id)
+            if rel_label == IS:
+                del self.is_dst_node_id_map[
+                    IsDstNode(game, walkthrough_step, src_label, dst_label)
+                ]
+            else:
+                del self.node_id_map[Node(game, walkthrough_step, dst_label)]
             events.append(
                 {
                     "type": "node-delete",
@@ -179,6 +185,12 @@ class TextWorldGraph:
             )
         if self.graph.in_degree(src_id) == 0 and self.graph.out_degree(src_id) == 0:
             self.remove_node(src_id)
+            if src_label == "exit":
+                del self.exit_node_id_map[
+                    ExitNode(game, walkthrough_step, rel_label, dst_label)
+                ]
+            else:
+                del self.node_id_map[Node(game, walkthrough_step, src_label)]
             events.append(
                 {
                     "type": "node-delete",
