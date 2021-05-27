@@ -9,14 +9,28 @@ import itertools
 parser = argparse.ArgumentParser()
 parser.add_argument("data_file")
 parser.add_argument("test_data_file")
-parser.add_argument("num_examples", type=int)
+parser.add_argument("num_examples_per_game", type=int)
+parser.add_argument("num_games", type=int)
 args = parser.parse_args()
 
 with open(args.data_file, "r") as f:
     data = json.load(f)
 
 graph_index = json.loads(data["graph_index"])
-examples = data["examples"][: args.num_examples]
+examples = []
+curr_game = ""
+num_game = 0
+curr_examples_per_game = 0
+for example in data["examples"]:
+    if curr_game != example["game"]:
+        curr_game = example["game"]
+        curr_examples_per_game = 0
+        num_game += 1
+    if num_game > args.num_games:
+        break
+    if curr_examples_per_game < args.num_examples_per_game:
+        examples.append(example)
+        curr_examples_per_game += 1
 
 # extract graphs
 prev_seen_graph_idx = set(str(e["previous_graph_seen"]) for e in examples)
