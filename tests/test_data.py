@@ -1,7 +1,7 @@
 import pytest
+import json
 
 from dgu.data import TemporalDataBatchSampler, TWCmdGenDataset
-from dgu.graph import TextWorldGraph
 
 
 @pytest.mark.parametrize(
@@ -21,26 +21,15 @@ def test_temporal_data_batch_sampler(batch_size, event_seq_lens, expected_batche
     assert len(sampler) == len(expected_batches)
 
 
-@pytest.mark.parametrize(
-    "cmds,steps,expected_events,expected_node_labels,expected_edge_labels",
-    [
-        (
-            ["add , player , kitchen , in"],
-            [0, 0],
-            [
-                {"type": "node-add", "node_id": 0, "timestamp": 0},
-                {"type": "node-add", "node_id": 1, "timestamp": 0},
-                {"type": "edge-add", "src_id": 0, "dst_id": 1, "timestamp": 0},
-            ],
-            [],
-            [],
-        )
-    ],
-)
-def test_tw_cmd_gen_dataset_transform_cmd_events(
-    cmds, steps, expected_events, expected_node_labels, expected_edge_labels
-):
-    g = TextWorldGraph()
-    assert (
-        TWCmdGenDataset.transform_commands_to_events(cmds, steps, g) == expected_events
-    )
+def test_tw_cmd_gen_dataset_from_cmd_gen_data():
+    dataset = TWCmdGenDataset.from_cmd_gen_data("tests/data/test_data.json")
+    expected_dataset = []
+    with open("tests/data/preprocessed_test_data.jsonl") as f:
+        for line in f:
+            expected_dataset.append(json.loads(line))
+
+    assert len(dataset) == len(expected_dataset)
+    for data, expected_data in zip(dataset, expected_dataset):
+        data["edge_labels"] = set(map(tuple, data["edge_labels"]))
+        expected_data["edge_labels"] = set(map(tuple, expected_data["edge_labels"]))
+        assert data == expected_data

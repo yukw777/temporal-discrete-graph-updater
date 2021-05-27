@@ -2,8 +2,7 @@ import itertools
 import json
 
 from dgu.graph import TextWorldGraph
-from dataclasses import dataclass
-from typing import List, Iterator, Dict, Any, Tuple, OrderedDict, Set
+from typing import List, Iterator, Dict, Any
 from torch.utils.data import Sampler, Dataset
 
 
@@ -48,7 +47,7 @@ class TWCmdGenDataset(Dataset):
     Each data point contains the following information:
         {
             "game": "game name",
-            "step": [walkthrough step, random step],
+            "walkthrough_step": walkthrough step,
             "observation": "observation...",
             "previous_action": "previous action...",
             "event_seq": [graph event, ...],
@@ -87,102 +86,126 @@ class TWCmdGenDataset(Dataset):
     def from_cmd_gen_data(cls, path: str) -> "TWCmdGenDataset":
         with open(path, "r") as f:
             raw_data = json.load(f)
-            graph_index = json.loads(raw_data["graph_index"])
+        graph = TextWorldGraph()
         data: List[Dict[str, Any]] = []
+        walkthrough_examples: List[Dict[str, Any]] = []
+        random_examples: List[Dict[str, Any]] = []
+        curr_walkthrough_step = -1
+        curr_game = ""
+        graph = TextWorldGraph()
+
         for example in raw_data["examples"]:
+            game = example["game"]
+            if curr_game == "":
+                # if it's the first game, set it right away
+                curr_game = game
+            walkthrough_step, random_step = example["step"]
+            if curr_walkthrough_step != walkthrough_step:
+                # a new walkthrough step has been taken
+                # add the walkthrough examples so far
+                for timestamp, w_example in enumerate(walkthrough_examples):
+                    event_seq = list(
+                        itertools.chain.from_iterable(
+                            graph.process_triplet_cmd(
+                                curr_game, curr_walkthrough_step, timestamp, cmd
+                            )
+                            for cmd in w_example["target_commands"]
+                        )
+                    )
+                    data.append(
+                        {
+                            "game": curr_game,
+                            "walkthrough_step": curr_walkthrough_step,
+                            "observation": w_example["observation"],
+                            "previous_action": w_example["previous_action"],
+                            "event_seq": event_seq,
+                            "node_labels": graph.get_node_labels(),
+                            "edge_labels": graph.get_edge_labels(),
+                        }
+                    )
+
+                # add the random examples
+                for timestamp, r_example in enumerate(random_examples):
+                    event_seq = list(
+                        itertools.chain.from_iterable(
+                            graph.process_triplet_cmd(
+                                curr_game,
+                                curr_walkthrough_step,
+                                len(walkthrough_examples) + timestamp,
+                                cmd,
+                            )
+                            for cmd in r_example["target_commands"]
+                        )
+                    )
+                    data.append(
+                        {
+                            "game": curr_game,
+                            "walkthrough_step": curr_walkthrough_step,
+                            "observation": r_example["observation"],
+                            "previous_action": r_example["previous_action"],
+                            "event_seq": event_seq,
+                            "node_labels": graph.get_node_labels(),
+                            "edge_labels": graph.get_edge_labels(),
+                        }
+                    )
+
+                if curr_game != game:
+                    # new game, so reset walkthrough_examples
+                    walkthrough_examples = []
+                    curr_game = game
+                walkthrough_examples.append(example)
+                random_examples = []
+                curr_walkthrough_step = walkthrough_step
+            else:
+                # a new random step has been taken, so add to random_examples
+                random_examples.append(example)
+
+        # take care of the stragglers
+        # add the walkthrough examples
+        for timestamp, w_example in enumerate(walkthrough_examples):
+            event_seq = list(
+                itertools.chain.from_iterable(
+                    graph.process_triplet_cmd(
+                        curr_game, curr_walkthrough_step, timestamp, cmd
+                    )
+                    for cmd in w_example["target_commands"]
+                )
+            )
             data.append(
                 {
-                    "game": example["game"],
-                    "step": example["step"],
-                    "observation": example["observation"],
-                    "previous_action": example["previous_action"],
+                    "game": curr_game,
+                    "walkthrough_step": curr_walkthrough_step,
+                    "observation": w_example["observation"],
+                    "previous_action": w_example["previous_action"],
+                    "event_seq": event_seq,
+                    "node_labels": graph.get_node_labels(),
+                    "edge_labels": graph.get_edge_labels(),
                 }
             )
+
+        # add the random examples
+        for timestamp, r_example in enumerate(random_examples):
+            event_seq = list(
+                itertools.chain.from_iterable(
+                    graph.process_triplet_cmd(
+                        curr_game,
+                        curr_walkthrough_step,
+                        len(walkthrough_examples) + timestamp,
+                        cmd,
+                    )
+                    for cmd in r_example["target_commands"]
+                )
+            )
+            data.append(
+                {
+                    "game": curr_game,
+                    "walkthrough_step": curr_walkthrough_step,
+                    "observation": r_example["observation"],
+                    "previous_action": r_example["previous_action"],
+                    "event_seq": event_seq,
+                    "node_labels": graph.get_node_labels(),
+                    "edge_labels": graph.get_edge_labels(),
+                }
+            )
+
         return cls(data)
-
-    @staticmethod
-    def transform_commands_to_events(
-        cmds: List[str],
-        step: List[int],
-        graph: TextWorldGraph,
-    ) -> List[Dict[str, Any]]:
-        # timestamp is the sum of the walkthrough step and the random step
-        timestamp = sum(step)
-        events: List[Dict[str, Any]] = []
-        for cmd in cmds:
-            cmd_type, src, dst, rel = cmd.split(" , ")
-            if cmd_type == "add":
-                if graph.has_edge(src, dst):
-                    # the edge already exists, continue
-                    continue
-                # the edge doesn't exist, so add it
-                # if src or dst doesn't exit, add it first.
-                if not graph.has_node(src):
-                    graph.add_node(src)
-                    events.append(
-                        {
-                            "type": "node-add",
-                            "node_id": graph.get_node_id(src),
-                            "timestamp": timestamp,
-                        }
-                    )
-                if not graph.has_node(dst):
-                    graph.add_node(dst)
-                    events.append(
-                        {
-                            "type": "node-add",
-                            "node_id": graph.get_node_id(dst),
-                            "timestamp": timestamp,
-                        }
-                    )
-
-                # add the edge add event
-                graph.add_edge(src, dst, rel)
-                events.append(
-                    {
-                        "type": "edge-add",
-                        "src_id": graph.get_node_id(src),
-                        "dst_id": graph.get_node_id(dst),
-                        "timestamp": timestamp,
-                    }
-                )
-            elif cmd_type == "delete":
-                if not graph.has_edge(src, dst):
-                    # the edge doesn't exist, continue
-                    continue
-
-                # delete the edge and add event
-                graph.remove_edge(src, dst)
-                src_id = graph.get_node_id(src)
-                dst_id = graph.get_node_id(dst)
-                events.append(
-                    {
-                        "type": "edge-delete",
-                        "src_id": src_id,
-                        "dst_id": dst_id,
-                        "timestamp": timestamp,
-                    }
-                )
-                # if there are no edges, delete the nodes
-                if graph.in_degree(src_id) == 0 and graph.out_degree(src_id) == 0:
-                    graph.remove_node(src)
-                    events.append(
-                        {
-                            "type": "node-delete",
-                            "node_id": src_id,
-                            "timestamp": timestamp,
-                        }
-                    )
-                if graph.in_degree(dst_id) == 0 and graph.out_degree(dst_id) == 0:
-                    graph.remove_node(dst)
-                    events.append(
-                        {
-                            "type": "node-delete",
-                            "node_id": dst_id,
-                            "timestamp": timestamp,
-                        }
-                    )
-            else:
-                raise ValueError(f"Unknown command {cmd}")
-
-        return events
