@@ -40,7 +40,7 @@ class TemporalDataBatchSampler(Sampler[List[int]]):
         return self.len
 
 
-class TWCmdGenDataset(Dataset):
+class TWCmdGenTemporalDataset(Dataset):
     """
     TextWorld Command Generation temporal graph event dataset.
 
@@ -83,7 +83,7 @@ class TWCmdGenDataset(Dataset):
         return len(self.data)
 
     @classmethod
-    def from_cmd_gen_data(cls, path: str) -> "TWCmdGenDataset":
+    def from_cmd_gen_data(cls, path: str) -> "TWCmdGenTemporalDataset":
         with open(path, "r") as f:
             raw_data = json.load(f)
         graph = TextWorldGraph()

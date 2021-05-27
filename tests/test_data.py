@@ -1,7 +1,7 @@
 import pytest
 import json
 
-from dgu.data import TemporalDataBatchSampler, TWCmdGenDataset
+from dgu.data import TemporalDataBatchSampler, TWCmdGenTemporalDataset
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ def test_temporal_data_batch_sampler(batch_size, event_seq_lens, expected_batche
 
 
 def test_tw_cmd_gen_dataset_from_cmd_gen_data():
-    dataset = TWCmdGenDataset.from_cmd_gen_data("tests/data/test_data.json")
+    dataset = TWCmdGenTemporalDataset.from_cmd_gen_data("tests/data/test_data.json")
     expected_dataset = []
     with open("tests/data/preprocessed_test_data.jsonl") as f:
         for line in f:
