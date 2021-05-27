@@ -1,9 +1,11 @@
 import itertools
 import json
 
-from dgu.graph import TextWorldGraph
+from tqdm import tqdm
 from typing import List, Iterator, Dict, Any
 from torch.utils.data import Sampler, Dataset
+
+from dgu.graph import TextWorldGraph
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -51,11 +53,8 @@ class TWCmdGenTemporalDataset(Dataset):
             "observation": "observation...",
             "previous_action": "previous action...",
             "event_seq": [graph event, ...],
-            "node_labels": [node label, ...],
-            "edge_labels": [edge label, ...],
         }
 
-    Node and edge labels are for the graph AFTER the given event sequence.
 
     There are four event types: node addtion/deletion and edge addition/deletion.
     Each node event contains the following information:
@@ -71,30 +70,22 @@ class TWCmdGenTemporalDataset(Dataset):
             "dst_id": id for dst node to be added/deleted,
             "timestamp": timestamp for the event,
         }
+
+    This dataset also has a global graph that contains all the knowledge graphs
+    for the games. This can be used to generate node and edge labels for batches.
     """
 
-    def __init__(self, data: List[Dict[str, Any]]):
-        self.data = data
-
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
-        return self.data[idx]
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @classmethod
-    def from_cmd_gen_data(cls, path: str) -> "TWCmdGenTemporalDataset":
+    def __init__(self, path: str) -> None:
         with open(path, "r") as f:
             raw_data = json.load(f)
-        graph = TextWorldGraph()
-        data: List[Dict[str, Any]] = []
+        self.graph = TextWorldGraph()
+        self.data: List[Dict[str, Any]] = []
         walkthrough_examples: List[Dict[str, Any]] = []
         random_examples: List[Dict[str, Any]] = []
         curr_walkthrough_step = -1
         curr_game = ""
-        graph = TextWorldGraph()
 
-        for example in raw_data["examples"]:
+        for example in tqdm(raw_data["examples"], desc="processing examples"):
             game = example["game"]
             if curr_game == "":
                 # if it's the first game, set it right away
@@ -106,21 +97,19 @@ class TWCmdGenTemporalDataset(Dataset):
                 for timestamp, w_example in enumerate(walkthrough_examples):
                     event_seq = list(
                         itertools.chain.from_iterable(
-                            graph.process_triplet_cmd(
+                            self.graph.process_triplet_cmd(
                                 curr_game, curr_walkthrough_step, timestamp, cmd
                             )
                             for cmd in w_example["target_commands"]
                         )
                     )
-                    data.append(
+                    self.data.append(
                         {
                             "game": curr_game,
                             "walkthrough_step": curr_walkthrough_step,
                             "observation": w_example["observation"],
                             "previous_action": w_example["previous_action"],
                             "event_seq": event_seq,
-                            "node_labels": graph.get_node_labels(),
-                            "edge_labels": graph.get_edge_labels(),
                         }
                     )
 
@@ -128,7 +117,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 for timestamp, r_example in enumerate(random_examples):
                     event_seq = list(
                         itertools.chain.from_iterable(
-                            graph.process_triplet_cmd(
+                            self.graph.process_triplet_cmd(
                                 curr_game,
                                 curr_walkthrough_step,
                                 len(walkthrough_examples) + timestamp,
@@ -137,15 +126,13 @@ class TWCmdGenTemporalDataset(Dataset):
                             for cmd in r_example["target_commands"]
                         )
                     )
-                    data.append(
+                    self.data.append(
                         {
                             "game": curr_game,
                             "walkthrough_step": curr_walkthrough_step,
                             "observation": r_example["observation"],
                             "previous_action": r_example["previous_action"],
                             "event_seq": event_seq,
-                            "node_labels": graph.get_node_labels(),
-                            "edge_labels": graph.get_edge_labels(),
                         }
                     )
 
@@ -165,21 +152,19 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, w_example in enumerate(walkthrough_examples):
             event_seq = list(
                 itertools.chain.from_iterable(
-                    graph.process_triplet_cmd(
+                    self.graph.process_triplet_cmd(
                         curr_game, curr_walkthrough_step, timestamp, cmd
                     )
                     for cmd in w_example["target_commands"]
                 )
             )
-            data.append(
+            self.data.append(
                 {
                     "game": curr_game,
                     "walkthrough_step": curr_walkthrough_step,
                     "observation": w_example["observation"],
                     "previous_action": w_example["previous_action"],
                     "event_seq": event_seq,
-                    "node_labels": graph.get_node_labels(),
-                    "edge_labels": graph.get_edge_labels(),
                 }
             )
 
@@ -187,7 +172,7 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, r_example in enumerate(random_examples):
             event_seq = list(
                 itertools.chain.from_iterable(
-                    graph.process_triplet_cmd(
+                    self.graph.process_triplet_cmd(
                         curr_game,
                         curr_walkthrough_step,
                         len(walkthrough_examples) + timestamp,
@@ -196,16 +181,18 @@ class TWCmdGenTemporalDataset(Dataset):
                     for cmd in r_example["target_commands"]
                 )
             )
-            data.append(
+            self.data.append(
                 {
                     "game": curr_game,
                     "walkthrough_step": curr_walkthrough_step,
                     "observation": r_example["observation"],
                     "previous_action": r_example["previous_action"],
                     "event_seq": event_seq,
-                    "node_labels": graph.get_node_labels(),
-                    "edge_labels": graph.get_edge_labels(),
                 }
             )
 
-        return cls(data)
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        return self.data[idx]
+
+    def __len__(self) -> int:
+        return len(self.data)

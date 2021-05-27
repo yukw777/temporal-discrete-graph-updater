@@ -21,8 +21,8 @@ def test_temporal_data_batch_sampler(batch_size, event_seq_lens, expected_batche
     assert len(sampler) == len(expected_batches)
 
 
-def test_tw_cmd_gen_dataset_from_cmd_gen_data():
-    dataset = TWCmdGenTemporalDataset.from_cmd_gen_data("tests/data/test_data.json")
+def test_tw_cmd_gen_dataset_init():
+    dataset = TWCmdGenTemporalDataset("tests/data/test_data.json")
     expected_dataset = []
     with open("tests/data/preprocessed_test_data.jsonl") as f:
         for line in f:
@@ -30,6 +30,4 @@ def test_tw_cmd_gen_dataset_from_cmd_gen_data():
 
     assert len(dataset) == len(expected_dataset)
     for data, expected_data in zip(dataset, expected_dataset):
-        data["edge_labels"] = set(map(tuple, data["edge_labels"]))
-        expected_data["edge_labels"] = set(map(tuple, expected_data["edge_labels"]))
         assert data == expected_data
