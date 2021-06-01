@@ -62,6 +62,7 @@ class TWCmdGenTemporalDataset(Dataset):
             "type": "node-{add,delete}",
             "node_id": id for node to be added/deleted,
             "timestamp": timestamp for the event,
+            "label": label for node to be added/deleted,
         }
     Each edge event contains the following information:
         {
@@ -69,6 +70,7 @@ class TWCmdGenTemporalDataset(Dataset):
             "src_id": id for src node to be added/deleted,
             "dst_id": id for dst node to be added/deleted,
             "timestamp": timestamp for the event,
+            "label": label for edge to be added/deleted,
         }
 
     This dataset also has a global graph that contains all the knowledge graphs
