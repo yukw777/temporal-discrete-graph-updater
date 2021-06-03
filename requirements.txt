@@ -7,3 +7,4 @@ torch-sparse~=0.6.9
 torch-cluster~=1.5.9
 torch-spline-conv~=1.2.1
 torch-geometric~=1.7.0
+spacy~=3.0.6

@@ -62,6 +62,7 @@ class TextWorldGraph:
                         "type": "node-add",
                         "node_id": src_id,
                         "timestamp": timestamp,
+                        "label": src_label,
                     }
                 )
             else:
@@ -74,7 +75,12 @@ class TextWorldGraph:
                 src_id = self.add_node(game, walkthrough_step, src_label)
                 self.node_id_map[node] = src_id
                 events.append(
-                    {"type": "node-add", "node_id": src_id, "timestamp": timestamp}
+                    {
+                        "type": "node-add",
+                        "node_id": src_id,
+                        "timestamp": timestamp,
+                        "label": src_label,
+                    }
                 )
             else:
                 src_id = self.node_id_map[node]
@@ -89,7 +95,12 @@ class TextWorldGraph:
                 dst_id = self.add_node(game, walkthrough_step, dst_label)
                 self.is_dst_node_id_map[is_dst_node] = dst_id
                 events.append(
-                    {"type": "node-add", "node_id": dst_id, "timestamp": timestamp}
+                    {
+                        "type": "node-add",
+                        "node_id": dst_id,
+                        "timestamp": timestamp,
+                        "label": dst_label,
+                    }
                 )
             else:
                 dst_id = self.is_dst_node_id_map[is_dst_node]
@@ -101,7 +112,12 @@ class TextWorldGraph:
                 dst_id = self.add_node(game, walkthrough_step, dst_label)
                 self.node_id_map[node] = dst_id
                 events.append(
-                    {"type": "node-add", "node_id": dst_id, "timestamp": timestamp}
+                    {
+                        "type": "node-add",
+                        "node_id": dst_id,
+                        "timestamp": timestamp,
+                        "label": dst_label,
+                    }
                 )
             else:
                 dst_id = self.node_id_map[node]
@@ -117,6 +133,7 @@ class TextWorldGraph:
                 "src_id": src_id,
                 "dst_id": dst_id,
                 "timestamp": timestamp,
+                "label": rel_label,
             }
         )
         return events
@@ -158,6 +175,7 @@ class TextWorldGraph:
             return events
 
         # delete the edge and add event
+        edge_label = self.graph.edges[src_id, dst_id]["label"]
         self.graph.remove_edge(src_id, dst_id)
         events.append(
             {
@@ -165,6 +183,7 @@ class TextWorldGraph:
                 "src_id": src_id,
                 "dst_id": dst_id,
                 "timestamp": timestamp,
+                "label": edge_label,
             }
         )
         # if there are no edges, delete the nodes
@@ -181,6 +200,7 @@ class TextWorldGraph:
                     "type": "node-delete",
                     "node_id": dst_id,
                     "timestamp": timestamp,
+                    "label": dst_label,
                 }
             )
         if self.graph.in_degree(src_id) == 0 and self.graph.out_degree(src_id) == 0:
@@ -196,6 +216,7 @@ class TextWorldGraph:
                     "type": "node-delete",
                     "node_id": src_id,
                     "timestamp": timestamp,
+                    "label": src_label,
                 }
             )
         return events
