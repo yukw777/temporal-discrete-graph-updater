@@ -1,11 +1,15 @@
 import itertools
 import json
+import pytorch_lightning as pl
+import torch
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any
-from torch.utils.data import Sampler, Dataset
+from typing import List, Iterator, Dict, Any, Optional
+from torch.utils.data import Sampler, Dataset, DataLoader
+from hydra.utils import to_absolute_path
 
 from dgu.graph import TextWorldGraph
+from dgu.preprocessor import SpacyPreprocessor
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -198,3 +202,162 @@ class TWCmdGenTemporalDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.data)
+
+
+class TWCmdGenTemporalDataModule(pl.LightningDataModule):
+    EVENT_TYPES = ["pad", "end", "node-add", "node-delete", "edge-add", "edge-delete"]
+
+    def __init__(
+        self,
+        train_path: str,
+        train_batch_size: int,
+        train_num_workers: int,
+        val_path: str,
+        val_batch_size: int,
+        val_num_workers: int,
+        test_path: str,
+        test_batch_size: int,
+        test_num_workers: int,
+        word_vocab_file: str,
+    ) -> None:
+        super().__init__()
+        self.train_path = to_absolute_path(train_path)
+        self.train_batch_size = train_batch_size
+        self.train_num_workers = train_num_workers
+        self.val_path = to_absolute_path(val_path)
+        self.val_batch_size = val_batch_size
+        self.val_num_workers = val_num_workers
+        self.test_path = to_absolute_path(test_path)
+        self.test_batch_size = test_batch_size
+        self.test_num_workers = test_num_workers
+
+        self.preprocessor = SpacyPreprocessor.load_from_file(
+            to_absolute_path(word_vocab_file)
+        )
+
+        self.EVENT_TYPE_ID_MAP: Dict[str, int] = {
+            v: k for k, v in enumerate(self.EVENT_TYPES)
+        }
+
+    def prepare_data(self) -> None:
+        pass
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if stage == "fit" or stage is None:
+            self.train = TWCmdGenTemporalDataset(self.train_path)
+            self.valid = TWCmdGenTemporalDataset(self.val_path)
+
+        if stage == "test" or stage is None:
+            self.test = TWCmdGenTemporalDataset(self.test_path)
+
+    def collate(self, batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        """
+        Turn a batch of raw datapoints into tensors.
+        {
+            "obs_word_ids": (batch, obs_len),
+            "obs_mask": (batch, obs_len),
+            "prev_action_word_ids": (batch, prev_action_len),
+            "prev_action_mask": (batch, prev_action_len),
+            "event_type_ids": (event_seq_len),
+            "event_timestamps": (event_seq_len),
+            "event_src_ids": (event_seq_len),
+            "event_src_mask": (event_seq_len),
+            "event_dst_ids": (event_seq_len),
+            "event_dst_mask": (event_seq_len),
+            "event_label_word_ids": (event_seq_len, label_len),
+            "event_label_mask": (event_seq_len, label_len),
+        }
+        """
+        obs_word_ids, obs_mask = self.preprocessor.preprocess_tokenized(
+            [example["observation"].split() for example in batch]
+        )
+        prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
+            [example["previous_action"].split() for example in batch]
+        )
+        event_label_word_ids, event_label_mask = self.preprocessor.preprocess_tokenized(
+            list(
+                itertools.chain.from_iterable(
+                    [
+                        [event["label"].split() for event in example["event_seq"]]
+                        for example in batch
+                    ]
+                )
+            )
+        )
+        event_type_ids = torch.tensor(
+            [
+                self.EVENT_TYPE_ID_MAP[event["type"]]
+                for example in batch
+                for event in example["event_seq"]
+            ]
+        )
+        event_timestamps = torch.tensor(
+            [
+                float(event["timestamp"])
+                for example in batch
+                for event in example["event_seq"]
+            ]
+        )
+        event_src_ids: List[int] = []
+        event_src_mask: List[float] = []
+        event_dst_ids: List[int] = []
+        event_dst_mask: List[float] = []
+
+        for example in batch:
+            for event in example["event_seq"]:
+                if event["type"] in {"node-add", "node-delete"}:
+                    event_src_ids.append(event["node_id"])
+                    if event["type"] == "node-add":
+                        # if it's node-add, we mask it to zero out the previous memory
+                        event_src_mask.append(0.0)
+                    else:
+                        event_src_mask.append(1.0)
+                    event_dst_ids.append(0)
+                    event_dst_mask.append(0.0)
+                else:
+                    event_src_ids.append(event["src_id"])
+                    event_src_mask.append(1.0)
+                    event_dst_ids.append(event["dst_id"])
+                    event_dst_mask.append(1.0)
+
+        return {
+            "obs_word_ids": obs_word_ids,
+            "obs_mask": obs_mask,
+            "prev_action_word_ids": prev_action_word_ids,
+            "prev_action_mask": prev_action_mask,
+            "event_type_ids": event_type_ids,
+            "event_timestamps": event_timestamps,
+            "event_src_ids": torch.tensor(event_src_ids),
+            "event_src_mask": torch.tensor(event_src_mask),
+            "event_dst_ids": torch.tensor(event_dst_ids),
+            "event_dst_mask": torch.tensor(event_dst_mask),
+            "event_label_word_ids": event_label_word_ids,
+            "event_label_mask": event_label_mask,
+        }
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train,
+            batch_size=self.train_batch_size,
+            collate_fn=self.collate,
+            pin_memory=True,
+            num_workers=self.train_num_workers,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.valid,
+            batch_size=self.val_batch_size,
+            collate_fn=self.collate,
+            pin_memory=True,
+            num_workers=self.val_num_workers,
+        )
+
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.test,
+            batch_size=self.val_batch_size,
+            collate_fn=self.collate,
+            pin_memory=True,
+            num_workers=self.val_num_workers,
+        )
