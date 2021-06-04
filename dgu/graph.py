@@ -2,7 +2,7 @@ import networkx as nx
 
 from dataclasses import dataclass
 from collections import deque
-from typing import Dict, List, Deque, Any, Tuple
+from typing import Dict, List, Deque, Any, Tuple, Set
 
 from dgu.constants import IS
 
@@ -37,7 +37,7 @@ class TextWorldGraph:
         self.exit_node_id_map: Dict[ExitNode, int] = {}
         self.node_id_map: Dict[Node, int] = {}
         self.removed_node_ids: Deque[int] = deque()
-        self.graph = nx.DiGraph()
+        self._graph = nx.DiGraph()
 
     def process_add_triplet_cmd(
         self,
@@ -122,11 +122,17 @@ class TextWorldGraph:
             else:
                 dst_id = self.node_id_map[node]
 
-        if self.graph.has_edge(src_id, dst_id):
+        if self._graph.has_edge(src_id, dst_id):
             # the edge already exists, so we're done
             return events
         # the edge doesn't exist, so add it
-        self.graph.add_edge(src_id, dst_id, label=rel_label)
+        self._graph.add_edge(
+            src_id,
+            dst_id,
+            game=game,
+            walkthrough_step=walkthrough_step,
+            label=rel_label,
+        )
         events.append(
             {
                 "type": "edge-add",
@@ -170,13 +176,13 @@ class TextWorldGraph:
             # the destination node doesn't exist, so return
             return events
 
-        if not self.graph.has_edge(src_id, dst_id):
+        if not self._graph.has_edge(src_id, dst_id):
             # the edge doesn't exist, continue
             return events
 
         # delete the edge and add event
-        edge_label = self.graph.edges[src_id, dst_id]["label"]
-        self.graph.remove_edge(src_id, dst_id)
+        edge_label = self._graph.edges[src_id, dst_id]["label"]
+        self._graph.remove_edge(src_id, dst_id)
         events.append(
             {
                 "type": "edge-delete",
@@ -187,7 +193,7 @@ class TextWorldGraph:
             }
         )
         # if there are no edges, delete the nodes
-        if self.graph.in_degree(dst_id) == 0 and self.graph.out_degree(dst_id) == 0:
+        if self._graph.in_degree(dst_id) == 0 and self._graph.out_degree(dst_id) == 0:
             self.remove_node(dst_id)
             if rel_label == IS:
                 del self.is_dst_node_id_map[
@@ -203,7 +209,7 @@ class TextWorldGraph:
                     "label": dst_label,
                 }
             )
-        if self.graph.in_degree(src_id) == 0 and self.graph.out_degree(src_id) == 0:
+        if self._graph.in_degree(src_id) == 0 and self._graph.out_degree(src_id) == 0:
             self.remove_node(src_id)
             if src_label == "exit":
                 del self.exit_node_id_map[
@@ -260,8 +266,8 @@ class TextWorldGraph:
         if len(self.removed_node_ids) > 0:
             node_id = self.removed_node_ids.popleft()
         else:
-            node_id = self.graph.order()
-        self.graph.add_node(
+            node_id = self._graph.order()
+        self._graph.add_node(
             node_id, game=game, walkthrough_step=walkthrough_step, label=label
         )
         return node_id
@@ -271,20 +277,29 @@ class TextWorldGraph:
         Remove the node with the given id.
         The removed node id is added to removed_node_ids for future use.
         """
-        self.graph.remove_node(node_id)
+        self._graph.remove_node(node_id)
         self.removed_node_ids.append(node_id)
 
     def get_node_labels(self) -> List[str]:
         """
         Return node labels. If a label is an empty string, the node doesn't exist.
         """
-        node_labels = [""] * (self.graph.order() + len(self.removed_node_ids))
-        for node_id, data in self.graph.nodes.data():
+        node_labels = [""] * (self._graph.order() + len(self.removed_node_ids))
+        for node_id, data in self._graph.nodes.data():
             node_labels[node_id] = data["label"]
         return node_labels
 
     def get_edge_labels(self) -> List[Tuple[int, int, str]]:
         return [
             (src_id, dst_id, data["label"])
-            for src_id, dst_id, data in self.graph.edges.data()
+            for src_id, dst_id, data in self._graph.edges.data()
         ]
+
+    def filter_node_ids(self, game_walkthrough_set: Set[Tuple[str, int]]) -> Set[int]:
+        def filter_node(node):
+            game = self._graph.nodes[node]["game"]
+            walkthrough_step = self._graph.nodes[node]["walkthrough_step"]
+            return (game, walkthrough_step) in game_walkthrough_set
+
+        subgraph_view = nx.subgraph_view(self._graph, filter_node=filter_node)
+        return set(subgraph_view.nodes())

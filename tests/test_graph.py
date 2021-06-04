@@ -5,46 +5,46 @@ def test_tw_graph_node():
     g = TextWorldGraph()
     node_id = g.add_node("game0", 0, "n1")
     assert node_id == 0
-    assert g.graph.order() == 1
-    assert g.graph.nodes[node_id]["game"] == "game0"
-    assert g.graph.nodes[node_id]["walkthrough_step"] == 0
-    assert g.graph.nodes[node_id]["label"] == "n1"
+    assert g._graph.order() == 1
+    assert g._graph.nodes[node_id]["game"] == "game0"
+    assert g._graph.nodes[node_id]["walkthrough_step"] == 0
+    assert g._graph.nodes[node_id]["label"] == "n1"
     assert g.get_node_labels() == ["n1"]
 
     node_id = g.add_node("game0", 1, "n2")
     assert node_id == 1
-    assert g.graph.order() == 2
-    assert g.graph.nodes[node_id]["game"] == "game0"
-    assert g.graph.nodes[node_id]["walkthrough_step"] == 1
-    assert g.graph.nodes[node_id]["label"] == "n2"
+    assert g._graph.order() == 2
+    assert g._graph.nodes[node_id]["game"] == "game0"
+    assert g._graph.nodes[node_id]["walkthrough_step"] == 1
+    assert g._graph.nodes[node_id]["label"] == "n2"
     assert g.get_node_labels() == ["n1", "n2"]
 
     node_id = g.add_node("game1", 0, "n1")
     assert node_id == 2
-    assert g.graph.order() == 3
-    assert g.graph.nodes[node_id]["game"] == "game1"
-    assert g.graph.nodes[node_id]["walkthrough_step"] == 0
-    assert g.graph.nodes[node_id]["label"] == "n1"
+    assert g._graph.order() == 3
+    assert g._graph.nodes[node_id]["game"] == "game1"
+    assert g._graph.nodes[node_id]["walkthrough_step"] == 0
+    assert g._graph.nodes[node_id]["label"] == "n1"
     assert g.get_node_labels() == ["n1", "n2", "n1"]
 
     g.remove_node(1)
-    assert g.graph.order() == 2
+    assert g._graph.order() == 2
     assert g.get_node_labels() == ["n1", "", "n1"]
 
     node_id = g.add_node("game2", 0, "n1")
     assert node_id == 1
-    assert g.graph.order() == 3
-    assert g.graph.nodes[node_id]["game"] == "game2"
-    assert g.graph.nodes[node_id]["walkthrough_step"] == 0
-    assert g.graph.nodes[node_id]["label"] == "n1"
+    assert g._graph.order() == 3
+    assert g._graph.nodes[node_id]["game"] == "game2"
+    assert g._graph.nodes[node_id]["walkthrough_step"] == 0
+    assert g._graph.nodes[node_id]["label"] == "n1"
     assert g.get_node_labels() == ["n1", "n1", "n1"]
 
     node_id = g.add_node("game2", 0, "n2")
     assert node_id == 3
-    assert g.graph.order() == 4
-    assert g.graph.nodes[node_id]["game"] == "game2"
-    assert g.graph.nodes[node_id]["walkthrough_step"] == 0
-    assert g.graph.nodes[node_id]["label"] == "n2"
+    assert g._graph.order() == 4
+    assert g._graph.nodes[node_id]["game"] == "game2"
+    assert g._graph.nodes[node_id]["walkthrough_step"] == 0
+    assert g._graph.nodes[node_id]["label"] == "n2"
     assert g.get_node_labels() == ["n1", "n1", "n1", "n2"]
 
 
@@ -697,3 +697,18 @@ def test_tw_graph_triplet_cmd_delete():
         (1, 5, "east of"),
         (3, 4, "is"),
     }
+
+
+def test_tw_graph_filter_node_ids():
+    g = TextWorldGraph()
+    g.add_node("game0", 0, "n1")
+    g.add_node("game0", 1, "n2")
+    g.add_node("game1", 0, "n1")
+    g.remove_node(1)
+    g.add_node("game2", 0, "n1")
+    g.add_node("game2", 0, "n2")
+
+    assert g.filter_node_ids({("game0", 0)}) == {0}
+    assert g.filter_node_ids({("game0", 1)}) == set()  # removed
+    assert g.filter_node_ids({("game1", 0)}) == {2}
+    assert g.filter_node_ids({("game2", 0)}) == {1, 3}
