@@ -7,6 +7,7 @@ from tqdm import tqdm
 from typing import List, Iterator, Dict, Any, Optional
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
+from functools import partial
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
@@ -250,7 +251,9 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         if stage == "test" or stage is None:
             self.test = TWCmdGenTemporalDataset(self.test_path)
 
-    def collate(self, batch: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+    def collate(
+        self, stage: str, batch: List[Dict[str, Any]]
+    ) -> Dict[str, torch.Tensor]:
         """
         Turn a batch of raw datapoints into tensors.
         {
@@ -258,6 +261,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "obs_mask": (batch, obs_len),
             "prev_action_word_ids": (batch, prev_action_len),
             "prev_action_mask": (batch, prev_action_len),
+            "subgraph_node_ids": (num_nodes),
             "event_type_ids": (event_seq_len),
             "event_timestamps": (event_seq_len),
             "event_src_ids": (event_seq_len),
@@ -320,11 +324,30 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                     event_dst_ids.append(event["dst_id"])
                     event_dst_mask.append(1.0)
 
+        # subgraph node IDs
+        game_walkthrough_set = set(
+            (example["game"], example["walkthrough_step"]) for example in batch
+        )
+
+        if stage == "train":
+            graph = self.train.graph
+        elif stage == "val":
+            graph = self.valid.graph
+        elif stage == "test":
+            graph = self.test.graph
+        else:
+            raise ValueError(f"Unknown stage: {stage}")
+
+        subgraph_node_ids = torch.tensor(
+            list(graph.filter_node_ids(game_walkthrough_set))
+        )
+
         return {
             "obs_word_ids": obs_word_ids,
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
+            "subgraph_node_ids": subgraph_node_ids,
             "event_type_ids": event_type_ids,
             "event_timestamps": event_timestamps,
             "event_src_ids": torch.tensor(event_src_ids),
@@ -339,7 +362,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.train,
             batch_size=self.train_batch_size,
-            collate_fn=self.collate,
+            collate_fn=partial(self.collate, "train"),
             pin_memory=True,
             num_workers=self.train_num_workers,
         )
@@ -348,7 +371,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.valid,
             batch_size=self.val_batch_size,
-            collate_fn=self.collate,
+            collate_fn=partial(self.collate, "val"),
             pin_memory=True,
             num_workers=self.val_num_workers,
         )
@@ -357,7 +380,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.test,
             batch_size=self.val_batch_size,
-            collate_fn=self.collate,
+            collate_fn=partial(self.collate, "test"),
             pin_memory=True,
             num_workers=self.val_num_workers,
         )

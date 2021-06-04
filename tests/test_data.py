@@ -60,6 +60,8 @@ def tw_cmd_gen_datamodule():
         (
             [
                 {
+                    "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+                    "walkthrough_step": 0,
                     "observation": "you are hungry !",
                     "previous_action": "drop flour",
                     "event_seq": [
@@ -90,6 +92,7 @@ def tw_cmd_gen_datamodule():
                 "obs_mask": torch.ones(1, 4),
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
+                "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
                 "event_type_ids": torch.tensor([2, 2, 4]),
                 "event_timestamps": torch.tensor([0.0, 0.0, 0.0]),
                 "event_src_ids": torch.tensor([0, 1, 0]),
@@ -103,6 +106,8 @@ def tw_cmd_gen_datamodule():
         (
             [
                 {
+                    "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+                    "walkthrough_step": 0,
                     "observation": "you are hungry !",
                     "previous_action": "drop flour",
                     "event_seq": [
@@ -141,6 +146,9 @@ def tw_cmd_gen_datamodule():
                     ],
                 },
                 {
+                    "game": "tw-cooking-recipe1+take1+cook+cut+open-"
+                    "x9BZfZmVUZ5Ks1m1.z8",
+                    "walkthrough_step": 0,
                     "observation": "you put the flour on the sofa",
                     "previous_action": "put flour on sofa",
                     "event_seq": [
@@ -166,6 +174,8 @@ def tw_cmd_gen_datamodule():
                     ],
                 },
                 {
+                    "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+                    "walkthrough_step": 1,
                     "observation": "you take the flour",
                     "previous_action": "take flour",
                     "event_seq": [
@@ -209,6 +219,35 @@ def tw_cmd_gen_datamodule():
                         [1.0, 1.0, 0.0, 0.0],
                         [1.0, 1.0, 1.0, 1.0],
                         [1.0, 1.0, 0.0, 0.0],
+                    ]
+                ),
+                "subgraph_node_ids": torch.tensor(
+                    [
+                        0,
+                        1,
+                        2,
+                        3,
+                        18,
+                        19,
+                        20,
+                        21,
+                        22,
+                        23,
+                        24,
+                        25,
+                        26,
+                        27,
+                        28,
+                        29,
+                        30,
+                        31,
+                        32,
+                        34,
+                        35,
+                        36,
+                        37,
+                        38,
+                        39,
                     ]
                 ),
                 "event_type_ids": torch.tensor([2, 2, 4, 2, 4, 2, 2, 4, 4, 5]),
@@ -255,12 +294,15 @@ def tw_cmd_gen_datamodule():
         ),
     ],
 )
-def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, batch, expected):
-    collated = tw_cmd_gen_datamodule.collate(batch)
+@pytest.mark.parametrize("stage", ["train", "val", "test"])
+def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expected):
+    tw_cmd_gen_datamodule.setup()
+    collated = tw_cmd_gen_datamodule.collate(stage, batch)
     assert collated["obs_word_ids"].equal(expected["obs_word_ids"])
     assert collated["obs_mask"].equal(expected["obs_mask"])
     assert collated["prev_action_word_ids"].equal(expected["prev_action_word_ids"])
     assert collated["prev_action_mask"].equal(expected["prev_action_mask"])
+    assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
     assert collated["event_type_ids"].equal(expected["event_type_ids"])
     assert collated["event_timestamps"].equal(expected["event_timestamps"])
     assert collated["event_src_ids"].equal(expected["event_src_ids"])
