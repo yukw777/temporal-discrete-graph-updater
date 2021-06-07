@@ -34,6 +34,8 @@ def test_cqattn_trilinear(hidden_dim, batch_size, ctx_seq_len, query_seq_len):
     [
         (10, 1, 3, 5),
         (10, 3, 5, 7),
+        (10, 3, 5, 0),
+        (10, 3, 0, 7),
     ],
 )
 def test_cqattn(hidden_dim, batch_size, ctx_seq_len, query_seq_len):
@@ -71,6 +73,8 @@ def test_cqattn(hidden_dim, batch_size, ctx_seq_len, query_seq_len):
     [
         (10, 1, 3, 5),
         (10, 3, 5, 7),
+        (10, 3, 5, 0),
+        (10, 3, 0, 7),
     ],
 )
 def test_repr_aggr(hidden_dim, batch_size, repr1_seq_len, repr2_seq_len):
