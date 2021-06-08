@@ -50,3 +50,61 @@ class EventTypeHead(nn.Module):
         # (batch, hidden_dim)
 
         return event_type_logits, autoregressive_embedding
+
+
+class EventNodeHead(nn.Module):
+    def __init__(self, hidden_dim: int, key_query_dim: int) -> None:
+        super().__init__()
+        self.key_linear = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, key_query_dim),
+        )
+        self.query_linear = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, key_query_dim),
+        )
+        self.autoregressive_linear = nn.Linear(key_query_dim, hidden_dim)
+
+    def forward(
+        self, autoregressive_embedding: torch.Tensor, node_embeddings: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        autoregressive_embedding: (batch, hidden_dim)
+        node_embeddings: (num_node, hidden_dim)
+
+        output:
+            node_logits: (batch, num_node)
+            autoregressive_embedding: (batch, hidden_dim)
+        """
+        # calculate the key from node_embeddings
+        key = self.key_linear(node_embeddings)
+        # (num_node, key_query_dim)
+
+        # calculate the query from autoregressive_embedding
+        query = self.query_linear(autoregressive_embedding)
+        # (batch, key_query_dim)
+
+        node_logits = torch.matmul(query, key.transpose(0, 1))
+        # (batch, num_node)
+
+        # autoregressive embedding
+        # get the one hot encoding of the selected nodes
+        one_hot_selected_node = (
+            F.one_hot(node_logits.argmax(dim=1), num_classes=node_embeddings.size(0))
+            .float()
+            .to(autoregressive_embedding.device)
+        )
+        # (batch, num_node)
+        # multiply by the key
+        selected_node_embeddings = torch.matmul(one_hot_selected_node, key)
+        # (batch, key_query_dim)
+        # pass it through a linear layer
+        selected_node_embeddings = self.autoregressive_linear(selected_node_embeddings)
+        # (batch, hidden_dim)
+        # add it to the autoregressive embedding
+        autoregressive_embedding += selected_node_embeddings
+        # (batch, hidden_dim)
+
+        return node_logits, autoregressive_embedding
