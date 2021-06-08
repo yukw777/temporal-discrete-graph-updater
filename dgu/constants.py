@@ -107,3 +107,5 @@ CONSTANT_NAMES = {
     "I": "player",
     "RECIPE": "cookbook",
 }
+
+EVENT_TYPES = ["pad", "end", "node-add", "node-delete", "edge-add", "edge-delete"]

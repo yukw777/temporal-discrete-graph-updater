@@ -11,6 +11,7 @@ from functools import partial
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
+from dgu.constants import EVENT_TYPES
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -206,8 +207,6 @@ class TWCmdGenTemporalDataset(Dataset):
 
 
 class TWCmdGenTemporalDataModule(pl.LightningDataModule):
-    EVENT_TYPES = ["pad", "end", "node-add", "node-delete", "edge-add", "edge-delete"]
-
     def __init__(
         self,
         train_path: str,
@@ -237,7 +236,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         )
 
         self.EVENT_TYPE_ID_MAP: Dict[str, int] = {
-            v: k for k, v in enumerate(self.EVENT_TYPES)
+            v: k for k, v in enumerate(EVENT_TYPES)
         }
 
     def prepare_data(self) -> None:
