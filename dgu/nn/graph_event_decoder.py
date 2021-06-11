@@ -108,3 +108,83 @@ class EventNodeHead(nn.Module):
         # (batch, hidden_dim)
 
         return node_logits, autoregressive_embedding
+
+
+class EventStaticLabelHead(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        key_query_dim: int,
+        node_label_embeddings: torch.Tensor,
+        edge_label_embeddings: torch.Tensor,
+    ) -> None:
+        super().__init__()
+        assert node_label_embeddings.size(1) == edge_label_embeddings.size(1)
+        self.label_embedding_dim = node_label_embeddings.size(1)
+        self.num_node_label = node_label_embeddings.size(0)
+        self.num_edge_label = edge_label_embeddings.size(0)
+
+        self.key_linear = nn.Sequential(
+            nn.Linear(self.label_embedding_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, key_query_dim),
+        )
+        self.query_linear = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, key_query_dim),
+        )
+        self.register_buffer(
+            "label_embeddings",
+            torch.cat([node_label_embeddings, edge_label_embeddings]),
+        )
+
+    def forward(
+        self,
+        autoregressive_embedding: torch.Tensor,
+        event_type: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        autoregressive_embedding: (batch, hidden_dim)
+        event_type: (batch)
+
+        output:
+            label_logits: (batch, num_label), logits for nodes first, then edges
+        """
+        # calculate the key from label_embeddings
+        key = self.key_linear(self.label_embeddings)
+        # (num_label, key_query_dim)
+
+        # calculate the query from event_type and autoregressive_embedding
+        query = self.query_linear(autoregressive_embedding)
+        # (batch, key_query_dim)
+
+        # multiply key and query to calculate the logits
+        label_logits = torch.matmul(query, key.transpose(0, 1))
+        # (batch, num_label)
+
+        # calculate label mask based on event_type
+        one_hot_event_type = (
+            F.one_hot(event_type, num_classes=len(EVENT_TYPES)).float().to(label_logits)
+        )
+        # (batch, num_event_type)
+        mask = torch.hstack(
+            [
+                # one hot encoding for node add/delete events
+                one_hot_event_type[:, 2:4]
+                # sum to get one hot encoding for node events
+                .sum(1, keepdim=True)
+                # repeat for the number of node labels
+                .expand(-1, self.num_node_label),
+                # one hot encoding for edge add/delete events
+                one_hot_event_type[:, 4:]
+                # sum to get one hot encoding for edge events
+                .sum(1, keepdim=True)
+                # repeat for the number of edge labels
+                .expand(-1, self.num_edge_label),
+            ]
+        )
+        # (batch, num_label)
+
+        # mask out the label logits and return
+        return label_logits * mask
