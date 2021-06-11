@@ -19,7 +19,15 @@ def test_event_type_head(hidden_dim, batch):
     assert autoregressive_embedding.size() == (batch, hidden_dim)
 
 
-@pytest.mark.parametrize("hidden_dim,key_query_dim,batch,num_node", [(12, 8, 1, 1)])
+@pytest.mark.parametrize(
+    "hidden_dim,key_query_dim,batch,num_node",
+    [
+        (12, 8, 1, 0),
+        (12, 8, 1, 1),
+        (12, 8, 5, 0),
+        (12, 8, 5, 10),
+    ],
+)
 def test_event_node_head(hidden_dim, key_query_dim, batch, num_node):
     head = EventNodeHead(hidden_dim, key_query_dim)
     logits, autoregressive_embedding = head(

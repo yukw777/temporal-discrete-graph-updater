@@ -91,11 +91,17 @@ class EventNodeHead(nn.Module):
 
         # autoregressive embedding
         # get the one hot encoding of the selected nodes
-        one_hot_selected_node = (
-            F.one_hot(node_logits.argmax(dim=1), num_classes=node_embeddings.size(0))
-            .float()
-            .to(autoregressive_embedding.device)
-        )
+        if node_embeddings.size(0) == 0:
+            # if there are no nodes, just use an empty tensor without taking an argmax
+            one_hot_selected_node = torch.empty_like(node_logits)
+        else:
+            one_hot_selected_node = (
+                F.one_hot(
+                    node_logits.argmax(dim=1), num_classes=node_embeddings.size(0)
+                )
+                .float()
+                .to(autoregressive_embedding.device)
+            )
         # (batch, num_node)
         # multiply by the key
         selected_node_embeddings = torch.matmul(one_hot_selected_node, key)
