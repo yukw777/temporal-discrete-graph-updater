@@ -7,6 +7,7 @@ from dgu.nn.graph_event_decoder import (
     EventTypeHead,
     EventNodeHead,
     EventStaticLabelHead,
+    StaticLabelGraphEventDecoder,
 )
 from dgu.constants import EVENT_TYPES
 
@@ -83,3 +84,36 @@ def test_event_static_label_head(
             assert not logits[num_node_label:].equal(torch.zeros(num_edge_label))
         else:
             raise ValueError("Unknown event type")
+
+
+@pytest.mark.parametrize(
+    "hidden_dim,key_query_dim,num_node_label,num_edge_label,label_embedding_dim,"
+    "batch,num_node",
+    [
+        (12, 8, 4, 5, 24, 1, 0),
+        (12, 8, 4, 5, 24, 1, 4),
+        (12, 8, 4, 5, 24, 10, 12),
+        (24, 12, 8, 10, 48, 24, 36),
+    ],
+)
+def test_static_label_graph_event_decoder(
+    hidden_dim,
+    key_query_dim,
+    num_node_label,
+    num_edge_label,
+    label_embedding_dim,
+    batch,
+    num_node,
+):
+    decoder = StaticLabelGraphEventDecoder(
+        hidden_dim,
+        key_query_dim,
+        torch.rand(num_node_label, label_embedding_dim),
+        torch.rand(num_edge_label, label_embedding_dim),
+    )
+    results = decoder(torch.rand(batch, hidden_dim), torch.rand(num_node, hidden_dim))
+
+    assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
+    assert results["src_node_logits"].size() == (batch, num_node)
+    assert results["dst_node_logits"].size() == (batch, num_node)
+    assert results["label_logits"].size() == (batch, num_node_label + num_edge_label)

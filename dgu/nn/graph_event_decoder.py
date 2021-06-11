@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Tuple
+from typing import Tuple, Dict
 
 from dgu.constants import EVENT_TYPES
 
@@ -194,3 +194,57 @@ class EventStaticLabelHead(nn.Module):
 
         # mask out the label logits and return
         return label_logits * mask
+
+
+class StaticLabelGraphEventDecoder(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        key_query_dim: int,
+        node_label_embeddings: torch.Tensor,
+        edge_label_embeddings: torch.Tensor,
+    ) -> None:
+        super().__init__()
+        self.event_type_head = EventTypeHead(hidden_dim)
+        self.event_src_node_head = EventNodeHead(hidden_dim, key_query_dim)
+        self.event_dst_node_head = EventNodeHead(hidden_dim, key_query_dim)
+        self.event_label_head = EventStaticLabelHead(
+            hidden_dim, key_query_dim, node_label_embeddings, edge_label_embeddings
+        )
+
+    def forward(
+        self, graph_event_embeddings: torch.Tensor, node_embeddings: torch.Tensor
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Based on the graph event embeddings and node embeddings, calculate
+        event type logits, source node logits, destination node logits and
+        label logits for new graph events.
+
+        graph_event_embeddings: (batch, hidden_dim)
+        node_embeddings: (num_node, hidden_dim)
+
+        output: {
+            "event_type_logits": (batch, num_event_type),
+            "src_node_logits": (batch, num_node),
+            "dst_node_logits": (batch, num_node),
+            "label_logits": (batch, num_label),
+        }
+        """
+        event_type_logits, autoregressive_embedding = self.event_type_head(
+            graph_event_embeddings
+        )
+        src_node_logits, autoregressive_embedding = self.event_src_node_head(
+            autoregressive_embedding, node_embeddings
+        )
+        dst_node_logits, autoregressive_embedding = self.event_dst_node_head(
+            autoregressive_embedding, node_embeddings
+        )
+        label_logits = self.event_label_head(
+            autoregressive_embedding, event_type_logits.argmax(dim=1)
+        )
+        return {
+            "event_type_logits": event_type_logits,
+            "src_node_logits": src_node_logits,
+            "dst_node_logits": dst_node_logits,
+            "label_logits": label_logits,
+        }
