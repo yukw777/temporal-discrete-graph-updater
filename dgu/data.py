@@ -278,7 +278,9 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             [example["previous_action"].split() for example in batch]
         )
         event_label_word_ids, event_label_mask = self.preprocessor.preprocess_tokenized(
-            list(
+            # empty labels for start and end tokens
+            [[]]  # type: ignore
+            + list(
                 itertools.chain.from_iterable(
                     [
                         [event["label"].split() for event in example["event_seq"]]
@@ -286,25 +288,34 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                     ]
                 )
             )
+            + [[]]
         )
         event_type_ids = torch.tensor(
-            [
+            # start and end tokens
+            [self.EVENT_TYPE_ID_MAP["start"]]
+            + [
                 self.EVENT_TYPE_ID_MAP[event["type"]]
                 for example in batch
                 for event in example["event_seq"]
             ]
+            + [self.EVENT_TYPE_ID_MAP["end"]]
         )
         event_timestamps = torch.tensor(
-            [
+            # 0 timestamp for start and end tokens
+            [0.0]
+            + [
                 float(event["timestamp"])
                 for example in batch
                 for event in example["event_seq"]
             ]
+            + [0.0]
         )
-        event_src_ids: List[int] = []
-        event_src_mask: List[float] = []
-        event_dst_ids: List[int] = []
-        event_dst_mask: List[float] = []
+
+        # mask out source IDs for the start token
+        event_src_ids: List[int] = [0]
+        event_src_mask: List[float] = [0.0]
+        event_dst_ids: List[int] = [0]
+        event_dst_mask: List[float] = [0.0]
 
         for example in batch:
             for event in example["event_seq"]:
@@ -322,6 +333,12 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                     event_src_mask.append(1.0)
                     event_dst_ids.append(event["dst_id"])
                     event_dst_mask.append(1.0)
+
+        # mask out the destination IDs for the end token
+        event_src_ids.append(0)
+        event_src_mask.append(0.0)
+        event_dst_ids.append(0)
+        event_dst_mask.append(0.0)
 
         # subgraph node IDs
         game_walkthrough_set = set(

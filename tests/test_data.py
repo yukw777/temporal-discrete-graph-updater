@@ -93,14 +93,14 @@ def tw_cmd_gen_datamodule():
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
-                "event_type_ids": torch.tensor([2, 2, 4]),
-                "event_timestamps": torch.tensor([0.0, 0.0, 0.0]),
-                "event_src_ids": torch.tensor([0, 1, 0]),
-                "event_src_mask": torch.tensor([0.0, 0.0, 1.0]),
-                "event_dst_ids": torch.tensor([0, 0, 1]),
-                "event_dst_mask": torch.tensor([0.0, 0.0, 1.0]),
-                "event_label_word_ids": torch.tensor([[530], [377], [396]]),
-                "event_label_mask": torch.ones(3, 1),
+                "event_type_ids": torch.tensor([0, 2, 2, 4, 1]),
+                "event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0]),
+                "event_src_ids": torch.tensor([0, 0, 1, 0, 0]),
+                "event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0]),
+                "event_dst_ids": torch.tensor([0, 0, 0, 1, 0]),
+                "event_dst_mask": torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0]),
+                "event_label_word_ids": torch.tensor([[0], [530], [377], [396], [0]]),
+                "event_label_mask": torch.tensor([[0.0], [1.0], [1.0], [1.0], [0.0]]),
             },
         ),
         (
@@ -250,20 +250,24 @@ def tw_cmd_gen_datamodule():
                         39,
                     ]
                 ),
-                "event_type_ids": torch.tensor([2, 2, 4, 2, 4, 2, 2, 4, 4, 5]),
+                "event_type_ids": torch.tensor([0, 2, 2, 4, 2, 4, 2, 2, 4, 4, 5, 1]),
                 "event_timestamps": torch.tensor(
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 0.0]
                 ),
-                "event_src_ids": torch.tensor([0, 1, 0, 2, 2, 3, 4, 3, 3, 3]),
+                "event_timestamp_mask": torch.tensor(
+                    [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
+                ),
+                "event_src_ids": torch.tensor([0, 0, 1, 0, 2, 2, 3, 4, 3, 3, 3, 0]),
                 "event_src_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
                 ),
-                "event_dst_ids": torch.tensor([0, 0, 1, 0, 0, 0, 0, 4, 0, 4]),
+                "event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 4, 0]),
                 "event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
                 ),
                 "event_label_word_ids": torch.tensor(
                     [
+                        [0, 0],
                         [530, 0],
                         [377, 0],
                         [396, 0],
@@ -274,10 +278,12 @@ def tw_cmd_gen_datamodule():
                         [494, 0],
                         [382, 0],
                         [494, 0],
+                        [0, 0],
                     ]
                 ),
                 "event_label_mask": torch.tensor(
                     [
+                        [0.0, 0.0],
                         [1.0, 0.0],
                         [1.0, 0.0],
                         [1.0, 0.0],
@@ -288,6 +294,7 @@ def tw_cmd_gen_datamodule():
                         [1.0, 0.0],
                         [1.0, 0.0],
                         [1.0, 0.0],
+                        [0.0, 0.0],
                     ]
                 ),
             },
