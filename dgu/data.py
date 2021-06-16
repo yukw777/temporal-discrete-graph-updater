@@ -259,6 +259,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "subgraph_node_ids": (num_nodes),
             "event_type_ids": (event_seq_len),
             "event_timestamps": (event_seq_len),
+            "event_timestamp_mask": (event_seq_len),
             "event_src_ids": (event_seq_len),
             "event_src_mask": (event_seq_len),
             "event_dst_ids": (event_seq_len),
@@ -304,6 +305,12 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                 for example in batch
                 for event in example["event_seq"]
             ]
+            + [0.0]
+        )
+        event_timestamp_mask = torch.tensor(
+            # mask out start and end tokens
+            [0.0]
+            + [1.0 for example in batch for event in example["event_seq"]]
             + [0.0]
         )
 
@@ -362,6 +369,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "subgraph_node_ids": subgraph_node_ids,
             "event_type_ids": event_type_ids,
             "event_timestamps": event_timestamps,
+            "event_timestamp_mask": event_timestamp_mask,
             "event_src_ids": torch.tensor(event_src_ids),
             "event_src_mask": torch.tensor(event_src_mask),
             "event_dst_ids": torch.tensor(event_dst_ids),

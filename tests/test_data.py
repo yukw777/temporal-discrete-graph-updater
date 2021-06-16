@@ -95,6 +95,7 @@ def tw_cmd_gen_datamodule():
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
                 "event_type_ids": torch.tensor([1, 3, 3, 5, 2]),
                 "event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0]),
+                "event_timestamp_mask": torch.tensor([0.0, 1.0, 1.0, 1.0, 0.0]),
                 "event_src_ids": torch.tensor([0, 0, 1, 0, 0]),
                 "event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0]),
                 "event_dst_ids": torch.tensor([0, 0, 0, 1, 0]),
@@ -312,6 +313,7 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
     assert collated["event_type_ids"].equal(expected["event_type_ids"])
     assert collated["event_timestamps"].equal(expected["event_timestamps"])
+    assert collated["event_timestamp_mask"].equal(expected["event_timestamp_mask"])
     assert collated["event_src_ids"].equal(expected["event_src_ids"])
     assert collated["event_dst_ids"].equal(expected["event_dst_ids"])
     assert collated["event_dst_mask"].equal(expected["event_dst_mask"])
