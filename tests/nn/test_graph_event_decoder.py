@@ -8,6 +8,7 @@ from dgu.nn.graph_event_decoder import (
     EventNodeHead,
     EventStaticLabelHead,
     StaticLabelGraphEventDecoder,
+    StaticLabelGraphEventEncoder,
 )
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
@@ -127,3 +128,30 @@ def test_static_label_graph_event_decoder(
     assert results["src_node_logits"].size() == (batch, num_node)
     assert results["dst_node_logits"].size() == (batch, num_node)
     assert results["label_logits"].size() == (batch, num_node_label + num_edge_label)
+
+
+@pytest.mark.parametrize(
+    "hidden_dim,batch,graph_event_seq_len,num_node,num_label",
+    [
+        (10, 1, 5, 12, 24),
+        (10, 10, 5, 12, 24),
+        (24, 16, 10, 24, 48),
+    ],
+)
+def test_static_label_graph_event_encoder(
+    hidden_dim, batch, graph_event_seq_len, num_node, num_label
+):
+    encoder = StaticLabelGraphEventEncoder(hidden_dim)
+    assert (
+        encoder(
+            torch.rand(batch, graph_event_seq_len),
+            torch.randint(num_node, (batch, graph_event_seq_len)),
+            torch.randint(2, (batch, graph_event_seq_len)).float(),
+            torch.randint(num_node, (batch, graph_event_seq_len)),
+            torch.randint(2, (batch, graph_event_seq_len)).float(),
+            torch.randint(num_label, (batch, graph_event_seq_len)),
+            torch.rand(num_node, hidden_dim),
+            torch.rand(num_label, hidden_dim),
+        ).size()
+        == (batch, graph_event_seq_len, hidden_dim)
+    )

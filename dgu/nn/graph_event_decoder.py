@@ -242,3 +242,65 @@ class StaticLabelGraphEventDecoder(nn.Module):
             "dst_node_logits": dst_node_logits,
             "label_logits": label_logits,
         }
+
+
+class StaticLabelGraphEventEncoder(nn.Module):
+    def __init__(self, hidden_dim: int) -> None:
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.linear = nn.Sequential(
+            nn.Linear(4 * hidden_dim, 2 * hidden_dim),
+            nn.ReLU(),
+            nn.Linear(2 * hidden_dim, hidden_dim),
+        )
+
+    def forward(
+        self,
+        event_type_id: torch.Tensor,
+        src_node_id: torch.Tensor,
+        src_node_mask: torch.Tensor,
+        dst_node_id: torch.Tensor,
+        dst_node_mask: torch.Tensor,
+        label_id: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        label_embeddings: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Encode the given batch of graph events. We concatenate all the components
+        and pass it through two linear layers with a ReLU.
+
+        event_type_id: (batch, graph_event_seq_len)
+        src_node_id: (batch, graph_event_seq_len)
+        src_node_mask: (batch, graph_event_seq_len)
+        dst_node_id: (batch, graph_event_seq_len)
+        dst_node_mask: (batch, graph_event_seq_len)
+        label_id: (batch, graph_event_seq_len)
+        node_embeddings: (num_node, hidden_dim)
+        label_embeddings: (num_label, hidden_dim)
+
+        output: (batch, graph_event_seq_len, hidden_dim)
+        """
+        src_node_embeddings = node_embeddings[src_node_id]
+        src_node_embeddings *= src_node_mask.unsqueeze(-1)
+        # (batch, graph_event_seq_len, hidden_dim)
+
+        dst_node_embeddings = node_embeddings[src_node_id]
+        dst_node_embeddings *= dst_node_mask.unsqueeze(-1)
+        # (batch, graph_event_seq_len, hidden_dim)
+
+        label_embeddings = label_embeddings[label_id]
+        label_embeddings *= src_node_mask.unsqueeze(-1)
+        # (batch, graph_event_seq_len, hidden_dim)
+
+        concat = torch.cat(
+            [
+                event_type_id.unsqueeze(-1).expand(-1, -1, self.hidden_dim),
+                src_node_embeddings,
+                dst_node_embeddings,
+                label_embeddings,
+            ],
+            dim=2,
+        )
+        # (batch, graph_event_seq_len, 4*hidden_dim)
+        return self.linear(concat)
+        # (batch, graph_event_seq_len, hidden_dim)
