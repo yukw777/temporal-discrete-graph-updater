@@ -36,11 +36,9 @@ class EventTypeHead(nn.Module):
 
         # autoregressive embedding
         # get the one hot encoding of event
-        one_hot_event_type = (
-            F.one_hot(event_type_logits.argmax(dim=1), num_classes=len(EVENT_TYPES))
-            .float()
-            .to(graph_event_embeddings.device)
-        )
+        one_hot_event_type = F.one_hot(
+            event_type_logits.argmax(dim=1), num_classes=len(EVENT_TYPES)
+        ).float()
         # (batch, num_event_type)
         # pass it through a linear layer
         encoded_event_type = self.autoregressive_linear(one_hot_event_type)
@@ -95,13 +93,9 @@ class EventNodeHead(nn.Module):
             # if there are no nodes, just use an empty tensor without taking an argmax
             one_hot_selected_node = torch.empty_like(node_logits)
         else:
-            one_hot_selected_node = (
-                F.one_hot(
-                    node_logits.argmax(dim=1), num_classes=node_embeddings.size(0)
-                )
-                .float()
-                .to(autoregressive_embedding.device)
-            )
+            one_hot_selected_node = F.one_hot(
+                node_logits.argmax(dim=1), num_classes=node_embeddings.size(0)
+            ).float()
         # (batch, num_node)
         # multiply by the key
         selected_node_embeddings = torch.matmul(one_hot_selected_node, key)
@@ -170,9 +164,7 @@ class EventStaticLabelHead(nn.Module):
         # (batch, num_label)
 
         # calculate label mask based on event_type
-        one_hot_event_type = (
-            F.one_hot(event_type, num_classes=len(EVENT_TYPES)).float().to(label_logits)
-        )
+        one_hot_event_type = F.one_hot(event_type, num_classes=len(EVENT_TYPES)).float()
         # (batch, num_event_type)
         mask = torch.hstack(
             [
