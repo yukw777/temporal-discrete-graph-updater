@@ -108,4 +108,13 @@ CONSTANT_NAMES = {
     "RECIPE": "cookbook",
 }
 
-EVENT_TYPES = ["start", "end", "node-add", "node-delete", "edge-add", "edge-delete"]
+EVENT_TYPES = [
+    "pad",
+    "start",
+    "end",
+    "node-add",
+    "node-delete",
+    "edge-add",
+    "edge-delete",
+]
+EVENT_TYPE_ID_MAP = {v: k for k, v in enumerate(EVENT_TYPES)}

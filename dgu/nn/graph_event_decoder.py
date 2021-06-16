@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from typing import Tuple, Dict
 
-from dgu.constants import EVENT_TYPES
+from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
 
 class EventTypeHead(nn.Module):
@@ -177,13 +177,15 @@ class EventStaticLabelHead(nn.Module):
         mask = torch.hstack(
             [
                 # one hot encoding for node add/delete events
-                one_hot_event_type[:, 2:4]
+                one_hot_event_type[
+                    :, EVENT_TYPE_ID_MAP["node-add"] : EVENT_TYPE_ID_MAP["edge-add"]
+                ]
                 # sum to get one hot encoding for node events
                 .sum(1, keepdim=True)
                 # repeat for the number of node labels
                 .expand(-1, self.num_node_label),
                 # one hot encoding for edge add/delete events
-                one_hot_event_type[:, 4:]
+                one_hot_event_type[:, EVENT_TYPE_ID_MAP["edge-add"] :]
                 # sum to get one hot encoding for edge events
                 .sum(1, keepdim=True)
                 # repeat for the number of edge labels

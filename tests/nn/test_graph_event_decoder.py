@@ -9,7 +9,7 @@ from dgu.nn.graph_event_decoder import (
     EventStaticLabelHead,
     StaticLabelGraphEventDecoder,
 )
-from dgu.constants import EVENT_TYPES
+from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
 
 @pytest.mark.parametrize("hidden_dim,batch", [(12, 1), (64, 8)])
@@ -71,14 +71,24 @@ def test_event_static_label_head(
 
     # make sure the logits are masked correctly
     for et, logits in zip(event_type, label_logits):
-        if et.item() in {0, 1}:
-            # pad or end so all the logits should be zero
+        if et.item() in {
+            EVENT_TYPE_ID_MAP["pad"],
+            EVENT_TYPE_ID_MAP["start"],
+            EVENT_TYPE_ID_MAP["end"],
+        }:
+            # pad, start or end so all the logits should be zero
             assert logits.equal(torch.zeros(num_node_label + num_edge_label))
-        elif et.item() in {2, 3}:
+        elif et.item() in {
+            EVENT_TYPE_ID_MAP["node-add"],
+            EVENT_TYPE_ID_MAP["node-delete"],
+        }:
             # node-add or node-delete so the edge logits should be zero
             assert not logits[:num_node_label].equal(torch.zeros(num_node_label))
             assert logits[num_node_label:].equal(torch.zeros(num_edge_label))
-        elif et.item() in {4, 5}:
+        elif et.item() in {
+            EVENT_TYPE_ID_MAP["edge-add"],
+            EVENT_TYPE_ID_MAP["edge-delete"],
+        }:
             # edge-add or edge-delete so the node logits should be zero
             assert logits[:num_node_label].equal(torch.zeros(num_node_label))
             assert not logits[num_node_label:].equal(torch.zeros(num_edge_label))

@@ -11,7 +11,7 @@ from functools import partial
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.constants import EVENT_TYPES
+from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -235,10 +235,6 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             to_absolute_path(word_vocab_file)
         )
 
-        self.EVENT_TYPE_ID_MAP: Dict[str, int] = {
-            v: k for k, v in enumerate(EVENT_TYPES)
-        }
-
     def prepare_data(self) -> None:
         pass
 
@@ -292,13 +288,13 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         )
         event_type_ids = torch.tensor(
             # start and end tokens
-            [self.EVENT_TYPE_ID_MAP["start"]]
+            [EVENT_TYPE_ID_MAP["start"]]
             + [
-                self.EVENT_TYPE_ID_MAP[event["type"]]
+                EVENT_TYPE_ID_MAP[event["type"]]
                 for example in batch
                 for event in example["event_seq"]
             ]
-            + [self.EVENT_TYPE_ID_MAP["end"]]
+            + [EVENT_TYPE_ID_MAP["end"]]
         )
         event_timestamps = torch.tensor(
             # 0 timestamp for start and end tokens

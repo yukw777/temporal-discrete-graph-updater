@@ -93,7 +93,7 @@ def tw_cmd_gen_datamodule():
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
-                "event_type_ids": torch.tensor([0, 2, 2, 4, 1]),
+                "event_type_ids": torch.tensor([1, 3, 3, 5, 2]),
                 "event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0]),
                 "event_src_ids": torch.tensor([0, 0, 1, 0, 0]),
                 "event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0]),
@@ -250,7 +250,7 @@ def tw_cmd_gen_datamodule():
                         39,
                     ]
                 ),
-                "event_type_ids": torch.tensor([0, 2, 2, 4, 2, 4, 2, 2, 4, 4, 5, 1]),
+                "event_type_ids": torch.tensor([1, 3, 3, 5, 3, 5, 3, 3, 5, 5, 6, 2]),
                 "event_timestamps": torch.tensor(
                     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 0.0]
                 ),
