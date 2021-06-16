@@ -257,9 +257,9 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "prev_action_word_ids": (batch, prev_action_len),
             "prev_action_mask": (batch, prev_action_len),
             "subgraph_node_ids": (num_nodes),
-            "event_type_ids": (event_seq_len),
             "event_timestamps": (event_seq_len),
-            "event_timestamp_mask": (event_seq_len),
+            "event_mask": (event_seq_len),
+            "event_type_ids": (event_seq_len),
             "event_src_ids": (event_seq_len),
             "event_src_mask": (event_seq_len),
             "event_dst_ids": (event_seq_len),
@@ -298,7 +298,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             + [EVENT_TYPE_ID_MAP["end"]]
         )
         event_timestamps = torch.tensor(
-            # 0 timestamp for start and end tokens
+            # 0 timestamp for start and end events
             [0.0]
             + [
                 float(event["timestamp"])
@@ -307,8 +307,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             ]
             + [0.0]
         )
-        event_timestamp_mask = torch.tensor(
-            # mask out start and end tokens
+        event_mask = torch.tensor(
+            # mask out start and end events
             [0.0]
             + [1.0 for example in batch for event in example["event_seq"]]
             + [0.0]
@@ -367,9 +367,9 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
             "subgraph_node_ids": subgraph_node_ids,
-            "event_type_ids": event_type_ids,
             "event_timestamps": event_timestamps,
-            "event_timestamp_mask": event_timestamp_mask,
+            "event_mask": event_mask,
+            "event_type_ids": event_type_ids,
             "event_src_ids": torch.tensor(event_src_ids),
             "event_src_mask": torch.tensor(event_src_mask),
             "event_dst_ids": torch.tensor(event_dst_ids),
