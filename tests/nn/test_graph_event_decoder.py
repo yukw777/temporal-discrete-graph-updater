@@ -141,7 +141,7 @@ def test_static_label_graph_event_decoder(
 def test_static_label_graph_event_encoder(
     hidden_dim, batch, graph_event_seq_len, num_node, num_label
 ):
-    encoder = StaticLabelGraphEventEncoder(hidden_dim)
+    encoder = StaticLabelGraphEventEncoder()
     assert (
         encoder(
             torch.rand(batch, graph_event_seq_len),
@@ -150,8 +150,9 @@ def test_static_label_graph_event_encoder(
             torch.randint(num_node, (batch, graph_event_seq_len)),
             torch.randint(2, (batch, graph_event_seq_len)).float(),
             torch.randint(num_label, (batch, graph_event_seq_len)),
+            torch.randint(2, (batch, graph_event_seq_len)).float(),
             torch.rand(num_node, hidden_dim),
             torch.rand(num_label, hidden_dim),
         ).size()
-        == (batch, graph_event_seq_len, hidden_dim)
+        == (batch, graph_event_seq_len, 4 * hidden_dim)
     )
