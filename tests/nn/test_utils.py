@@ -53,50 +53,81 @@ def test_masked_softmax():
         (
             torch.tensor(
                 [
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["end"],
-                    EVENT_TYPE_ID_MAP["pad"],
+                    [
+                        EVENT_TYPE_ID_MAP["start"],
+                        EVENT_TYPE_ID_MAP["end"],
+                        EVENT_TYPE_ID_MAP["pad"],
+                    ]
                 ]
             ),
-            torch.zeros(3),
-            torch.zeros(3),
-            torch.zeros(3),
+            torch.zeros(1, 3),
+            torch.zeros(1, 3),
+            torch.zeros(1, 3),
         ),
         (
             torch.tensor(
                 [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
+                    [
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                    ]
                 ]
             ),
-            torch.ones(2),
-            torch.tensor([0.0, 1.0]),
-            torch.zeros(2),
+            torch.ones(1, 2),
+            torch.tensor([[0.0, 1.0]]),
+            torch.zeros(1, 2),
         ),
         (
             torch.tensor(
                 [
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    [
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                    ]
                 ]
             ),
-            torch.ones(2),
-            torch.ones(2),
-            torch.ones(2),
+            torch.ones(1, 2),
+            torch.ones(1, 2),
+            torch.ones(1, 2),
         ),
         (
             torch.tensor(
                 [
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
+                    [
+                        EVENT_TYPE_ID_MAP["start"],
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                    ]
                 ]
             ),
-            torch.tensor([0.0, 1.0, 1.0, 1.0, 1.0]),
-            torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0]),
-            torch.tensor([0.0, 0.0, 1.0, 1.0, 0.0]),
+            torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0]]),
+            torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0]]),
+            torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]),
+        ),
+        (
+            torch.tensor(
+                [
+                    [
+                        EVENT_TYPE_ID_MAP["start"],
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                    ],
+                    [
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                        EVENT_TYPE_ID_MAP["end"],
+                    ],
+                ]
+            ),
+            torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 0.0]]),
+            torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0, 0.0]]),
+            torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0], [0.0, 1.0, 1.0, 0.0, 0.0]]),
         ),
     ],
 )

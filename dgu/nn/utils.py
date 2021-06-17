@@ -1,9 +1,9 @@
 import torch
 import torch.nn.functional as F
 
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple
 
-from dgu.constants import EVENT_TYPES
+from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -36,42 +36,31 @@ def compute_masks_from_event_type_ids(
     3. destination mask: masks out special events and node events
         as only edge events have destination nodes.
 
-    event_type_ids: (event_seq_len)
+    Dimensions of the masks are the same as that of event_type_ids.
 
-    output:
-        event_mask: (event_seq_len)
-        src_mask: (event_seq_len)
-        dst_mask: (event_seq_len)
+    output: (event_mask, src_mask, dst_mask)
     """
-    event_mask: List[float] = []
-    src_mask: List[float] = []
-    dst_mask: List[float] = []
-    for event_type_id in event_type_ids.tolist():
-        event = EVENT_TYPES[event_type_id]
-        if event in {"pad", "start", "end"}:
-            # special events
-            event_mask.append(0.0)
-            src_mask.append(0.0)
-            dst_mask.append(0.0)
-        elif event in {"node-add", "node-delete"}:
-            # node events
-            if event == "node-add":
-                src_mask.append(0.0)
-            else:
-                src_mask.append(1.0)
-            event_mask.append(1.0)
-            dst_mask.append(0.0)
-        elif event in {"edge-add", "edge-delete"}:
-            # edge events
-            event_mask.append(1.0)
-            src_mask.append(1.0)
-            dst_mask.append(1.0)
-        else:
-            raise ValueError(f"Unknown event: {event_type_id}: {event}")
-
-    device = event_type_ids.device
-    return (
-        torch.tensor(event_mask, device=device),
-        torch.tensor(src_mask, device=device),
-        torch.tensor(dst_mask, device=device),
+    is_special_event = torch.logical_or(
+        torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["pad"],
+            event_type_ids == EVENT_TYPE_ID_MAP["start"],
+        ),
+        event_type_ids == EVENT_TYPE_ID_MAP["end"],
     )
+    # (batch, event_seq_len)
+    is_node_delete = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
+    # (batch, event_seq_len)
+    is_edge_event = torch.logical_or(
+        event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
+        event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+    )
+    # (batch, event_seq_len)
+
+    event_mask = torch.logical_not(is_special_event).float()
+    # (batch, event_seq_len)
+    src_mask = torch.logical_or(is_node_delete, is_edge_event).float()
+    # (batch, event_seq_len)
+    dst_mask = is_edge_event.float()
+    # (batch, event_seq_len)
+
+    return event_mask, src_mask, dst_mask
