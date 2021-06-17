@@ -7,7 +7,6 @@ from dgu.data import (
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
 )
-from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.mark.parametrize(
@@ -348,69 +347,3 @@ def test_read_label_vocab_files():
         "in": 4,
         "is": 5,
     }
-
-
-@pytest.mark.parametrize(
-    "event_type_ids, expected_event_mask, expected_src_mask, expected_dst_mask",
-    [
-        (
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["end"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                ]
-            ),
-            torch.zeros(3),
-            torch.zeros(3),
-            torch.zeros(3),
-        ),
-        (
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                ]
-            ),
-            torch.ones(2),
-            torch.tensor([0.0, 1.0]),
-            torch.zeros(2),
-        ),
-        (
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
-            torch.ones(2),
-            torch.ones(2),
-            torch.ones(2),
-        ),
-        (
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                ]
-            ),
-            torch.tensor([0.0, 1.0, 1.0, 1.0, 1.0]),
-            torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0]),
-            torch.tensor([0.0, 0.0, 1.0, 1.0, 0.0]),
-        ),
-    ],
-)
-def test_compute_masks_from_event_type_ids(
-    event_type_ids, expected_event_mask, expected_src_mask, expected_dst_mask
-):
-    (
-        event_mask,
-        src_mask,
-        dst_mask,
-    ) = TWCmdGenTemporalDataModule.compute_masks_from_event_type_ids(event_type_ids)
-    assert event_mask.equal(expected_event_mask)
-    assert src_mask.equal(expected_src_mask)
-    assert dst_mask.equal(expected_dst_mask)

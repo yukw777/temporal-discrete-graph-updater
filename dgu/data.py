@@ -4,14 +4,15 @@ import pytorch_lightning as pl
 import torch
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any, Optional, Tuple
+from typing import List, Iterator, Dict, Any, Optional
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
+from dgu.nn.utils import compute_masks_from_event_type_ids
+from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -337,13 +338,13 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             tgt_event_mask,
             tgt_event_src_mask,
             tgt_event_dst_mask,
-        ) = self.compute_masks_from_event_type_ids(tgt_event_type_ids)
+        ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
 
         (
             groundtruth_event_mask,
             groundtruth_event_src_mask,
             groundtruth_event_dst_mask,
-        ) = self.compute_masks_from_event_type_ids(groundtruth_event_type_ids)
+        ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
 
         # subgraph node IDs so that we only get the memory vectors that are relevant
         game_walkthrough_set = set(
@@ -441,50 +442,3 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                 if stripped != "":
                     id_map[stripped] = i + num_node_label
         return id_map
-
-    @staticmethod
-    def compute_masks_from_event_type_ids(
-        event_type_ids: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Compute three masks from the given event type ids tensor.
-        1. event mask: masks out special events like start, end and pad
-        2. source mask: masks out special events, as well as node-add
-            as it is adding a new node.
-        3. destination mask: masks out special events and node events
-            as only edge events have destination nodes.
-
-        event_type_ids: (event_seq_len)
-
-        output:
-            event_mask: (event_seq_len)
-            src_mask: (event_seq_len)
-            dst_mask: (event_seq_len)
-        """
-        event_mask: List[float] = []
-        src_mask: List[float] = []
-        dst_mask: List[float] = []
-        for event_type_id in event_type_ids.tolist():
-            event = EVENT_TYPES[event_type_id]
-            if event in {"pad", "start", "end"}:
-                # special events
-                event_mask.append(0.0)
-                src_mask.append(0.0)
-                dst_mask.append(0.0)
-            elif event in {"node-add", "node-delete"}:
-                # node events
-                if event == "node-add":
-                    src_mask.append(0.0)
-                else:
-                    src_mask.append(1.0)
-                event_mask.append(1.0)
-                dst_mask.append(0.0)
-            elif event in {"edge-add", "edge-delete"}:
-                # edge events
-                event_mask.append(1.0)
-                src_mask.append(1.0)
-                dst_mask.append(1.0)
-            else:
-                raise ValueError(f"Unknown event: {event_type_id}: {event}")
-
-        return torch.tensor(event_mask), torch.tensor(src_mask), torch.tensor(dst_mask)
