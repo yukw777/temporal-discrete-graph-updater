@@ -7,6 +7,7 @@ from dgu.data import (
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
 )
+from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.mark.parametrize(
@@ -51,6 +52,8 @@ def tw_cmd_gen_datamodule():
         1,
         1,
         "vocabs/word_vocab.txt",
+        "vocabs/node_vocab.txt",
+        "vocabs/relation_vocab.txt",
     )
 
 
@@ -75,7 +78,7 @@ def tw_cmd_gen_datamodule():
                             "type": "node-add",
                             "node_id": 1,
                             "timestamp": 0,
-                            "label": "hungry",
+                            "label": "open",
                         },
                         {
                             "type": "edge-add",
@@ -93,15 +96,20 @@ def tw_cmd_gen_datamodule():
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
-                "event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0, 0.0]),
-                "event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0, 0.0]),
-                "event_type_ids": torch.tensor([1, 3, 3, 5, 2]),
-                "event_src_ids": torch.tensor([0, 0, 1, 0, 0]),
-                "event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0]),
-                "event_dst_ids": torch.tensor([0, 0, 0, 1, 0]),
-                "event_dst_mask": torch.tensor([0.0, 0.0, 0.0, 1.0, 0.0]),
-                "event_label_word_ids": torch.tensor([[0], [530], [377], [396], [0]]),
-                "event_label_mask": torch.tensor([[0.0], [1.0], [1.0], [1.0], [0.0]]),
+                "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
+                "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
+                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
+                "tgt_event_src_ids": torch.tensor([0, 0, 1, 0]),
+                "tgt_event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
+                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1]),
+                "tgt_event_dst_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
+                "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
+                "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
+                "groundtruth_event_src_ids": torch.tensor([0, 1, 0, 0]),
+                "groundtruth_event_src_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
+                "groundtruth_event_dst_ids": torch.tensor([0, 0, 1, 0]),
+                "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
+                "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
             },
         ),
         (
@@ -122,7 +130,7 @@ def tw_cmd_gen_datamodule():
                             "type": "node-add",
                             "node_id": 1,
                             "timestamp": 0,
-                            "label": "hungry",
+                            "label": "open",
                         },
                         {
                             "type": "edge-add",
@@ -135,7 +143,7 @@ def tw_cmd_gen_datamodule():
                             "type": "node-add",
                             "node_id": 2,
                             "timestamp": 0,
-                            "label": "door",
+                            "label": "front door",
                         },
                         {
                             "type": "edge-add",
@@ -251,52 +259,41 @@ def tw_cmd_gen_datamodule():
                         39,
                     ]
                 ),
-                "event_timestamps": torch.tensor(
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 0.0]
+                "tgt_event_timestamps": torch.tensor(
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
                 ),
-                "event_mask": torch.tensor(
-                    [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
+                "tgt_event_mask": torch.tensor(
+                    [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
                 ),
-                "event_type_ids": torch.tensor([1, 3, 3, 5, 3, 5, 3, 3, 5, 5, 6, 2]),
-                "event_src_ids": torch.tensor([0, 0, 1, 0, 2, 2, 3, 4, 3, 3, 3, 0]),
-                "event_src_mask": torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5, 3, 5, 3, 3, 5, 5, 6]),
+                "tgt_event_src_ids": torch.tensor([0, 0, 1, 0, 2, 2, 3, 4, 3, 3, 3]),
+                "tgt_event_src_mask": torch.tensor(
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 ),
-                "event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 4, 0]),
-                "event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 4]),
+                "tgt_event_dst_mask": torch.tensor(
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 ),
-                "event_label_word_ids": torch.tensor(
-                    [
-                        [0, 0],
-                        [530, 0],
-                        [377, 0],
-                        [396, 0],
-                        [251, 0],
-                        [742, 486],
-                        [305, 0],
-                        [620, 0],
-                        [494, 0],
-                        [382, 0],
-                        [494, 0],
-                        [0, 0],
-                    ]
+                "tgt_event_label_ids": torch.tensor(
+                    [0, 1, 7, 101, 45, 105, 43, 82, 102, 100, 102]
                 ),
-                "event_label_mask": torch.tensor(
-                    [
-                        [0.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 1.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [0.0, 0.0],
-                    ]
+                "groundtruth_event_type_ids": torch.tensor(
+                    [3, 3, 5, 3, 5, 3, 3, 5, 5, 6, 2]
+                ),
+                "groundtruth_event_src_ids": torch.tensor(
+                    [0, 1, 0, 2, 2, 3, 4, 3, 3, 3, 0]
+                ),
+                "groundtruth_event_src_mask": torch.tensor(
+                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                ),
+                "groundtruth_event_dst_ids": torch.tensor(
+                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 4, 0]
+                ),
+                "groundtruth_event_dst_mask": torch.tensor(
+                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                ),
+                "groundtruth_event_label_ids": torch.tensor(
+                    [1, 7, 101, 45, 105, 43, 82, 102, 100, 102, 0]
                 ),
             },
         ),
@@ -311,11 +308,109 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["prev_action_word_ids"].equal(expected["prev_action_word_ids"])
     assert collated["prev_action_mask"].equal(expected["prev_action_mask"])
     assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
-    assert collated["event_timestamps"].equal(expected["event_timestamps"])
-    assert collated["event_mask"].equal(expected["event_mask"])
-    assert collated["event_type_ids"].equal(expected["event_type_ids"])
-    assert collated["event_src_ids"].equal(expected["event_src_ids"])
-    assert collated["event_dst_ids"].equal(expected["event_dst_ids"])
-    assert collated["event_dst_mask"].equal(expected["event_dst_mask"])
-    assert collated["event_label_word_ids"].equal(expected["event_label_word_ids"])
-    assert collated["event_label_mask"].equal(expected["event_label_mask"])
+    assert collated["tgt_event_timestamps"].equal(expected["tgt_event_timestamps"])
+    assert collated["tgt_event_mask"].equal(expected["tgt_event_mask"])
+    assert collated["tgt_event_type_ids"].equal(expected["tgt_event_type_ids"])
+    assert collated["tgt_event_src_ids"].equal(expected["tgt_event_src_ids"])
+    assert collated["tgt_event_src_mask"].equal(expected["tgt_event_src_mask"])
+    assert collated["tgt_event_dst_ids"].equal(expected["tgt_event_dst_ids"])
+    assert collated["tgt_event_dst_mask"].equal(expected["tgt_event_dst_mask"])
+    assert collated["tgt_event_label_ids"].equal(expected["tgt_event_label_ids"])
+    assert collated["groundtruth_event_type_ids"].equal(
+        expected["groundtruth_event_type_ids"]
+    )
+    assert collated["groundtruth_event_src_ids"].equal(
+        expected["groundtruth_event_src_ids"]
+    )
+    assert collated["groundtruth_event_src_mask"].equal(
+        expected["groundtruth_event_src_mask"]
+    )
+    assert collated["groundtruth_event_dst_ids"].equal(
+        expected["groundtruth_event_dst_ids"]
+    )
+    assert collated["groundtruth_event_dst_mask"].equal(
+        expected["groundtruth_event_dst_mask"]
+    )
+    assert collated["groundtruth_event_label_ids"].equal(
+        expected["groundtruth_event_label_ids"]
+    )
+
+
+def test_read_label_vocab_files():
+    label_id_map = TWCmdGenTemporalDataModule.read_label_vocab_files(
+        "tests/data/test_node_vocab.txt", "tests/data/test_relation_vocab.txt"
+    )
+    assert label_id_map == {
+        "": 0,
+        "player": 1,
+        "inventory": 2,
+        "chopped": 3,
+        "in": 4,
+        "is": 5,
+    }
+
+
+@pytest.mark.parametrize(
+    "event_type_ids, expected_event_mask, expected_src_mask, expected_dst_mask",
+    [
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+            torch.zeros(3),
+            torch.zeros(3),
+            torch.zeros(3),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.ones(2),
+            torch.tensor([0.0, 1.0]),
+            torch.zeros(2),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.ones(2),
+            torch.ones(2),
+            torch.ones(2),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.tensor([0.0, 1.0, 1.0, 1.0, 1.0]),
+            torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0]),
+            torch.tensor([0.0, 0.0, 1.0, 1.0, 0.0]),
+        ),
+    ],
+)
+def test_compute_masks_from_event_type_ids(
+    event_type_ids, expected_event_mask, expected_src_mask, expected_dst_mask
+):
+    (
+        event_mask,
+        src_mask,
+        dst_mask,
+    ) = TWCmdGenTemporalDataModule.compute_masks_from_event_type_ids(event_type_ids)
+    assert event_mask.equal(expected_event_mask)
+    assert src_mask.equal(expected_src_mask)
+    assert dst_mask.equal(expected_dst_mask)

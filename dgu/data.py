@@ -4,14 +4,14 @@ import pytorch_lightning as pl
 import torch
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any, Optional
+from typing import List, Iterator, Dict, Any, Optional, Tuple
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -219,6 +219,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         test_batch_size: int,
         test_num_workers: int,
         word_vocab_file: str,
+        node_vocab_file: str,
+        relation_vocab_file: str,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
@@ -233,6 +235,9 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_file)
+        )
+        self.label_id_map = self.read_label_vocab_files(
+            node_vocab_file, relation_vocab_file
         )
 
     def prepare_data(self) -> None:
@@ -257,93 +262,90 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "prev_action_word_ids": (batch, prev_action_len),
             "prev_action_mask": (batch, prev_action_len),
             "subgraph_node_ids": (num_nodes),
-            "event_timestamps": (event_seq_len),
-            "event_mask": (event_seq_len),
-            "event_type_ids": (event_seq_len),
-            "event_src_ids": (event_seq_len),
-            "event_src_mask": (event_seq_len),
-            "event_dst_ids": (event_seq_len),
-            "event_dst_mask": (event_seq_len),
-            "event_label_word_ids": (event_seq_len, label_len),
-            "event_label_mask": (event_seq_len, label_len),
+            "tgt_event_timestamps": (event_seq_len),
+                Used for teacher forcing message calculation.
+            "tgt_event_mask": (event_seq_len),
+                Used for teacher forcing message calculation, and label mask.
+            "tgt_event_type_ids": (event_seq_len),
+            "tgt_event_src_ids": (event_seq_len),
+            "tgt_event_src_mask": (event_seq_len),
+            "tgt_event_dst_ids": (event_seq_len),
+            "tgt_event_dst_mask": (event_seq_len),
+            "tgt_event_label_ids": (event_seq_len),
+            "groundtruth_event_type_ids": (event_seq_len),
+            "groundtruth_event_src_ids": (event_seq_len),
+            "groundtruth_event_src_mask": (event_seq_len),
+            "groundtruth_event_dst_ids": (event_seq_len),
+            "groundtruth_event_dst_mask": (event_seq_len),
+            "groundtruth_event_label_ids": (event_seq_len),
         }
         """
+        # textual observation
         obs_word_ids, obs_mask = self.preprocessor.preprocess_tokenized(
             [example["observation"].split() for example in batch]
         )
+
+        # textual previous action
         prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
             [example["previous_action"].split() for example in batch]
         )
-        event_label_word_ids, event_label_mask = self.preprocessor.preprocess_tokenized(
-            # empty labels for start and end tokens
-            [[]]  # type: ignore
-            + list(
-                itertools.chain.from_iterable(
-                    [
-                        [event["label"].split() for event in example["event_seq"]]
-                        for example in batch
-                    ]
-                )
-            )
-            + [[]]
+
+        # event types
+        event_type_ids = [
+            EVENT_TYPE_ID_MAP[event["type"]]
+            for example in batch
+            for event in example["event_seq"]
+        ]
+        # prepend a start event
+        tgt_event_type_ids = torch.tensor([EVENT_TYPE_ID_MAP["start"]] + event_type_ids)
+        # append an end event
+        groundtruth_event_type_ids = torch.tensor(
+            event_type_ids + [EVENT_TYPE_ID_MAP["end"]]
         )
-        event_type_ids = torch.tensor(
-            # start and end tokens
-            [EVENT_TYPE_ID_MAP["start"]]
-            + [
-                EVENT_TYPE_ID_MAP[event["type"]]
-                for example in batch
-                for event in example["event_seq"]
-            ]
-            + [EVENT_TYPE_ID_MAP["end"]]
-        )
-        event_timestamps = torch.tensor(
-            # 0 timestamp for start and end events
+
+        tgt_event_timestamps = torch.tensor(
+            # 0 timestamp for start event
             [0.0]
             + [
                 float(event["timestamp"])
                 for example in batch
                 for event in example["event_seq"]
             ]
-            + [0.0]
-        )
-        event_mask = torch.tensor(
-            # mask out start and end events
-            [0.0]
-            + [1.0 for example in batch for event in example["event_seq"]]
-            + [0.0]
         )
 
-        # mask out source IDs for the start token
-        event_src_ids: List[int] = [0]
-        event_src_mask: List[float] = [0.0]
-        event_dst_ids: List[int] = [0]
-        event_dst_mask: List[float] = [0.0]
+        event_src_ids: List[int] = []
+        event_dst_ids: List[int] = []
 
         for example in batch:
             for event in example["event_seq"]:
                 if event["type"] in {"node-add", "node-delete"}:
                     event_src_ids.append(event["node_id"])
-                    if event["type"] == "node-add":
-                        # if it's node-add, we mask it to zero out the previous memory
-                        event_src_mask.append(0.0)
-                    else:
-                        event_src_mask.append(1.0)
                     event_dst_ids.append(0)
-                    event_dst_mask.append(0.0)
                 else:
                     event_src_ids.append(event["src_id"])
-                    event_src_mask.append(1.0)
                     event_dst_ids.append(event["dst_id"])
-                    event_dst_mask.append(1.0)
 
-        # mask out the destination IDs for the end token
-        event_src_ids.append(0)
-        event_src_mask.append(0.0)
-        event_dst_ids.append(0)
-        event_dst_mask.append(0.0)
+        # placeholder node id for the start event
+        tgt_event_src_ids = torch.tensor([0] + event_src_ids)
+        tgt_event_dst_ids = torch.tensor([0] + event_dst_ids)
 
-        # subgraph node IDs
+        # placeholder node id for the end event
+        groundtruth_event_src_ids = torch.tensor(event_src_ids + [0])
+        groundtruth_event_dst_ids = torch.tensor(event_dst_ids + [0])
+
+        (
+            tgt_event_mask,
+            tgt_event_src_mask,
+            tgt_event_dst_mask,
+        ) = self.compute_masks_from_event_type_ids(tgt_event_type_ids)
+
+        (
+            groundtruth_event_mask,
+            groundtruth_event_src_mask,
+            groundtruth_event_dst_mask,
+        ) = self.compute_masks_from_event_type_ids(groundtruth_event_type_ids)
+
+        # subgraph node IDs so that we only get the memory vectors that are relevant
         game_walkthrough_set = set(
             (example["game"], example["walkthrough_step"]) for example in batch
         )
@@ -361,21 +363,38 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             list(graph.filter_node_ids(game_walkthrough_set))
         )
 
+        event_label_ids = [
+            self.label_id_map[event["label"]]
+            for example in batch
+            for event in example["event_seq"]
+        ]
+        # prepend a pad label for start event
+        tgt_event_label_ids = torch.tensor([self.label_id_map[""]] + event_label_ids)
+        # append a pad label for end event
+        groundtruth_event_label_ids = torch.tensor(
+            event_label_ids + [self.label_id_map[""]]
+        )
+
         return {
             "obs_word_ids": obs_word_ids,
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
             "subgraph_node_ids": subgraph_node_ids,
-            "event_timestamps": event_timestamps,
-            "event_mask": event_mask,
-            "event_type_ids": event_type_ids,
-            "event_src_ids": torch.tensor(event_src_ids),
-            "event_src_mask": torch.tensor(event_src_mask),
-            "event_dst_ids": torch.tensor(event_dst_ids),
-            "event_dst_mask": torch.tensor(event_dst_mask),
-            "event_label_word_ids": event_label_word_ids,
-            "event_label_mask": event_label_mask,
+            "tgt_event_timestamps": tgt_event_timestamps,
+            "tgt_event_mask": tgt_event_mask,
+            "tgt_event_type_ids": tgt_event_type_ids,
+            "tgt_event_src_ids": tgt_event_src_ids,
+            "tgt_event_src_mask": tgt_event_src_mask,
+            "tgt_event_dst_ids": tgt_event_dst_ids,
+            "tgt_event_dst_mask": tgt_event_dst_mask,
+            "tgt_event_label_ids": tgt_event_label_ids,
+            "groundtruth_event_type_ids": groundtruth_event_type_ids,
+            "groundtruth_event_src_ids": groundtruth_event_src_ids,
+            "groundtruth_event_src_mask": groundtruth_event_src_mask,
+            "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
+            "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
+            "groundtruth_event_label_ids": groundtruth_event_label_ids,
         }
 
     def train_dataloader(self) -> DataLoader:
@@ -404,3 +423,68 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             pin_memory=True,
             num_workers=self.val_num_workers,
         )
+
+    @staticmethod
+    def read_label_vocab_files(
+        node_vocab_file: str, relation_vocab_file: str
+    ) -> Dict[str, int]:
+        id_map: Dict[str, int] = {"": 0}
+        with open(node_vocab_file) as f:
+            for i, line in enumerate(f):
+                stripped = line.strip()
+                if stripped != "":
+                    id_map[stripped] = i + 1
+        num_node_label = len(id_map)
+        with open(relation_vocab_file) as f:
+            for i, line in enumerate(f):
+                stripped = line.strip()
+                if stripped != "":
+                    id_map[stripped] = i + num_node_label
+        return id_map
+
+    @staticmethod
+    def compute_masks_from_event_type_ids(
+        event_type_ids: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Compute three masks from the given event type ids tensor.
+        1. event mask: masks out special events like start, end and pad
+        2. source mask: masks out special events, as well as node-add
+            as it is adding a new node.
+        3. destination mask: masks out special events and node events
+            as only edge events have destination nodes.
+
+        event_type_ids: (event_seq_len)
+
+        output:
+            event_mask: (event_seq_len)
+            src_mask: (event_seq_len)
+            dst_mask: (event_seq_len)
+        """
+        event_mask: List[float] = []
+        src_mask: List[float] = []
+        dst_mask: List[float] = []
+        for event_type_id in event_type_ids.tolist():
+            event = EVENT_TYPES[event_type_id]
+            if event in {"pad", "start", "end"}:
+                # special events
+                event_mask.append(0.0)
+                src_mask.append(0.0)
+                dst_mask.append(0.0)
+            elif event in {"node-add", "node-delete"}:
+                # node events
+                if event == "node-add":
+                    src_mask.append(0.0)
+                else:
+                    src_mask.append(1.0)
+                event_mask.append(1.0)
+                dst_mask.append(0.0)
+            elif event in {"edge-add", "edge-delete"}:
+                # edge events
+                event_mask.append(1.0)
+                src_mask.append(1.0)
+                dst_mask.append(1.0)
+            else:
+                raise ValueError(f"Unknown event: {event_type_id}: {event}")
+
+        return torch.tensor(event_mask), torch.tensor(src_mask), torch.tensor(dst_mask)
