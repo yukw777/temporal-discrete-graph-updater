@@ -9,6 +9,7 @@ from dgu.nn.graph_event_decoder import (
     EventStaticLabelHead,
     StaticLabelGraphEventDecoder,
     StaticLabelGraphEventEncoder,
+    RNNGraphEventSeq2Seq,
 )
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
@@ -125,8 +126,8 @@ def test_static_label_graph_event_decoder(
     results = decoder(torch.rand(batch, hidden_dim), torch.rand(num_node, hidden_dim))
 
     assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
-    assert results["src_node_logits"].size() == (batch, num_node)
-    assert results["dst_node_logits"].size() == (batch, num_node)
+    assert results["src_logits"].size() == (batch, num_node)
+    assert results["dst_logits"].size() == (batch, num_node)
     assert results["label_logits"].size() == (batch, num_node_label + num_edge_label)
 
 
@@ -156,3 +157,124 @@ def test_static_label_graph_event_encoder(
         ).size()
         == (batch, graph_event_seq_len, 4 * hidden_dim)
     )
+
+
+@pytest.mark.parametrize(
+    "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
+    "batch,obs_seq_len,graph_event_seq_len,num_node",
+    [
+        (20, 10, 15, 7, 1, 5, 10, 12),
+        (20, 10, 15, 7, 5, 5, 10, 12),
+        (36, 24, 25, 10, 8, 20, 18, 36),
+    ],
+)
+def test_rnn_graph_event_seq2seq_teacher_forcing(
+    hidden_dim,
+    key_query_dim,
+    num_node_label,
+    num_edge_label,
+    batch,
+    obs_seq_len,
+    graph_event_seq_len,
+    num_node,
+):
+    seq2seq = RNNGraphEventSeq2Seq(
+        hidden_dim,
+        100,
+        StaticLabelGraphEventEncoder(),
+        StaticLabelGraphEventDecoder(
+            hidden_dim,
+            key_query_dim,
+            torch.rand(num_node_label, hidden_dim),
+            torch.rand(num_edge_label, hidden_dim),
+        ),
+    )
+    seq2seq.train()
+    results = seq2seq(
+        {
+            "delta_g": torch.rand(batch, obs_seq_len, 4 * hidden_dim),
+            "tgt_event_mask": torch.randint(2, (batch, graph_event_seq_len)).float(),
+            "tgt_event_type_ids": torch.randint(
+                len(EVENT_TYPES), (batch, graph_event_seq_len)
+            ),
+            "tgt_event_src_ids": torch.randint(num_node, (batch, graph_event_seq_len)),
+            "tgt_event_src_mask": torch.randint(
+                2, (batch, graph_event_seq_len)
+            ).float(),
+            "tgt_event_dst_ids": torch.randint(num_node, (batch, graph_event_seq_len)),
+            "tgt_event_dst_mask": torch.randint(
+                2, (batch, graph_event_seq_len)
+            ).float(),
+            "tgt_event_label_ids": torch.randint(
+                num_node_label + num_edge_label, (batch, graph_event_seq_len)
+            ),
+            "node_embeddings": torch.rand(num_node, hidden_dim),
+        }
+    )
+    assert results["event_type_logits"].size() == (
+        batch,
+        graph_event_seq_len,
+        len(EVENT_TYPES),
+    )
+    assert results["src_logits"].size() == (batch, graph_event_seq_len, num_node)
+    assert results["dst_logits"].size() == (batch, graph_event_seq_len, num_node)
+    assert results["label_logits"].size() == (
+        batch,
+        graph_event_seq_len,
+        num_node_label + num_edge_label,
+    )
+
+
+@pytest.mark.parametrize(
+    "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
+    "batch,obs_seq_len,graph_event_seq_len,num_node",
+    [
+        (20, 10, 15, 7, 1, 5, 10, 12),
+        (20, 10, 15, 7, 5, 5, 10, 12),
+        (36, 24, 25, 10, 8, 20, 18, 36),
+    ],
+)
+def test_rnn_graph_event_seq2seq_greedy_decode(
+    hidden_dim,
+    key_query_dim,
+    num_node_label,
+    num_edge_label,
+    batch,
+    obs_seq_len,
+    graph_event_seq_len,
+    num_node,
+):
+    seq2seq = RNNGraphEventSeq2Seq(
+        hidden_dim,
+        100,
+        StaticLabelGraphEventEncoder(),
+        StaticLabelGraphEventDecoder(
+            hidden_dim,
+            key_query_dim,
+            torch.rand(num_node_label, hidden_dim),
+            torch.rand(num_edge_label, hidden_dim),
+        ),
+    )
+    seq2seq.eval()
+
+    results = seq2seq(
+        {
+            "delta_g": torch.rand(batch, obs_seq_len, 4 * hidden_dim),
+            "node_embeddings": torch.rand(num_node, hidden_dim),
+        }
+    )
+    assert results["decoded_event_type_ids"].size(0) == batch
+    assert results["decoded_event_type_ids"].dtype == torch.int64
+    assert results["decoded_src_ids"].size(0) == batch
+    assert results["decoded_src_ids"].dtype == torch.int64
+    assert results["decoded_dst_ids"].size(0) == batch
+    assert results["decoded_dst_ids"].dtype == torch.int64
+    assert results["decoded_label_ids"].size(0) == batch
+    assert results["decoded_label_ids"].dtype == torch.int64
+
+    assert results["decoded_event_type_ids"].size(1) == results["decoded_src_ids"].size(
+        1
+    )
+    assert results["decoded_src_ids"].size(1) == results["decoded_dst_ids"].size(1)
+    assert results["decoded_dst_ids"].size(1) == results["decoded_label_ids"].size(1)
+    assert results["decoded_label_ids"].size(1) <= seq2seq.max_decode_len + 1

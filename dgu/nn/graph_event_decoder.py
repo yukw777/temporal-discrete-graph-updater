@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from typing import Tuple, Dict
 
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from dgu.nn.utils import compute_masks_from_event_type_ids
 
 
 class EventTypeHead(nn.Module):
@@ -200,8 +201,8 @@ class StaticLabelGraphEventDecoder(nn.Module):
     ) -> None:
         super().__init__()
         self.event_type_head = EventTypeHead(hidden_dim)
-        self.event_src_node_head = EventNodeHead(hidden_dim, key_query_dim)
-        self.event_dst_node_head = EventNodeHead(hidden_dim, key_query_dim)
+        self.event_src_head = EventNodeHead(hidden_dim, key_query_dim)
+        self.event_dst_head = EventNodeHead(hidden_dim, key_query_dim)
         self.event_label_head = EventStaticLabelHead(
             hidden_dim, key_query_dim, node_label_embeddings, edge_label_embeddings
         )
@@ -219,18 +220,18 @@ class StaticLabelGraphEventDecoder(nn.Module):
 
         output: {
             "event_type_logits": (batch, num_event_type),
-            "src_node_logits": (batch, num_node),
-            "dst_node_logits": (batch, num_node),
+            "src_logits": (batch, num_node),
+            "dst_logits": (batch, num_node),
             "label_logits": (batch, num_label),
         }
         """
         event_type_logits, autoregressive_embedding = self.event_type_head(
             graph_event_embeddings
         )
-        src_node_logits, autoregressive_embedding = self.event_src_node_head(
+        src_logits, autoregressive_embedding = self.event_src_head(
             autoregressive_embedding, node_embeddings
         )
-        dst_node_logits, autoregressive_embedding = self.event_dst_node_head(
+        dst_logits, autoregressive_embedding = self.event_dst_head(
             autoregressive_embedding, node_embeddings
         )
         label_logits = self.event_label_head(
@@ -238,8 +239,8 @@ class StaticLabelGraphEventDecoder(nn.Module):
         )
         return {
             "event_type_logits": event_type_logits,
-            "src_node_logits": src_node_logits,
-            "dst_node_logits": dst_node_logits,
+            "src_logits": src_logits,
+            "dst_logits": dst_logits,
             "label_logits": label_logits,
         }
 
@@ -295,3 +296,224 @@ class StaticLabelGraphEventEncoder(nn.Module):
             dim=2,
         )
         # (batch, graph_event_seq_len, 4*hidden_dim)
+
+
+class RNNGraphEventSeq2Seq(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        max_decode_len: int,
+        graph_event_encoder: StaticLabelGraphEventEncoder,
+        graph_event_decoder: StaticLabelGraphEventDecoder,
+    ) -> None:
+        super().__init__()
+        self.max_decode_len = max_decode_len
+        self.rnn_encoder = nn.GRU(4 * hidden_dim, hidden_dim, batch_first=True)
+        self.rnn_decoder = nn.GRU(4 * hidden_dim, hidden_dim, batch_first=True)
+        self.graph_event_encoder = graph_event_encoder
+        self.graph_event_decoder = graph_event_decoder
+
+    def forward(self, input: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        input: {
+            delta_g: (batch, obs_seq_len, 4 * hidden_dim)
+            tgt_event_mask: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_type_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_src_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_src_mask: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_dst_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_dst_mask: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_label_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            node_embeddings: (num_node, hidden_dim)
+        }
+
+        output:
+        if training:
+            {
+                event_type_logits: (batch, graph_event_seq_len, num_event_type)
+                src_logits: (batch, graph_event_seq_len, num_node)
+                dst_logits: (batch, graph_event_seq_len, num_node)
+                label_logits: (batch, graph_event_seq_len, num_label)
+            }
+        else:
+            {
+                decoded_event_type_ids: (batch, decoded_len),
+                decoded_src_ids: (batch, decoded_len),
+                decoded_dst_ids: (batch, decoded_len),
+                decoded_label_ids: (batch, decoded_len),
+            }
+        """
+        _, context = self.rnn_encoder(input["delta_g"])
+        # (1, batch, hidden_dim)
+        if self.training:
+            # teacher forcing
+            encoded_graph_event_seq = self.graph_event_encoder(
+                input["tgt_event_type_ids"],
+                input["tgt_event_src_ids"],
+                input["tgt_event_src_mask"],
+                input["tgt_event_dst_ids"],
+                input["tgt_event_dst_mask"],
+                input["tgt_event_label_ids"],
+                input["tgt_event_mask"],
+                input["node_embeddings"],
+                self.graph_event_decoder.event_label_head.label_embeddings,
+            )
+            # (batch, graph_event_seq_len, 4 * hidden_dim)
+            output, _ = self.rnn_decoder(encoded_graph_event_seq, context)
+            # (batch, graph_event_seq_len, hidden_dim)
+            batch, graph_event_seq_len, _ = output.size()
+            decoded_graph_event_seq_results = self.graph_event_decoder(
+                output.flatten(end_dim=1), input["node_embeddings"]
+            )
+            return {
+                "event_type_logits": decoded_graph_event_seq_results[
+                    "event_type_logits"
+                ].view(batch, graph_event_seq_len, -1),
+                "src_logits": decoded_graph_event_seq_results["src_logits"].view(
+                    batch, graph_event_seq_len, -1
+                ),
+                "dst_logits": decoded_graph_event_seq_results["dst_logits"].view(
+                    batch, graph_event_seq_len, -1
+                ),
+                "label_logits": decoded_graph_event_seq_results["label_logits"].view(
+                    batch, graph_event_seq_len, -1
+                ),
+            }
+        return self.greedy_decode(context, input["node_embeddings"])
+
+    def greedy_decode(
+        self,
+        context: torch.Tensor,
+        node_embeddings: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Start with "start" event and greedy decode.
+
+        context: (1, batch, hidden_dim)
+        node_embeddings: (num_node, hidden_dim)
+
+        output: {
+            'decoded_event_type_ids': (batch, decoded_len),
+            'decoded_src_ids': (batch, decoded_len),
+            'decoded_dst_ids': (batch, decoded_len),
+            'decoded_label_ids': (batch, decoded_len),
+        }
+        """
+        # initial start events
+        batch = context.size(1)
+        decoded_event_type_ids = [
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["start"]] * batch, device=context.device
+            ).unsqueeze(-1)
+            # (batch, 1)
+        ]
+        # placeholder node IDs
+        decoded_src_ids = [
+            torch.tensor([0] * batch, device=context.device).unsqueeze(-1)
+            # (batch, 1)
+        ]
+        decoded_dst_ids = [
+            torch.tensor([0] * batch, device=context.device).unsqueeze(-1)
+            # (batch, 1)
+        ]
+
+        # initial pad labels
+        decoded_label_ids = [
+            torch.tensor([0] * batch, device=context.device).unsqueeze(-1)
+            # (batch, 1)
+        ]
+
+        # this controls when to stop decoding for each sequence in the batch
+        end_event_mask = torch.tensor([False] * batch, device=context.device)
+        # (batch)
+
+        prev_hidden = context
+        # (1, batch, hidden_dim)
+        for _ in range(self.max_decode_len):
+            prev_event_type_ids = decoded_event_type_ids[-1]
+            # (batch, 1)
+            (
+                prev_event_mask,
+                prev_src_mask,
+                prev_dst_mask,
+            ) = compute_masks_from_event_type_ids(prev_event_type_ids)
+            # event_mask: (batch, 1)
+            # src_mask: (batch, 1)
+            # dst_mask: (batch, 1)
+
+            encoded_graph_event_seq = self.graph_event_encoder(
+                prev_event_type_ids,
+                decoded_src_ids[-1],
+                prev_src_mask,
+                decoded_dst_ids[-1],
+                prev_dst_mask,
+                decoded_label_ids[-1],
+                prev_event_mask,
+                node_embeddings,
+                self.graph_event_decoder.event_label_head.label_embeddings,
+            )
+            # (batch, 1, 4 * hidden_dim)
+            output, h_n = self.rnn_decoder(encoded_graph_event_seq, prev_hidden)
+            # output: (batch, 1, hidden_dim)
+            # h_n: (1, batch, hidden_dim)
+
+            # decode the generated graph events
+            decoded_graph_event_seq_results = self.graph_event_decoder(
+                output.squeeze(1), node_embeddings
+            )
+
+            # add decoded results to the lists, masking sequences that have "ended".
+            decoded_event_type_ids.append(
+                decoded_graph_event_seq_results["event_type_logits"]
+                .argmax(dim=-1)
+                .masked_fill(end_event_mask, EVENT_TYPE_ID_MAP["pad"])
+                .unsqueeze(-1)
+                # (batch, 1)
+            )
+            decoded_src_ids.append(
+                decoded_graph_event_seq_results["src_logits"]
+                .argmax(dim=-1)
+                .masked_fill(end_event_mask, 0)
+                .unsqueeze(-1)
+                # (batch, 1)
+            )
+            decoded_dst_ids.append(
+                decoded_graph_event_seq_results["dst_logits"]
+                .argmax(dim=-1)
+                .masked_fill(end_event_mask, 0)
+                .unsqueeze(-1)
+                # (batch, 1)
+            )
+            decoded_label_ids.append(
+                decoded_graph_event_seq_results["label_logits"]
+                .argmax(dim=-1)
+                .masked_fill(end_event_mask, 0)
+                .unsqueeze(-1)
+                # (batch, 1)
+            )
+
+            # update end_event_mask
+            end_event_mask = end_event_mask.logical_or(
+                decoded_event_type_ids[-1].squeeze(1) == EVENT_TYPE_ID_MAP["end"]
+            )
+
+            if end_event_mask.all():
+                # if all the sequences in the batch have "ended", break
+                break
+
+            # update prev_hidden
+            prev_hidden = h_n
+
+        return {
+            "decoded_event_type_ids": torch.cat(decoded_event_type_ids, dim=-1),
+            "decoded_src_ids": torch.cat(decoded_src_ids, dim=-1),
+            "decoded_dst_ids": torch.cat(decoded_dst_ids, dim=-1),
+            "decoded_label_ids": torch.cat(decoded_label_ids, dim=-1),
+        }
