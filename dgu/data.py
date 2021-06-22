@@ -341,7 +341,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
 
         (
-            groundtruth_event_mask,
+            _,
             groundtruth_event_src_mask,
             groundtruth_event_dst_mask,
         ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
