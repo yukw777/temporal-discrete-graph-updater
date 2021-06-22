@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from typing import Dict, Tuple
 from torch_geometric.nn.models.tgn import TimeEncoder
+from torch_scatter import scatter
 
 
 class TemporalGraphNetwork(nn.Module):
@@ -106,3 +107,14 @@ class TemporalGraphNetwork(nn.Module):
         )
         # (event_seq_len, 5 * hidden_dim)
         return src_messages, dst_messages
+
+    def agg_message(self, messages: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+        """
+        Aggregate messages based on the given node IDs. For now we calculate the mean.
+
+        messages: (event_seq_len, 5 * hidden_dim)
+        ids: (event_seq_len)
+
+        output: (num_uniq_ids, 5 * hidden_dim)
+        """
+        return scatter(messages, ids, dim=0, reduce="mean")

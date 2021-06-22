@@ -29,3 +29,19 @@ def test_tgn_message(hidden_dim, event_seq_len, num_nodes, max_timestamp):
     )
     assert src_messages.size() == (event_seq_len, 5 * hidden_dim)
     assert dst_messages.size() == (event_seq_len, 5 * hidden_dim)
+
+
+@pytest.mark.parametrize(
+    "messages,ids,expected",
+    [
+        (torch.ones(1, 4), torch.tensor([0]), torch.ones(1, 4)),
+        (
+            torch.cat([torch.ones(1, 4), torch.zeros(1, 4), torch.ones(1, 4)]),
+            torch.tensor([0, 1, 1]),
+            torch.cat([torch.ones(1, 4), torch.tensor([[0.5, 0.5, 0.5, 0.5]])]),
+        ),
+    ],
+)
+def test_tgn_agg_message(messages, ids, expected):
+    tgn = TemporalGraphNetwork(4)
+    assert tgn.agg_message(messages, ids).equal(expected)
