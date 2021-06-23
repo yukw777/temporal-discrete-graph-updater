@@ -48,7 +48,7 @@ def test_masked_softmax():
 
 
 @pytest.mark.parametrize(
-    "event_type_ids, expected_event_mask, expected_src_mask, expected_dst_mask",
+    "event_type_ids,expected_event_mask,expected_src_mask,expected_dst_mask",
     [
         (
             torch.tensor(
