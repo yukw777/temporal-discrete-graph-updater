@@ -28,11 +28,15 @@ class TemporalGraphNetwork(nn.Module):
         dst_ids: torch.Tensor,
         dst_mask: torch.Tensor,
         event_embeddings: torch.Tensor,
+        event_mask: torch.Tensor,
         event_timestamps: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Calculate graph event messages. We concatenate the event type,
         source and destination memories, time embedding and event embedding.
+
+        Special events like pad, start, end are masked out. Node events are also
+        masked out for destination node messages.
 
         event_type_ids: (event_seq_len)
         src_ids: (event_seq_len)
@@ -40,6 +44,7 @@ class TemporalGraphNetwork(nn.Module):
         dst_ids: (event_seq_len)
         dst_mask: (event_seq_len)
         event_embeddings: (event_seq_len, hidden_dim)
+        event_mask: (event_seq_len)
         event_timestamps: (event_seq_len)
 
         output:
@@ -53,13 +58,11 @@ class TemporalGraphNetwork(nn.Module):
         # use the memory for node embeddings
         src_embs = torch.stack([self.memory[src_id] for src_id in src_ids.tolist()]).to(
             src_ids.device
-        )
-        src_embs *= src_mask.unsqueeze(-1)
+        ) * src_mask.unsqueeze(-1)
         # (event_seq_len, hidden_dim)
         dst_embs = torch.stack([self.memory[dst_id] for dst_id in dst_ids.tolist()]).to(
             dst_ids.device
-        )
-        dst_embs *= dst_mask.unsqueeze(-1)
+        ) * dst_mask.unsqueeze(-1)
         # (event_seq_len, hidden_dim)
 
         # fetch last update timestamps
@@ -74,36 +77,45 @@ class TemporalGraphNetwork(nn.Module):
 
         # multiply src_last_update and dst_last_update by dst_mask so that we
         # only subtract last update timestamps for edge events
-        # then pass them through the time encoder to get the embeddings
+        # then pass them through the time encoder to get the embeddings.
+        # after that we mask out special events that don't require timestamps
         src_timestamp_emb = self.time_encoder(
             event_timestamps - src_last_update * dst_mask
         )
         # (event_seq_len, hidden_dim)
+        # mask out node events
         dst_timestamp_emb = self.time_encoder(
             event_timestamps - dst_last_update * dst_mask
         )
         # (event_seq_len, hidden_dim)
 
-        src_messages = torch.cat(
-            [
-                event_type_embs,
-                src_embs,
-                dst_embs,
-                src_timestamp_emb,
-                event_embeddings,
-            ],
-            dim=1,
+        # mask out special events
+        src_messages = (
+            torch.cat(
+                [
+                    event_type_embs,
+                    src_embs,
+                    dst_embs,
+                    src_timestamp_emb,
+                    event_embeddings,
+                ],
+                dim=1,
+            )
+            * event_mask.unsqueeze(-1)
         )
         # (event_seq_len, 5 * hidden_dim)
-        dst_messages = torch.cat(
-            [
-                event_type_embs,
-                dst_embs,
-                src_embs,
-                dst_timestamp_emb,
-                event_embeddings,
-            ],
-            dim=1,
+        dst_messages = (
+            torch.cat(
+                [
+                    event_type_embs,
+                    dst_embs,
+                    src_embs,
+                    dst_timestamp_emb,
+                    event_embeddings,
+                ],
+                dim=1,
+            )
+            * dst_mask.unsqueeze(-1)
         )
         # (event_seq_len, 5 * hidden_dim)
         return src_messages, dst_messages
