@@ -88,7 +88,7 @@ def test_tgn_message(
     src_expected,
     dst_expected,
 ):
-    tgn = TemporalGraphNetwork(4)
+    tgn = TemporalGraphNetwork(num_nodes, 4)
     for i in range(num_nodes):
         tgn.memory[i] = torch.tensor([i] * 4).float()
         tgn.last_update[i] = i * 2
@@ -126,5 +126,5 @@ def test_tgn_message(
     ],
 )
 def test_tgn_agg_message(messages, ids, expected):
-    tgn = TemporalGraphNetwork(4)
+    tgn = TemporalGraphNetwork(10, 4)
     assert tgn.agg_message(messages, ids).equal(expected)

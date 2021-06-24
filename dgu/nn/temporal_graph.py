@@ -1,21 +1,27 @@
 import torch
 import torch.nn as nn
 
-from typing import Dict, Tuple
+from typing import Tuple
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
 
 class TemporalGraphNetwork(nn.Module):
-    def __init__(self, hidden_dim: int) -> None:
+    def __init__(self, max_num_nodes: int, hidden_dim: int) -> None:
         super().__init__()
+        self.max_num_nodes = max_num_nodes
         self.hidden_dim = hidden_dim
 
-        # memory
-        self.memory: Dict[int, torch.Tensor] = {}
+        # memory, not persistent as we shouldn't save memories from one game to another
+        self.register_buffer(
+            "memory", torch.zeros(max_num_nodes, hidden_dim), persistent=False
+        )
 
-        # last updated timestamp
-        self.last_update: Dict[int, int] = {}
+        # last updated timestamp, not persistent as we shouldn't save last updated
+        # timestamps from one game to another
+        self.register_buffer(
+            "last_update", torch.zeros(max_num_nodes), persistent=False
+        )
 
         # time encoder
         self.time_encoder = TimeEncoder(hidden_dim)
@@ -56,23 +62,15 @@ class TemporalGraphNetwork(nn.Module):
         # (event_seq_len, hidden_dim)
 
         # use the memory for node embeddings
-        src_embs = torch.stack([self.memory[src_id] for src_id in src_ids.tolist()]).to(
-            src_ids.device
-        ) * src_mask.unsqueeze(-1)
+        src_embs = self.memory[src_ids] * src_mask.unsqueeze(-1)  # type: ignore
         # (event_seq_len, hidden_dim)
-        dst_embs = torch.stack([self.memory[dst_id] for dst_id in dst_ids.tolist()]).to(
-            dst_ids.device
-        ) * dst_mask.unsqueeze(-1)
+        dst_embs = self.memory[dst_ids] * dst_mask.unsqueeze(-1)  # type: ignore
         # (event_seq_len, hidden_dim)
 
         # fetch last update timestamps
-        src_last_update = torch.tensor(
-            [self.last_update[src_id] for src_id in src_ids.tolist()]
-        ).to(src_mask.device)
+        src_last_update = self.last_update[src_ids]  # type: ignore
         # (event_seq_len)
-        dst_last_update = torch.tensor(
-            [self.last_update[dst_id] for dst_id in dst_ids.tolist()]
-        ).to(dst_mask.device)
+        dst_last_update = self.last_update[dst_ids]  # type: ignore
         # (event_seq_len)
 
         # multiply src_last_update and dst_last_update by dst_mask so that we
