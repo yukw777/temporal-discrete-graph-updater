@@ -5,6 +5,8 @@ from typing import Tuple
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
+from dgu.constants import EVENT_TYPE_ID_MAP
+
 
 class TemporalGraphNetwork(nn.Module):
     def __init__(self, max_num_nodes: int, hidden_dim: int) -> None:
@@ -21,6 +23,12 @@ class TemporalGraphNetwork(nn.Module):
         # timestamps from one game to another
         self.register_buffer(
             "last_update", torch.zeros(max_num_nodes), persistent=False
+        )
+
+        # node features, not persistent as we shouldn't save node features
+        # from one game to another
+        self.register_buffer(
+            "node_features", torch.zeros(max_num_nodes, hidden_dim), persistent=False
         )
 
         # time encoder
@@ -128,3 +136,30 @@ class TemporalGraphNetwork(nn.Module):
         output: (num_uniq_ids, 5 * hidden_dim)
         """
         return scatter(messages, ids, dim=0, reduce="mean")
+
+    def update_node_features(
+        self,
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+    ) -> None:
+        """
+        Update node features using node-add event embeddings.
+
+        event_type_ids: (event_seq_len)
+        src_ids: (event_seq_len)
+        event_embeddings: (event_seq_len, hidden_dim)
+        """
+        # update node features using node-add event embeddings
+        is_node_add = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        # (num_node_add)
+        if is_node_add.size(0) > 0:
+            # there could technically be duplicates, but we ignore them.
+            # PyTorch seems to assign the first of the duplicates.
+            node_add_src_ids = src_ids[is_node_add]
+            # (num_node_add)
+            node_add_event_embeddings = event_embeddings[is_node_add]
+            # (num_node_add, hidden_dim)
+            self.node_features[
+                node_add_src_ids
+            ] = node_add_event_embeddings  # type: ignore
