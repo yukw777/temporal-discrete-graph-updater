@@ -30,13 +30,13 @@ class Node:
     label: str
 
 
-@dataclass
 class TextWorldGraph:
     def __init__(self) -> None:
         self.is_dst_node_id_map: Dict[IsDstNode, int] = {}
         self.exit_node_id_map: Dict[ExitNode, int] = {}
         self.node_id_map: Dict[Node, int] = {}
         self.removed_node_ids: Deque[int] = deque()
+        self.removed_edge_ids: Deque[int] = deque()
         self._graph = nx.DiGraph()
 
     def process_add_triplet_cmd(
@@ -126,16 +126,11 @@ class TextWorldGraph:
             # the edge already exists, so we're done
             return events
         # the edge doesn't exist, so add it
-        self._graph.add_edge(
-            src_id,
-            dst_id,
-            game=game,
-            walkthrough_step=walkthrough_step,
-            label=rel_label,
-        )
+        edge_id = self.add_edge(src_id, dst_id, game, walkthrough_step, rel_label)
         events.append(
             {
                 "type": "edge-add",
+                "edge_id": edge_id,
                 "src_id": src_id,
                 "dst_id": dst_id,
                 "timestamp": timestamp,
@@ -182,10 +177,11 @@ class TextWorldGraph:
 
         # delete the edge and add event
         edge_label = self._graph.edges[src_id, dst_id]["label"]
-        self._graph.remove_edge(src_id, dst_id)
+        edge_id = self.remove_edge(src_id, dst_id)
         events.append(
             {
                 "type": "edge-delete",
+                "edge_id": edge_id,
                 "src_id": src_id,
                 "dst_id": dst_id,
                 "timestamp": timestamp,
@@ -257,6 +253,37 @@ class TextWorldGraph:
                 dst_label,
             )
         raise ValueError(f"Unknown command {cmd}")
+
+    def add_edge(
+        self, src_id: int, dst_id: int, game: str, walkthrough_step: int, label: str
+    ) -> int:
+        """
+        Add an edge for the given source node, destination node and associated data,
+        then returns the edge ID.
+        """
+        if len(self.removed_edge_ids) > 0:
+            edge_id = self.removed_edge_ids.popleft()
+        else:
+            edge_id = self._graph.number_of_edges()
+        self._graph.add_edge(
+            src_id,
+            dst_id,
+            id=edge_id,
+            game=game,
+            walkthrough_step=walkthrough_step,
+            label=label,
+        )
+        return edge_id
+
+    def remove_edge(self, src_id: int, dst_id: int) -> int:
+        """
+        Remove the node with the given source and destination IDs, then return
+        the removed edge ID.
+        """
+        edge_id = self._graph[src_id][dst_id]["id"]
+        self._graph.remove_edge(src_id, dst_id)
+        self.removed_edge_ids.append(edge_id)
+        return edge_id
 
     def add_node(self, game: str, walkthrough_step: int, label: str) -> int:
         """
