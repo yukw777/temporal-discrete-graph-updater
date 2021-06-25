@@ -99,7 +99,7 @@ class TWCmdGenTemporalDataset(Dataset):
             if curr_game == "":
                 # if it's the first game, set it right away
                 curr_game = game
-            walkthrough_step, random_step = example["step"]
+            walkthrough_step, _ = example["step"]
             if curr_walkthrough_step != walkthrough_step:
                 # a new walkthrough step has been taken
                 # add the walkthrough examples so far
