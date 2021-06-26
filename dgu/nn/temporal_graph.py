@@ -31,6 +31,12 @@ class TemporalGraphNetwork(nn.Module):
             "node_features", torch.zeros(max_num_nodes, hidden_dim), persistent=False
         )
 
+        # edge features, not persistent as we shouldn't save edge features
+        # from one game to another
+        self.register_buffer(
+            "edge_features", torch.zeros(max_num_edges, hidden_dim), persistent=False
+        )
+
         # time encoder
         self.time_encoder = TimeEncoder(hidden_dim)
 
@@ -163,3 +169,30 @@ class TemporalGraphNetwork(nn.Module):
             self.node_features[
                 node_add_src_ids
             ] = node_add_event_embeddings  # type: ignore
+
+    def update_edge_features(
+        self,
+        event_type_ids: torch.Tensor,
+        event_edge_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+    ) -> None:
+        """
+        Update edge features using edge-add event embeddings.
+
+        event_type_ids: (event_seq_len)
+        event_edge_ids: (event_seq_len)
+        event_embeddings: (event_seq_len, hidden_dim)
+        """
+        # update edge features using edge-add event embeddings
+        is_edge_add = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        # (num_edge_add)
+        if is_edge_add.size(0) > 0:
+            # there could technically be duplicates, but we ignore them.
+            # PyTorch seems to assign the first of the duplicates.
+            edge_add_edge_ids = event_edge_ids[is_edge_add]
+            # (num_node_add)
+            edge_add_event_embeddings = event_embeddings[is_edge_add]
+            # (num_node_add, hidden_dim)
+            self.edge_features[
+                edge_add_edge_ids
+            ] = edge_add_event_embeddings  # type: ignore
