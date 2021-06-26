@@ -96,6 +96,7 @@ def tw_cmd_gen_datamodule():
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
+                "subgraph_edge_ids": torch.tensor([0, 1, 2]),
                 "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
                 "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
                 "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
@@ -265,6 +266,32 @@ def tw_cmd_gen_datamodule():
                         39,
                     ]
                 ),
+                "subgraph_edge_ids": torch.tensor(
+                    [
+                        0,
+                        1,
+                        2,
+                        15,
+                        16,
+                        17,
+                        18,
+                        19,
+                        21,
+                        22,
+                        23,
+                        24,
+                        25,
+                        26,
+                        27,
+                        28,
+                        29,
+                        30,
+                        31,
+                        32,
+                        33,
+                        34,
+                    ]
+                ),
                 "tgt_event_timestamps": torch.tensor(
                     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
                 ),
@@ -315,6 +342,7 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["prev_action_word_ids"].equal(expected["prev_action_word_ids"])
     assert collated["prev_action_mask"].equal(expected["prev_action_mask"])
     assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
+    assert collated["subgraph_edge_ids"].equal(expected["subgraph_edge_ids"])
     assert collated["tgt_event_timestamps"].equal(expected["tgt_event_timestamps"])
     assert collated["tgt_event_mask"].equal(expected["tgt_event_mask"])
     assert collated["tgt_event_type_ids"].equal(expected["tgt_event_type_ids"])

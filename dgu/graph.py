@@ -322,11 +322,24 @@ class TextWorldGraph:
             for src_id, dst_id, data in self._graph.edges.data()
         ]
 
-    def filter_node_ids(self, game_walkthrough_set: Set[Tuple[str, int]]) -> Set[int]:
+    def get_subgraph(
+        self, game_walkthrough_set: Set[Tuple[str, int]]
+    ) -> Tuple[Set[int], Set[int]]:
+        """
+        Return the node IDs and edge IDs for the subgraph corresponding to the given
+        set of (game, walkthrough_step)'s.
+
+        game_walkthrough_set: set of (game, walkthrough_step)
+
+        returns: (node_ids, edge_ids)
+        """
+
         def filter_node(node):
             game = self._graph.nodes[node]["game"]
             walkthrough_step = self._graph.nodes[node]["walkthrough_step"]
             return (game, walkthrough_step) in game_walkthrough_set
 
         subgraph_view = nx.subgraph_view(self._graph, filter_node=filter_node)
-        return set(subgraph_view.nodes())
+        return set(subgraph_view.nodes()), set(
+            data["id"] for _, _, data in subgraph_view.edges.data()
+        )

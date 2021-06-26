@@ -833,16 +833,18 @@ def test_tw_graph_triplet_cmd_delete():
     }
 
 
-def test_tw_graph_filter_node_ids():
+def test_tw_graph_get_subgraph():
     g = TextWorldGraph()
-    g.add_node("game0", 0, "n1")
-    g.add_node("game0", 1, "n2")
+    g0_n1_id = g.add_node("game0", 0, "n1")
+    g0_n2_id = g.add_node("game0", 0, "n2")
+    g0_n3_id = g.add_node("game0", 0, "n3")
+    g.add_edge(g0_n1_id, g0_n3_id, "game0", 0, "e1")
     g.add_node("game1", 0, "n1")
-    g.remove_node(1)
-    g.add_node("game2", 0, "n1")
-    g.add_node("game2", 0, "n2")
+    g.remove_node(g0_n2_id)
+    g2_n1_id = g.add_node("game2", 1, "n1")
+    g2_n2_id = g.add_node("game2", 1, "n2")
+    g.add_edge(g2_n1_id, g2_n2_id, "game2", 1, "e2")
 
-    assert g.filter_node_ids({("game0", 0)}) == {0}
-    assert g.filter_node_ids({("game0", 1)}) == set()  # removed
-    assert g.filter_node_ids({("game1", 0)}) == {2}
-    assert g.filter_node_ids({("game2", 0)}) == {1, 3}
+    assert g.get_subgraph({("game0", 0)}) == ({0, 2}, {0})
+    assert g.get_subgraph({("game1", 0)}) == ({3}, set())
+    assert g.get_subgraph({("game2", 1)}) == ({1, 4}, {1})

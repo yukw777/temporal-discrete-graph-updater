@@ -263,6 +263,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "prev_action_word_ids": (batch, prev_action_len),
             "prev_action_mask": (batch, prev_action_len),
             "subgraph_node_ids": (num_nodes),
+            "subgraph_edge_ids": (num_edges),
             "tgt_event_timestamps": (event_seq_len),
                 Used for teacher forcing message calculation.
             "tgt_event_mask": (event_seq_len),
@@ -367,9 +368,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         else:
             raise ValueError(f"Unknown stage: {stage}")
 
-        subgraph_node_ids = torch.tensor(
-            list(graph.filter_node_ids(game_walkthrough_set))
-        )
+        subgraph_node_ids, subgraph_edge_ids = graph.get_subgraph(game_walkthrough_set)
 
         event_label_ids = [
             self.label_id_map[event["label"]]
@@ -388,7 +387,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
-            "subgraph_node_ids": subgraph_node_ids,
+            "subgraph_node_ids": torch.tensor(list(subgraph_node_ids)),
+            "subgraph_edge_ids": torch.tensor(list(subgraph_edge_ids)),
             "tgt_event_timestamps": tgt_event_timestamps,
             "tgt_event_mask": tgt_event_mask,
             "tgt_event_type_ids": tgt_event_type_ids,
