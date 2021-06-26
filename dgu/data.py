@@ -272,6 +272,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_src_mask": (event_seq_len),
             "tgt_event_dst_ids": (event_seq_len),
             "tgt_event_dst_mask": (event_seq_len),
+            "tgt_event_edge_ids": (event_seq_len),
             "tgt_event_label_ids": (event_seq_len),
             "groundtruth_event_type_ids": (event_seq_len),
             "groundtruth_event_src_ids": (event_seq_len),
@@ -316,19 +317,25 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         event_src_ids: List[int] = []
         event_dst_ids: List[int] = []
+        event_edge_ids: List[int] = []
 
         for example in batch:
             for event in example["event_seq"]:
                 if event["type"] in {"node-add", "node-delete"}:
                     event_src_ids.append(event["node_id"])
                     event_dst_ids.append(0)
+                    event_edge_ids.append(0)
                 else:
                     event_src_ids.append(event["src_id"])
                     event_dst_ids.append(event["dst_id"])
+                    event_edge_ids.append(event["edge_id"])
 
         # placeholder node id for the start event
         tgt_event_src_ids = torch.tensor([0] + event_src_ids)
         tgt_event_dst_ids = torch.tensor([0] + event_dst_ids)
+
+        # placeholder edge id for the start event
+        tgt_event_edge_ids = torch.tensor([0] + event_edge_ids)
 
         # placeholder node id for the end event
         groundtruth_event_src_ids = torch.tensor(event_src_ids + [0])
@@ -389,6 +396,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_src_mask": tgt_event_src_mask,
             "tgt_event_dst_ids": tgt_event_dst_ids,
             "tgt_event_dst_mask": tgt_event_dst_mask,
+            "tgt_event_edge_ids": tgt_event_edge_ids,
             "tgt_event_label_ids": tgt_event_label_ids,
             "groundtruth_event_type_ids": groundtruth_event_type_ids,
             "groundtruth_event_src_ids": groundtruth_event_src_ids,

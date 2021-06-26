@@ -9,9 +9,10 @@ from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class TemporalGraphNetwork(nn.Module):
-    def __init__(self, max_num_nodes: int, hidden_dim: int) -> None:
+    def __init__(self, max_num_nodes: int, max_num_edges: int, hidden_dim: int) -> None:
         super().__init__()
         self.max_num_nodes = max_num_nodes
+        self.max_num_edges = max_num_edges
         self.hidden_dim = hidden_dim
 
         # memory, not persistent as we shouldn't save memories from one game to another

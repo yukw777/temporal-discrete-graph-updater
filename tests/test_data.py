@@ -81,6 +81,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 0,
                             "src_id": 0,
                             "dst_id": 1,
                             "timestamp": 0,
@@ -102,6 +103,7 @@ def tw_cmd_gen_datamodule():
                 "tgt_event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
                 "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1]),
                 "tgt_event_dst_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
+                "tgt_event_edge_ids": torch.tensor([0, 0, 0, 0]),
                 "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
                 "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
                 "groundtruth_event_src_ids": torch.tensor([0, 1, 0, 0]),
@@ -133,6 +135,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 0,
                             "src_id": 0,
                             "dst_id": 1,
                             "timestamp": 0,
@@ -146,6 +149,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 1,
                             "src_id": 2,
                             "dst_id": 0,
                             "timestamp": 0,
@@ -174,6 +178,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 2,
                             "src_id": 3,
                             "dst_id": 4,
                             "timestamp": 1,
@@ -189,6 +194,7 @@ def tw_cmd_gen_datamodule():
                     "event_seq": [
                         {
                             "type": "edge-add",
+                            "edge_id": 3,
                             "src_id": 3,
                             "dst_id": 0,
                             "timestamp": 2,
@@ -196,6 +202,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-delete",
+                            "edge_id": 2,
                             "src_id": 3,
                             "dst_id": 4,
                             "timestamp": 2,
@@ -273,6 +280,7 @@ def tw_cmd_gen_datamodule():
                 "tgt_event_dst_mask": torch.tensor(
                     [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 ),
+                "tgt_event_edge_ids": torch.tensor([0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 2]),
                 "tgt_event_label_ids": torch.tensor(
                     [0, 1, 7, 101, 45, 105, 43, 82, 102, 100, 102]
                 ),
@@ -314,6 +322,7 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["tgt_event_src_mask"].equal(expected["tgt_event_src_mask"])
     assert collated["tgt_event_dst_ids"].equal(expected["tgt_event_dst_ids"])
     assert collated["tgt_event_dst_mask"].equal(expected["tgt_event_dst_mask"])
+    assert collated["tgt_event_edge_ids"].equal(expected["tgt_event_edge_ids"])
     assert collated["tgt_event_label_ids"].equal(expected["tgt_event_label_ids"])
     assert collated["groundtruth_event_type_ids"].equal(
         expected["groundtruth_event_type_ids"]
