@@ -8,11 +8,12 @@ from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.mark.parametrize(
-    "num_nodes,event_type_ids,src_ids,dst_ids,event_embeddings,event_timestamps,"
-    "src_expected,dst_expected",
+    "num_nodes,num_edges,event_type_ids,src_ids,dst_ids,event_embeddings,"
+    "event_edge_ids,event_timestamps,src_expected,dst_expected",
     [
         (
             5,
+            7,
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["start"],
@@ -23,6 +24,7 @@ from dgu.constants import EVENT_TYPE_ID_MAP
             torch.tensor([1, 1, 3]),
             torch.tensor([1, 1, 2]),
             torch.tensor([[1] * 4, [2] * 4, [3] * 4]),
+            torch.tensor([0, 0, 0]),
             torch.tensor([1, 2, 3]),
             torch.tensor(
                 [
@@ -34,7 +36,38 @@ from dgu.constants import EVENT_TYPE_ID_MAP
             torch.zeros(3, 20),
         ),
         (
+            5,
+            7,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+            torch.tensor([1, 1, 3]),
+            torch.tensor([1, 2, 2]),
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([1, 2, 3]),
+            torch.tensor(
+                [
+                    [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
+                    [5] * 4 + [1] * 4 + [2] * 4 + [5] * 4 + [2] * 4,
+                    [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
+                ]
+            ).float(),
+            torch.tensor(
+                [
+                    [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
+                    [5] * 4 + [2] * 4 + [1] * 4 + [5] * 4 + [2] * 4,
+                    [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
+                ]
+            ).float(),
+        ),
+        (
             10,
+            20,
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["start"],
@@ -48,16 +81,17 @@ from dgu.constants import EVENT_TYPE_ID_MAP
                 ]
             ),
             torch.tensor([0, 0, 1, 2, 3, 0, 0, 0]),
-            torch.tensor([0, 0, 0, 2, 1, 0, 0, 0]),
+            torch.tensor([0, 0, 0, 3, 1, 0, 0, 0]),
             torch.tensor([[i + 1] * 4 for i in range(8)]),
-            torch.linspace(1, 9, 8).long(),
+            torch.tensor([0, 0, 0, 2, 4, 0, 0, 0]),
+            torch.linspace(1, 8, 8).long(),
             torch.tensor(
                 [
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [3] * 4 + [0] * 4 + [0] * 4 + [5] * 4 + [2] * 4,
                     [4] * 4 + [1] * 4 + [0] * 4 + [6] * 4 + [3] * 4,
-                    [5] * 4 + [2] * 4 + [2] * 4 + [3] * 4 + [4] * 4,
-                    [6] * 4 + [3] * 4 + [1] * 4 + [2] * 4 + [5] * 4,
+                    [5] * 4 + [2] * 4 + [3] * 4 + [3] * 4 + [4] * 4,
+                    [6] * 4 + [3] * 4 + [1] * 4 + [0] * 4 + [5] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
@@ -68,8 +102,8 @@ from dgu.constants import EVENT_TYPE_ID_MAP
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
-                    [5] * 4 + [2] * 4 + [2] * 4 + [3] * 4 + [4] * 4,
-                    [6] * 4 + [1] * 4 + [3] * 4 + [6] * 4 + [5] * 4,
+                    [5] * 4 + [3] * 4 + [2] * 4 + [3] * 4 + [4] * 4,
+                    [6] * 4 + [1] * 4 + [3] * 4 + [0] * 4 + [5] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
@@ -80,17 +114,20 @@ from dgu.constants import EVENT_TYPE_ID_MAP
 )
 def test_tgn_message(
     num_nodes,
+    num_edges,
     event_type_ids,
     src_ids,
     dst_ids,
     event_embeddings,
+    event_edge_ids,
     event_timestamps,
     src_expected,
     dst_expected,
 ):
-    tgn = TemporalGraphNetwork(num_nodes, 5, 4)
+    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4)
     for i in range(num_nodes):
         tgn.memory[i] = torch.tensor([i] * 4).float()
+    for i in range(num_edges):
         tgn.last_update[i] = i * 2
 
     class MockTimeEncoder(nn.Module):
@@ -108,6 +145,7 @@ def test_tgn_message(
         dst_mask,
         event_embeddings,
         event_mask,
+        event_edge_ids,
         event_timestamps,
     )
     assert src_messages.equal(src_expected)

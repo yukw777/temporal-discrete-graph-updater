@@ -20,10 +20,10 @@ class TemporalGraphNetwork(nn.Module):
             "memory", torch.zeros(max_num_nodes, hidden_dim), persistent=False
         )
 
-        # last updated timestamp, not persistent as we shouldn't save last updated
-        # timestamps from one game to another
+        # last updated timestamp for edges, not persistent as we shouldn't save last
+        # updated timestamps from one game to another
         self.register_buffer(
-            "last_update", torch.zeros(max_num_nodes), persistent=False
+            "last_update", torch.zeros(max_num_edges), persistent=False
         )
 
         # node features, not persistent as we shouldn't save node features
@@ -50,6 +50,7 @@ class TemporalGraphNetwork(nn.Module):
         dst_mask: torch.Tensor,
         event_embeddings: torch.Tensor,
         event_mask: torch.Tensor,
+        event_edge_ids: torch.Tensor,
         event_timestamps: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -66,6 +67,7 @@ class TemporalGraphNetwork(nn.Module):
         dst_mask: (event_seq_len)
         event_embeddings: (event_seq_len, hidden_dim)
         event_mask: (event_seq_len)
+        event_edge_ids: (event_seq_len)
         event_timestamps: (event_seq_len)
 
         output:
@@ -82,24 +84,27 @@ class TemporalGraphNetwork(nn.Module):
         dst_embs = self.memory[dst_ids] * dst_mask.unsqueeze(-1)  # type: ignore
         # (event_seq_len, hidden_dim)
 
-        # fetch last update timestamps
-        src_last_update = self.last_update[src_ids]  # type: ignore
-        # (event_seq_len)
-        dst_last_update = self.last_update[dst_ids]  # type: ignore
+        # calculate relative timestamps for edge events
+        edge_last_update = self.last_update[event_edge_ids]  # type: ignore
         # (event_seq_len)
 
-        # multiply src_last_update and dst_last_update by dst_mask so that we
+        # multiply edge_last_update by dst_mask so that we
         # only subtract last update timestamps for edge events
-        # then pass them through the time encoder to get the embeddings.
-        # after that we mask out special events that don't require timestamps
-        src_timestamp_emb = self.time_encoder(
-            event_timestamps - src_last_update * dst_mask
+        rel_edge_timestamps = event_timestamps - edge_last_update * dst_mask
+        # (event_seq_len)
+
+        # only select node events from event_timestamps
+        # and only select edge events from rel_edge_timestamps (use dst_mask)
+        # then add them and pass it through the time encoder to get the embeddings
+        # finally, mask out timestamp embeddings for special events (use event_mask).
+        is_node_event = torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
+            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
         )
-        # (event_seq_len, hidden_dim)
-        # mask out node events
-        dst_timestamp_emb = self.time_encoder(
-            event_timestamps - dst_last_update * dst_mask
-        )
+        # (event_seq_len)
+        timestamp_emb = self.time_encoder(
+            event_timestamps * is_node_event + rel_edge_timestamps * dst_mask
+        ) * event_mask.unsqueeze(-1)
         # (event_seq_len, hidden_dim)
 
         # mask out special events
@@ -109,7 +114,7 @@ class TemporalGraphNetwork(nn.Module):
                     event_type_embs,
                     src_embs,
                     dst_embs,
-                    src_timestamp_emb,
+                    timestamp_emb,
                     event_embeddings,
                 ],
                 dim=1,
@@ -123,7 +128,7 @@ class TemporalGraphNetwork(nn.Module):
                     event_type_embs,
                     dst_embs,
                     src_embs,
-                    dst_timestamp_emb,
+                    timestamp_emb,
                     event_embeddings,
                 ],
                 dim=1,
