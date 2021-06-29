@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 import torch
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any, Optional
+from typing import List, Iterator, Dict, Any, Optional, Tuple
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
@@ -118,6 +118,7 @@ class TWCmdGenTemporalDataset(Dataset):
                             "walkthrough_step": curr_walkthrough_step,
                             "observation": w_example["observation"],
                             "previous_action": w_example["previous_action"],
+                            "timestamp": timestamp,
                             "event_seq": event_seq,
                         }
                     )
@@ -141,6 +142,7 @@ class TWCmdGenTemporalDataset(Dataset):
                             "walkthrough_step": curr_walkthrough_step,
                             "observation": r_example["observation"],
                             "previous_action": r_example["previous_action"],
+                            "timestamp": len(walkthrough_examples) + timestamp,
                             "event_seq": event_seq,
                         }
                     )
@@ -173,6 +175,7 @@ class TWCmdGenTemporalDataset(Dataset):
                     "walkthrough_step": curr_walkthrough_step,
                     "observation": w_example["observation"],
                     "previous_action": w_example["previous_action"],
+                    "timestamp": timestamp,
                     "event_seq": event_seq,
                 }
             )
@@ -196,6 +199,7 @@ class TWCmdGenTemporalDataset(Dataset):
                     "walkthrough_step": curr_walkthrough_step,
                     "observation": r_example["observation"],
                     "previous_action": r_example["previous_action"],
+                    "timestamp": len(walkthrough_examples) + timestamp,
                     "event_seq": event_seq,
                 }
             )
@@ -265,6 +269,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "subgraph_node_ids": (num_nodes),
             "subgraph_edge_ids": (num_edges),
             "subgraph_edge_index": (2, num_edges),
+            "subgraph_edge_timestamps": (num_edges),
             "tgt_event_timestamps": (event_seq_len),
                 Used for teacher forcing message calculation.
             "tgt_event_mask": (event_seq_len),
@@ -355,11 +360,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             groundtruth_event_dst_mask,
         ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
 
-        # subgraph node IDs so that we only get the memory vectors that are relevant
-        game_walkthrough_set = set(
-            (example["game"], example["walkthrough_step"]) for example in batch
-        )
-
+        # calculate subgraph information so that we only calculate node embeddings
+        # that are relevant.
         if stage == "train":
             graph = self.train.graph
         elif stage == "val":
@@ -369,9 +371,26 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         else:
             raise ValueError(f"Unknown stage: {stage}")
 
-        subgraph_node_ids, subgraph_edge_ids, subgraph_edge_index = graph.get_subgraph(
-            game_walkthrough_set
-        )
+        # figure out the latest timestamp for each (game, walkthrough_step) pair
+        # since we want to calculate the time embeddings at the latest timestamp
+        game_walkthrough_timestamp_dict: Dict[Tuple[str, int], int] = {}
+        for example in batch:
+            key = (example["game"], example["walkthrough_step"])
+            if key not in game_walkthrough_timestamp_dict:
+                game_walkthrough_timestamp_dict[key] = example["timestamp"]
+            elif game_walkthrough_timestamp_dict[key] < example["timestamp"]:
+                game_walkthrough_timestamp_dict[key] = example["timestamp"]
+
+        subgraph_node_ids: List[int] = []
+        subgraph_edge_ids: List[int] = []
+        subgraph_edge_index: List[Tuple[int, int]] = []
+        subgraph_edge_timestamps: List[int] = []
+        for key, timestamp in game_walkthrough_timestamp_dict.items():
+            node_ids, edge_ids, edge_index = graph.get_subgraph({key})
+            subgraph_node_ids.extend(node_ids)
+            subgraph_edge_ids.extend(edge_ids)
+            subgraph_edge_index.extend(edge_index)
+            subgraph_edge_timestamps.extend([timestamp] * len(edge_ids))
 
         event_label_ids = [
             self.label_id_map[event["label"]]
@@ -390,11 +409,10 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
-            "subgraph_node_ids": torch.tensor(list(subgraph_node_ids)),
-            "subgraph_edge_ids": torch.tensor(list(subgraph_edge_ids)),
-            "subgraph_edge_index": torch.tensor(list(subgraph_edge_index)).transpose(
-                0, 1
-            ),
+            "subgraph_node_ids": torch.tensor(subgraph_node_ids),
+            "subgraph_edge_ids": torch.tensor(subgraph_edge_ids),
+            "subgraph_edge_index": torch.tensor(subgraph_edge_index).transpose(0, 1),
+            "subgraph_edge_timestamps": torch.tensor(subgraph_edge_timestamps),
             "tgt_event_timestamps": tgt_event_timestamps,
             "tgt_event_mask": tgt_event_mask,
             "tgt_event_type_ids": tgt_event_type_ids,
