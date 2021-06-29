@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.nn.utils import compute_masks_from_event_type_ids
-from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
 
 @pytest.mark.parametrize(
@@ -372,3 +372,32 @@ def test_tgn_update_last_update(
     tgn = TemporalGraphNetwork(5, 5, 10)
     tgn.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
     assert tgn.last_update.equal(expected)
+
+
+@pytest.mark.parametrize(
+    "event_seq_len,hidden_dim,num_node,num_edge",
+    [
+        (3, 5, 4, 8),
+        (12, 64, 20, 40),
+    ],
+)
+def test_tgn_forward(event_seq_len, hidden_dim, num_node, num_edge):
+    tgn = TemporalGraphNetwork(num_node * 2, num_edge * 2, hidden_dim)
+    assert (
+        tgn(
+            torch.randint(len(EVENT_TYPES), (event_seq_len,)),
+            torch.randint(num_node * 2, (event_seq_len,)),
+            torch.randint(2, (event_seq_len,)).float(),
+            torch.randint(num_node * 2, (event_seq_len,)),
+            torch.randint(2, (event_seq_len,)).float(),
+            torch.randint(num_edge * 2, (event_seq_len,)),
+            torch.rand(event_seq_len, hidden_dim),
+            torch.randint(2, (event_seq_len,)).float(),
+            torch.randint(10, (event_seq_len,)).float(),
+            torch.randint(num_node, (num_node,)),
+            torch.randint(num_edge, (num_edge,)),
+            torch.randint(num_node, (2, num_edge)),
+            torch.tensor(12),
+        ).size()
+        == (num_node, hidden_dim)
+    )

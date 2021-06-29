@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from typing import Tuple
+from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
@@ -40,6 +41,110 @@ class TemporalGraphNetwork(nn.Module):
 
         # time encoder
         self.time_encoder = TimeEncoder(hidden_dim)
+
+        # RNN to update memories
+        self.rnn = nn.GRUCell(5 * hidden_dim, hidden_dim)
+
+        # GNN for the final node embeddings
+        self.gnn = TransformerConv(
+            hidden_dim, hidden_dim, edge_dim=hidden_dim + hidden_dim
+        )
+
+    def forward(
+        self,
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        src_mask: torch.Tensor,
+        dst_ids: torch.Tensor,
+        dst_mask: torch.Tensor,
+        event_edge_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+        event_mask: torch.Tensor,
+        event_timestamps: torch.Tensor,
+        node_ids: torch.Tensor,
+        edge_ids: torch.Tensor,
+        edge_index: torch.Tensor,
+        time: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Calculate the updated node embeddings based on the given events. Node
+        embeddings are calculated for nodes specified by node_ids.
+
+        event_type_ids: (event_seq_len)
+        src_ids: (event_seq_len)
+        src_mask: (event_seq_len)
+        dst_ids: (event_seq_len)
+        dst_mask: (event_seq_len)
+        event_edge_ids: (event_seq_len)
+        event_embeddings: (event_seq_len, hidden_dim)
+        event_mask: (event_seq_len)
+        event_timestamps: (event_seq_len)
+        node_ids: (num_node)
+        edge_ids: (num_edge)
+        edge_index: (2, num_edge)
+        time: scalar
+
+        output: (num_node, hidden_dim)
+        """
+        # calculate messages
+        src_msgs, dst_msgs = self.message(
+            event_type_ids,
+            src_ids,
+            src_mask,
+            dst_ids,
+            dst_mask,
+            event_embeddings,
+            event_mask,
+            event_edge_ids,
+            event_timestamps,
+        )
+        # src_msgs: (event_seq_len, 5 * hidden_dim)
+        # dst_msgs: (event_seq_len, 5 * hidden_dim)
+
+        # aggregate messages
+        agg_src_msgs = self.agg_message(src_msgs, src_ids)
+        # (max_src_id, 5 * hidden_dim)
+        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids)
+        # (max_dst_id, 5 * hidden_dim)
+
+        # get unique IDs
+        uniq_src_ids = src_ids.unique()
+        # (num_uniq_src_ids)
+        uniq_dst_ids = dst_ids.unique()
+        # (num_uniq_dst_ids)
+        uniq_ids = torch.cat([uniq_src_ids, uniq_dst_ids])
+        # (num_uniq_src_ids + num_uniq_dst_ids)
+
+        # update the memories
+        self.memory[uniq_ids] = self.rnn(  # type: ignore
+            torch.cat([agg_src_msgs[uniq_src_ids], agg_dst_msgs[uniq_dst_ids]]),
+            self.memory[uniq_ids],  # type: ignore
+        )
+
+        # calculate the node embeddings
+        rel_t = time - self.last_update[edge_ids]  # type: ignore
+        # (num_edge)
+        rel_t_embs = self.time_encoder(rel_t)
+        # (num_edge, hidden_dim)
+        node_embeddings = self.gnn(
+            self.node_features[node_ids] + self.memory[node_ids],  # type: ignore
+            edge_index,
+            torch.cat(
+                [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
+            ),
+        )
+        # (num_node, hidden_dim)
+
+        # update node features
+        self.update_node_features(event_type_ids, src_ids, event_embeddings)
+
+        # update edge features
+        self.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
+
+        # update last updated timestamps
+        self.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
+
+        return node_embeddings
 
     def message(
         self,
