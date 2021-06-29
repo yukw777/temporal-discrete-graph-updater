@@ -202,3 +202,31 @@ class TemporalGraphNetwork(nn.Module):
             self.edge_features[
                 edge_add_edge_ids
             ] = edge_add_event_embeddings  # type: ignore
+
+    def update_last_update(
+        self,
+        event_type_ids: torch.Tensor,
+        event_edge_ids: torch.Tensor,
+        event_timestamps: torch.Tensor,
+    ) -> None:
+        """
+        Update last update timestamps for edges.
+
+        event_type_ids: (event_seq_len)
+        event_edge_ids: (event_seq_len)
+        event_timestamps: (event_seq_len)
+        """
+        # update last update timestamps using edge events
+        is_edge_event = torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+        )
+        # (num_edge_event)
+        if is_edge_event.size(0) > 0:
+            # there could technically be duplicates, but we ignore them.
+            # PyTorch seems to assign the first of the duplicates.
+            edge_ids = event_edge_ids[is_edge_event]
+            # (num_edge_event)
+            edge_timestamps = event_timestamps[is_edge_event]
+            # (num_edge_event)
+            self.last_update[edge_ids] = edge_timestamps  # type: ignore

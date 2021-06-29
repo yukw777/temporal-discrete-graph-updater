@@ -294,3 +294,81 @@ def test_tgn_update_edge_features(
     tgn = TemporalGraphNetwork(5, 5, 10)
     tgn.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
     assert tgn.edge_features.equal(expected)
+
+
+@pytest.mark.parametrize(
+    "event_type_ids,event_edge_ids,event_timestamps,expected",
+    [
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+            torch.tensor([0, 0, 0, 0]).long(),
+            torch.linspace(0, 3, 4),
+            torch.zeros(5),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([1, 2, 3]).long(),
+            torch.linspace(0, 2, 3),
+            torch.tensor([0, 0, 0, 2, 0]).float(),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+            torch.tensor([0, 1, 0]).long(),
+            torch.linspace(0, 2, 3),
+            torch.tensor([0, 1, 0, 0, 0]).float(),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([1, 1]).long(),
+            torch.linspace(0, 1, 2),
+            torch.tensor([0, 1, 0, 0, 0]).float(),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["end"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+            torch.tensor([0, 0, 0, 2, 3, 0, 0, 0]),
+            torch.linspace(0, 7, 8),
+            torch.tensor([0, 0, 3, 4, 0]).float(),
+        ),
+    ],
+)
+def test_tgn_update_last_update(
+    event_type_ids, event_edge_ids, event_timestamps, expected
+):
+    tgn = TemporalGraphNetwork(5, 5, 10)
+    tgn.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
+    assert tgn.last_update.equal(expected)
