@@ -845,6 +845,6 @@ def test_tw_graph_get_subgraph():
     g2_n2_id = g.add_node("game2", 1, "n2")
     g.add_edge(g2_n1_id, g2_n2_id, "game2", 1, "e2")
 
-    assert g.get_subgraph({("game0", 0)}) == ({0, 2}, {0})
-    assert g.get_subgraph({("game1", 0)}) == ({3}, set())
-    assert g.get_subgraph({("game2", 1)}) == ({1, 4}, {1})
+    assert g.get_subgraph({("game0", 0)}) == ({0, 2}, {0}, {(0, 2)})
+    assert g.get_subgraph({("game1", 0)}) == ({3}, set(), set())
+    assert g.get_subgraph({("game2", 1)}) == ({1, 4}, {1}, {(1, 4)})

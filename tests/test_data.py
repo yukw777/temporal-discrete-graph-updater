@@ -97,6 +97,7 @@ def tw_cmd_gen_datamodule():
                 "prev_action_mask": torch.ones(1, 2),
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
                 "subgraph_edge_ids": torch.tensor([0, 1, 2]),
+                "subgraph_edge_index": torch.tensor([[0, 3, 2], [1, 1, 1]]),
                 "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
                 "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
                 "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
@@ -292,6 +293,58 @@ def tw_cmd_gen_datamodule():
                         34,
                     ]
                 ),
+                "subgraph_edge_index": torch.tensor(
+                    [
+                        [
+                            26,
+                            32,
+                            3,
+                            21,
+                            23,
+                            23,
+                            34,
+                            36,
+                            28,
+                            18,
+                            20,
+                            39,
+                            29,
+                            22,
+                            23,
+                            0,
+                            27,
+                            2,
+                            35,
+                            32,
+                            37,
+                            30,
+                        ],
+                        [
+                            21,
+                            31,
+                            1,
+                            19,
+                            22,
+                            25,
+                            31,
+                            31,
+                            36,
+                            19,
+                            19,
+                            32,
+                            31,
+                            19,
+                            24,
+                            1,
+                            21,
+                            1,
+                            31,
+                            38,
+                            31,
+                            31,
+                        ],
+                    ]
+                ),
                 "tgt_event_timestamps": torch.tensor(
                     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
                 ),
@@ -343,6 +396,7 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["prev_action_mask"].equal(expected["prev_action_mask"])
     assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
     assert collated["subgraph_edge_ids"].equal(expected["subgraph_edge_ids"])
+    assert collated["subgraph_edge_index"].equal(expected["subgraph_edge_index"])
     assert collated["tgt_event_timestamps"].equal(expected["tgt_event_timestamps"])
     assert collated["tgt_event_mask"].equal(expected["tgt_event_mask"])
     assert collated["tgt_event_type_ids"].equal(expected["tgt_event_type_ids"])
