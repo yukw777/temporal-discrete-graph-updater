@@ -270,7 +270,7 @@ class StaticLabelGraphEventEncoder(nn.Module):
         label_id: (batch, graph_event_seq_len)
         label_mask: (batch, graph_event_seq_len)
         node_embeddings: (num_node, hidden_dim)
-        label_embeddings: (num_label, hidden_dim)
+        label_embeddings: (num_label, label_embedding_dim)
 
         output: (batch, graph_event_seq_len, 4*hidden_dim)
         """
@@ -295,7 +295,7 @@ class StaticLabelGraphEventEncoder(nn.Module):
 
         label_embeddings = label_embeddings[label_id]
         label_embeddings *= label_mask.unsqueeze(-1)
-        # (batch, graph_event_seq_len, hidden_dim)
+        # (batch, graph_event_seq_len, label_embedding_dim)
 
         return torch.cat(
             [
@@ -306,7 +306,7 @@ class StaticLabelGraphEventEncoder(nn.Module):
             ],
             dim=2,
         )
-        # (batch, graph_event_seq_len, 4*hidden_dim)
+        # (batch, graph_event_seq_len, 3 * hidden_dim + label_embedding_dim)
 
 
 class RNNGraphEventSeq2Seq(nn.Module):
@@ -314,13 +314,16 @@ class RNNGraphEventSeq2Seq(nn.Module):
         self,
         hidden_dim: int,
         max_decode_len: int,
+        label_embedding_dim: int,
         graph_event_encoder: StaticLabelGraphEventEncoder,
         graph_event_decoder: StaticLabelGraphEventDecoder,
     ) -> None:
         super().__init__()
         self.max_decode_len = max_decode_len
         self.rnn_encoder = nn.GRU(4 * hidden_dim, hidden_dim, batch_first=True)
-        self.rnn_decoder = nn.GRU(4 * hidden_dim, hidden_dim, batch_first=True)
+        self.rnn_decoder = nn.GRU(
+            3 * hidden_dim + label_embedding_dim, hidden_dim, batch_first=True
+        )
         self.graph_event_encoder = graph_event_encoder
         self.graph_event_decoder = graph_event_decoder
 
@@ -423,7 +426,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
             node_embeddings,
             self.graph_event_decoder.event_label_head.label_embeddings,
         )
-        # (batch, graph_event_seq_len, 4 * hidden_dim)
+        # (batch, graph_event_seq_len, 3 * hidden_dim + label_embedding_dim)
         output, _ = self.rnn_decoder(encoded_graph_event_seq, context)
         # (batch, graph_event_seq_len, hidden_dim)
         batch, graph_event_seq_len, _ = output.size()

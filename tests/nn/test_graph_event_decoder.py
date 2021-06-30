@@ -132,17 +132,17 @@ def test_static_label_graph_event_decoder(
 
 
 @pytest.mark.parametrize(
-    "hidden_dim,batch,graph_event_seq_len,num_node,num_label",
+    "hidden_dim,batch,graph_event_seq_len,num_node,num_label,label_embedding_dim",
     [
-        (10, 1, 5, 0, 24),
-        (10, 1, 5, 12, 24),
-        (10, 10, 5, 12, 24),
-        (24, 16, 10, 24, 48),
-        (24, 16, 10, 0, 48),
+        (10, 1, 5, 0, 24, 12),
+        (10, 1, 5, 12, 24, 36),
+        (10, 10, 5, 12, 24, 36),
+        (24, 16, 10, 24, 48, 64),
+        (24, 16, 10, 0, 48, 64),
     ],
 )
 def test_static_label_graph_event_encoder(
-    hidden_dim, batch, graph_event_seq_len, num_node, num_label
+    hidden_dim, batch, graph_event_seq_len, num_node, num_label, label_embedding_dim
 ):
     encoder = StaticLabelGraphEventEncoder()
     assert (
@@ -159,19 +159,19 @@ def test_static_label_graph_event_encoder(
             torch.randint(num_label, (batch, graph_event_seq_len)),
             torch.randint(2, (batch, graph_event_seq_len)).float(),
             torch.rand(num_node, hidden_dim),
-            torch.rand(num_label, hidden_dim),
+            torch.rand(num_label, label_embedding_dim),
         ).size()
-        == (batch, graph_event_seq_len, 4 * hidden_dim)
+        == (batch, graph_event_seq_len, 3 * hidden_dim + label_embedding_dim)
     )
 
 
 @pytest.mark.parametrize(
     "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
-    "batch,obs_seq_len,graph_event_seq_len,num_node",
+    "label_embedding_dim,batch,obs_seq_len,graph_event_seq_len,num_node",
     [
-        (20, 10, 15, 7, 1, 5, 10, 12),
-        (20, 10, 15, 7, 5, 5, 10, 12),
-        (36, 24, 25, 10, 8, 20, 18, 36),
+        (20, 10, 15, 7, 36, 1, 5, 10, 12),
+        (20, 10, 15, 7, 36, 5, 5, 10, 12),
+        (36, 24, 25, 10, 48, 8, 20, 18, 36),
     ],
 )
 def test_rnn_graph_event_seq2seq_teacher_forcing(
@@ -179,6 +179,7 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     key_query_dim,
     num_node_label,
     num_edge_label,
+    label_embedding_dim,
     batch,
     obs_seq_len,
     graph_event_seq_len,
@@ -187,12 +188,13 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     seq2seq = RNNGraphEventSeq2Seq(
         hidden_dim,
         100,
+        label_embedding_dim,
         StaticLabelGraphEventEncoder(),
         StaticLabelGraphEventDecoder(
             hidden_dim,
             key_query_dim,
-            torch.rand(num_node_label, hidden_dim),
-            torch.rand(num_edge_label, hidden_dim),
+            torch.rand(num_node_label, label_embedding_dim),
+            torch.rand(num_edge_label, label_embedding_dim),
         ),
     )
     seq2seq.train()
@@ -227,11 +229,11 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
 
 @pytest.mark.parametrize(
     "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
-    "batch,obs_seq_len,num_node",
+    "label_embedding_dim,batch,obs_seq_len,num_node",
     [
-        (20, 10, 15, 7, 1, 5, 12),
-        (20, 10, 15, 7, 5, 5, 12),
-        (36, 24, 25, 10, 8, 20, 36),
+        (20, 10, 15, 7, 24, 1, 5, 12),
+        (20, 10, 15, 7, 24, 5, 5, 12),
+        (36, 24, 25, 10, 48, 8, 20, 36),
     ],
 )
 def test_rnn_graph_event_seq2seq_greedy_decode(
@@ -239,6 +241,7 @@ def test_rnn_graph_event_seq2seq_greedy_decode(
     key_query_dim,
     num_node_label,
     num_edge_label,
+    label_embedding_dim,
     batch,
     obs_seq_len,
     num_node,
@@ -246,12 +249,13 @@ def test_rnn_graph_event_seq2seq_greedy_decode(
     seq2seq = RNNGraphEventSeq2Seq(
         hidden_dim,
         100,
+        label_embedding_dim,
         StaticLabelGraphEventEncoder(),
         StaticLabelGraphEventDecoder(
             hidden_dim,
             key_query_dim,
-            torch.rand(num_node_label, hidden_dim),
-            torch.rand(num_edge_label, hidden_dim),
+            torch.rand(num_node_label, label_embedding_dim),
+            torch.rand(num_edge_label, label_embedding_dim),
         ),
     )
     seq2seq.eval()
