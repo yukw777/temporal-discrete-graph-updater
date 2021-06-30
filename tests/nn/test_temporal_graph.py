@@ -397,7 +397,7 @@ def test_tgn_forward(event_seq_len, hidden_dim, num_node, num_edge):
             torch.randint(num_node, (num_node,)),
             torch.randint(num_edge, (num_edge,)),
             torch.randint(num_node, (2, num_edge)),
-            torch.tensor(12),
+            torch.randint(10, (num_edge,)),
         ).size()
         == (num_node, hidden_dim)
     )

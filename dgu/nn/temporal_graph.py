@@ -64,7 +64,7 @@ class TemporalGraphNetwork(nn.Module):
         node_ids: torch.Tensor,
         edge_ids: torch.Tensor,
         edge_index: torch.Tensor,
-        time: torch.Tensor,
+        edge_timestamps: torch.Tensor,
     ) -> torch.Tensor:
         """
         Calculate the updated node embeddings based on the given events. Node
@@ -82,7 +82,7 @@ class TemporalGraphNetwork(nn.Module):
         node_ids: (num_node)
         edge_ids: (num_edge)
         edge_index: (2, num_edge)
-        time: scalar
+        edge_timestamps: (num_edge)
 
         output: (num_node, hidden_dim)
         """
@@ -122,7 +122,7 @@ class TemporalGraphNetwork(nn.Module):
         )
 
         # calculate the node embeddings
-        rel_t = time - self.last_update[edge_ids]  # type: ignore
+        rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
         # (num_edge)
         rel_t_embs = self.time_encoder(rel_t)
         # (num_edge, hidden_dim)
