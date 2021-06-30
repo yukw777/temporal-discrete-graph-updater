@@ -51,6 +51,8 @@ def tw_cmd_gen_datamodule():
         1,
         1,
         "vocabs/word_vocab.txt",
+        "vocabs/node_vocab.txt",
+        "vocabs/relation_vocab.txt",
     )
 
 
@@ -60,8 +62,11 @@ def tw_cmd_gen_datamodule():
         (
             [
                 {
+                    "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+                    "walkthrough_step": 0,
                     "observation": "you are hungry !",
                     "previous_action": "drop flour",
+                    "timestamp": 0,
                     "event_seq": [
                         {
                             "type": "node-add",
@@ -73,10 +78,11 @@ def tw_cmd_gen_datamodule():
                             "type": "node-add",
                             "node_id": 1,
                             "timestamp": 0,
-                            "label": "hungry",
+                            "label": "open",
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 0,
                             "src_id": 0,
                             "dst_id": 1,
                             "timestamp": 0,
@@ -90,21 +96,35 @@ def tw_cmd_gen_datamodule():
                 "obs_mask": torch.ones(1, 4),
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
-                "event_type_ids": torch.tensor([2, 2, 4]),
-                "event_timestamps": torch.tensor([0.0, 0.0, 0.0]),
-                "event_src_ids": torch.tensor([0, 1, 0]),
-                "event_src_mask": torch.tensor([0.0, 0.0, 1.0]),
-                "event_dst_ids": torch.tensor([0, 0, 1]),
-                "event_dst_mask": torch.tensor([0.0, 0.0, 1.0]),
-                "event_label_word_ids": torch.tensor([[530], [377], [396]]),
-                "event_label_mask": torch.ones(3, 1),
+                "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
+                "subgraph_edge_ids": torch.tensor([0, 1, 2]),
+                "subgraph_edge_index": {(0, 1), (3, 1), (2, 1)},
+                "subgraph_edge_timestamps": torch.tensor([0, 0, 0]),
+                "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
+                "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
+                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
+                "tgt_event_src_ids": torch.tensor([0, 0, 1, 0]),
+                "tgt_event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
+                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1]),
+                "tgt_event_dst_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
+                "tgt_event_edge_ids": torch.tensor([0, 0, 0, 0]),
+                "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
+                "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
+                "groundtruth_event_src_ids": torch.tensor([0, 1, 0, 0]),
+                "groundtruth_event_src_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
+                "groundtruth_event_dst_ids": torch.tensor([0, 0, 1, 0]),
+                "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
+                "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
             },
         ),
         (
             [
                 {
+                    "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+                    "walkthrough_step": 0,
                     "observation": "you are hungry !",
                     "previous_action": "drop flour",
+                    "timestamp": 0,
                     "event_seq": [
                         {
                             "type": "node-add",
@@ -116,10 +136,11 @@ def tw_cmd_gen_datamodule():
                             "type": "node-add",
                             "node_id": 1,
                             "timestamp": 0,
-                            "label": "hungry",
+                            "label": "open",
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 0,
                             "src_id": 0,
                             "dst_id": 1,
                             "timestamp": 0,
@@ -129,10 +150,11 @@ def tw_cmd_gen_datamodule():
                             "type": "node-add",
                             "node_id": 2,
                             "timestamp": 0,
-                            "label": "door",
+                            "label": "front door",
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 1,
                             "src_id": 2,
                             "dst_id": 0,
                             "timestamp": 0,
@@ -141,8 +163,12 @@ def tw_cmd_gen_datamodule():
                     ],
                 },
                 {
+                    "game": "tw-cooking-recipe1+take1+cook+cut+open-"
+                    "x9BZfZmVUZ5Ks1m1.z8",
+                    "walkthrough_step": 0,
                     "observation": "you put the flour on the sofa",
                     "previous_action": "put flour on sofa",
+                    "timestamp": 1,
                     "event_seq": [
                         {
                             "type": "node-add",
@@ -158,6 +184,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-add",
+                            "edge_id": 2,
                             "src_id": 3,
                             "dst_id": 4,
                             "timestamp": 1,
@@ -166,11 +193,15 @@ def tw_cmd_gen_datamodule():
                     ],
                 },
                 {
+                    "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+                    "walkthrough_step": 1,
                     "observation": "you take the flour",
                     "previous_action": "take flour",
+                    "timestamp": 2,
                     "event_seq": [
                         {
                             "type": "edge-add",
+                            "edge_id": 3,
                             "src_id": 3,
                             "dst_id": 0,
                             "timestamp": 2,
@@ -178,6 +209,7 @@ def tw_cmd_gen_datamodule():
                         },
                         {
                             "type": "edge-delete",
+                            "edge_id": 2,
                             "src_id": 3,
                             "dst_id": 4,
                             "timestamp": 2,
@@ -211,60 +243,187 @@ def tw_cmd_gen_datamodule():
                         [1.0, 1.0, 0.0, 0.0],
                     ]
                 ),
-                "event_type_ids": torch.tensor([2, 2, 4, 2, 4, 2, 2, 4, 4, 5]),
-                "event_timestamps": torch.tensor(
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
-                ),
-                "event_src_ids": torch.tensor([0, 1, 0, 2, 2, 3, 4, 3, 3, 3]),
-                "event_src_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-                ),
-                "event_dst_ids": torch.tensor([0, 0, 1, 0, 0, 0, 0, 4, 0, 4]),
-                "event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-                ),
-                "event_label_word_ids": torch.tensor(
+                "subgraph_node_ids": torch.tensor(
                     [
-                        [530, 0],
-                        [377, 0],
-                        [396, 0],
-                        [251, 0],
-                        [742, 486],
-                        [305, 0],
-                        [620, 0],
-                        [494, 0],
-                        [382, 0],
-                        [494, 0],
+                        0,
+                        1,
+                        2,
+                        3,
+                        32,
+                        34,
+                        35,
+                        36,
+                        37,
+                        38,
+                        39,
+                        28,
+                        29,
+                        30,
+                        31,
+                        18,
+                        19,
+                        20,
+                        21,
+                        22,
+                        23,
+                        24,
+                        25,
+                        26,
+                        27,
                     ]
                 ),
-                "event_label_mask": torch.tensor(
+                "subgraph_edge_ids": torch.tensor(
                     [
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 1.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
-                        [1.0, 0.0],
+                        0,
+                        1,
+                        2,
+                        32,
+                        33,
+                        34,
+                        25,
+                        26,
+                        27,
+                        28,
+                        29,
+                        30,
+                        31,
+                        15,
+                        16,
+                        17,
+                        18,
+                        19,
+                        21,
+                        22,
+                        23,
+                        24,
                     ]
+                ),
+                "subgraph_edge_index": {
+                    (0, 1),
+                    (2, 1),
+                    (3, 1),
+                    (18, 19),
+                    (20, 19),
+                    (21, 19),
+                    (22, 19),
+                    (23, 22),
+                    (23, 24),
+                    (23, 25),
+                    (26, 21),
+                    (27, 21),
+                    (28, 36),
+                    (29, 31),
+                    (30, 31),
+                    (32, 31),
+                    (32, 38),
+                    (34, 31),
+                    (35, 31),
+                    (36, 31),
+                    (37, 31),
+                    (39, 32),
+                },
+                "subgraph_edge_timestamps": torch.tensor(
+                    [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+                ),
+                "tgt_event_timestamps": torch.tensor(
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                ),
+                "tgt_event_mask": torch.tensor(
+                    [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                ),
+                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5, 3, 5, 3, 3, 5, 5, 6]),
+                "tgt_event_src_ids": torch.tensor([0, 0, 1, 0, 2, 2, 3, 4, 3, 3, 3]),
+                "tgt_event_src_mask": torch.tensor(
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                ),
+                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 4]),
+                "tgt_event_dst_mask": torch.tensor(
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                ),
+                "tgt_event_edge_ids": torch.tensor([0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 2]),
+                "tgt_event_label_ids": torch.tensor(
+                    [0, 1, 7, 101, 45, 105, 43, 82, 102, 100, 102]
+                ),
+                "groundtruth_event_type_ids": torch.tensor(
+                    [3, 3, 5, 3, 5, 3, 3, 5, 5, 6, 2]
+                ),
+                "groundtruth_event_src_ids": torch.tensor(
+                    [0, 1, 0, 2, 2, 3, 4, 3, 3, 3, 0]
+                ),
+                "groundtruth_event_src_mask": torch.tensor(
+                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                ),
+                "groundtruth_event_dst_ids": torch.tensor(
+                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 4, 0]
+                ),
+                "groundtruth_event_dst_mask": torch.tensor(
+                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                ),
+                "groundtruth_event_label_ids": torch.tensor(
+                    [1, 7, 101, 45, 105, 43, 82, 102, 100, 102, 0]
                 ),
             },
         ),
     ],
 )
-def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, batch, expected):
-    collated = tw_cmd_gen_datamodule.collate(batch)
+@pytest.mark.parametrize("stage", ["train", "val", "test"])
+def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expected):
+    tw_cmd_gen_datamodule.setup()
+    collated = tw_cmd_gen_datamodule.collate(stage, batch)
     assert collated["obs_word_ids"].equal(expected["obs_word_ids"])
     assert collated["obs_mask"].equal(expected["obs_mask"])
     assert collated["prev_action_word_ids"].equal(expected["prev_action_word_ids"])
     assert collated["prev_action_mask"].equal(expected["prev_action_mask"])
-    assert collated["event_type_ids"].equal(expected["event_type_ids"])
-    assert collated["event_timestamps"].equal(expected["event_timestamps"])
-    assert collated["event_src_ids"].equal(expected["event_src_ids"])
-    assert collated["event_dst_ids"].equal(expected["event_dst_ids"])
-    assert collated["event_dst_mask"].equal(expected["event_dst_mask"])
-    assert collated["event_label_word_ids"].equal(expected["event_label_word_ids"])
-    assert collated["event_label_mask"].equal(expected["event_label_mask"])
+    assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
+    assert collated["subgraph_edge_ids"].equal(expected["subgraph_edge_ids"])
+    assert (
+        set(
+            (e1, e2)
+            for e1, e2 in collated["subgraph_edge_index"].transpose(0, 1).tolist()
+        )
+        == expected["subgraph_edge_index"]
+    )
+    assert collated["subgraph_edge_timestamps"].equal(
+        expected["subgraph_edge_timestamps"]
+    )
+    assert collated["tgt_event_timestamps"].equal(expected["tgt_event_timestamps"])
+    assert collated["tgt_event_mask"].equal(expected["tgt_event_mask"])
+    assert collated["tgt_event_type_ids"].equal(expected["tgt_event_type_ids"])
+    assert collated["tgt_event_src_ids"].equal(expected["tgt_event_src_ids"])
+    assert collated["tgt_event_src_mask"].equal(expected["tgt_event_src_mask"])
+    assert collated["tgt_event_dst_ids"].equal(expected["tgt_event_dst_ids"])
+    assert collated["tgt_event_dst_mask"].equal(expected["tgt_event_dst_mask"])
+    assert collated["tgt_event_edge_ids"].equal(expected["tgt_event_edge_ids"])
+    assert collated["tgt_event_label_ids"].equal(expected["tgt_event_label_ids"])
+    assert collated["groundtruth_event_type_ids"].equal(
+        expected["groundtruth_event_type_ids"]
+    )
+    assert collated["groundtruth_event_src_ids"].equal(
+        expected["groundtruth_event_src_ids"]
+    )
+    assert collated["groundtruth_event_src_mask"].equal(
+        expected["groundtruth_event_src_mask"]
+    )
+    assert collated["groundtruth_event_dst_ids"].equal(
+        expected["groundtruth_event_dst_ids"]
+    )
+    assert collated["groundtruth_event_dst_mask"].equal(
+        expected["groundtruth_event_dst_mask"]
+    )
+    assert collated["groundtruth_event_label_ids"].equal(
+        expected["groundtruth_event_label_ids"]
+    )
+
+
+def test_read_label_vocab_files():
+    label_id_map = TWCmdGenTemporalDataModule.read_label_vocab_files(
+        "tests/data/test_node_vocab.txt", "tests/data/test_relation_vocab.txt"
+    )
+    assert label_id_map == {
+        "": 0,
+        "player": 1,
+        "inventory": 2,
+        "chopped": 3,
+        "in": 4,
+        "is": 5,
+    }
