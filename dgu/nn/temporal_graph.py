@@ -277,9 +277,9 @@ class TemporalGraphNetwork(nn.Module):
             # (num_node_add)
             node_add_event_embeddings = event_embeddings[is_node_add]
             # (num_node_add, hidden_dim)
-            self.node_features[
+            self.node_features[  # type: ignore
                 node_add_src_ids
-            ] = node_add_event_embeddings  # type: ignore
+            ] = node_add_event_embeddings
 
     def update_edge_features(
         self,
@@ -304,9 +304,9 @@ class TemporalGraphNetwork(nn.Module):
             # (num_node_add)
             edge_add_event_embeddings = event_embeddings[is_edge_add]
             # (num_node_add, hidden_dim)
-            self.edge_features[
+            self.edge_features[  # type: ignore
                 edge_add_edge_ids
-            ] = edge_add_event_embeddings  # type: ignore
+            ] = edge_add_event_embeddings
 
     def update_last_update(
         self,
