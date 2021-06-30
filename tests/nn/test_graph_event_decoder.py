@@ -134,9 +134,11 @@ def test_static_label_graph_event_decoder(
 @pytest.mark.parametrize(
     "hidden_dim,batch,graph_event_seq_len,num_node,num_label",
     [
+        (10, 1, 5, 0, 24),
         (10, 1, 5, 12, 24),
         (10, 10, 5, 12, 24),
         (24, 16, 10, 24, 48),
+        (24, 16, 10, 0, 48),
     ],
 )
 def test_static_label_graph_event_encoder(
@@ -146,9 +148,13 @@ def test_static_label_graph_event_encoder(
     assert (
         encoder(
             torch.rand(batch, graph_event_seq_len),
-            torch.randint(num_node, (batch, graph_event_seq_len)),
+            torch.randint(num_node, (batch, graph_event_seq_len))
+            if num_node > 0
+            else torch.zeros(batch, graph_event_seq_len).long(),
             torch.randint(2, (batch, graph_event_seq_len)).float(),
-            torch.randint(num_node, (batch, graph_event_seq_len)),
+            torch.randint(num_node, (batch, graph_event_seq_len))
+            if num_node > 0
+            else torch.zeros(batch, graph_event_seq_len).long(),
             torch.randint(2, (batch, graph_event_seq_len)).float(),
             torch.randint(num_label, (batch, graph_event_seq_len)),
             torch.randint(2, (batch, graph_event_seq_len)).float(),

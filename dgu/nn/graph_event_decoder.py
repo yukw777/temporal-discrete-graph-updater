@@ -274,13 +274,24 @@ class StaticLabelGraphEventEncoder(nn.Module):
 
         output: (batch, graph_event_seq_len, 4*hidden_dim)
         """
-        src_embeddings = node_embeddings[src_id]
-        src_embeddings *= src_mask.unsqueeze(-1)
-        # (batch, graph_event_seq_len, hidden_dim)
+        batch, graph_event_seq_len = src_id.size()
+        hidden_dim = node_embeddings.size(1)
 
-        dst_embeddings = node_embeddings[dst_id]
-        dst_embeddings *= dst_mask.unsqueeze(-1)
-        # (batch, graph_event_seq_len, hidden_dim)
+        if node_embeddings.size(0) > 0:
+            src_embeddings = node_embeddings[src_id]
+            src_embeddings *= src_mask.unsqueeze(-1)
+            dst_embeddings = node_embeddings[dst_id]
+            dst_embeddings *= dst_mask.unsqueeze(-1)
+        else:
+            # if there are no nodes, just use a zero tensor
+            src_embeddings = torch.zeros(
+                batch, graph_event_seq_len, hidden_dim, device=node_embeddings.device
+            )
+            dst_embeddings = torch.zeros(
+                batch, graph_event_seq_len, hidden_dim, device=node_embeddings.device
+            )
+        # src_embeddings: (batch, graph_event_seq_len, hidden_dim)
+        # dst_embeddings: (batch, graph_event_seq_len, hidden_dim)
 
         label_embeddings = label_embeddings[label_id]
         label_embeddings *= label_mask.unsqueeze(-1)
