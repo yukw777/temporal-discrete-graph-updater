@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
 
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from dgu.nn.utils import compute_masks_from_event_type_ids
@@ -313,10 +313,22 @@ class RNNGraphEventSeq2Seq(nn.Module):
         self.graph_event_encoder = graph_event_encoder
         self.graph_event_decoder = graph_event_decoder
 
-    def forward(self, input: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(
+        self,
+        delta_g: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        tgt_event_mask: Optional[torch.Tensor] = None,
+        tgt_event_type_ids: Optional[torch.Tensor] = None,
+        tgt_event_src_ids: Optional[torch.Tensor] = None,
+        tgt_event_src_mask: Optional[torch.Tensor] = None,
+        tgt_event_dst_ids: Optional[torch.Tensor] = None,
+        tgt_event_dst_mask: Optional[torch.Tensor] = None,
+        tgt_event_label_ids: Optional[torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
         """
-        input: {
+        input:
             delta_g: (batch, obs_seq_len, 4 * hidden_dim)
+            node_embeddings: (num_node, hidden_dim)
             tgt_event_mask: (batch, graph_event_seq_len)
                 Used for teacher forcing.
             tgt_event_type_ids: (batch, graph_event_seq_len)
@@ -331,8 +343,6 @@ class RNNGraphEventSeq2Seq(nn.Module):
                 Used for teacher forcing.
             tgt_event_label_ids: (batch, graph_event_seq_len)
                 Used for teacher forcing.
-            node_embeddings: (num_node, hidden_dim)
-        }
 
         output:
         if training:
@@ -350,43 +360,79 @@ class RNNGraphEventSeq2Seq(nn.Module):
                 decoded_label_ids: (batch, decoded_len),
             }
         """
-        _, context = self.rnn_encoder(input["delta_g"])
+        _, context = self.rnn_encoder(delta_g)
         # (1, batch, hidden_dim)
         if self.training:
             # teacher forcing
-            encoded_graph_event_seq = self.graph_event_encoder(
-                input["tgt_event_type_ids"],
-                input["tgt_event_src_ids"],
-                input["tgt_event_src_mask"],
-                input["tgt_event_dst_ids"],
-                input["tgt_event_dst_mask"],
-                input["tgt_event_label_ids"],
-                input["tgt_event_mask"],
-                input["node_embeddings"],
-                self.graph_event_decoder.event_label_head.label_embeddings,
+            assert tgt_event_type_ids is not None
+            assert tgt_event_src_ids is not None
+            assert tgt_event_src_mask is not None
+            assert tgt_event_dst_ids is not None
+            assert tgt_event_dst_mask is not None
+            assert tgt_event_label_ids is not None
+            assert tgt_event_mask is not None
+
+            return self.teacher_force(
+                context,
+                node_embeddings,
+                tgt_event_type_ids,
+                tgt_event_src_ids,
+                tgt_event_src_mask,
+                tgt_event_dst_ids,
+                tgt_event_dst_mask,
+                tgt_event_label_ids,
+                tgt_event_mask,
             )
-            # (batch, graph_event_seq_len, 4 * hidden_dim)
-            output, _ = self.rnn_decoder(encoded_graph_event_seq, context)
-            # (batch, graph_event_seq_len, hidden_dim)
-            batch, graph_event_seq_len, _ = output.size()
-            decoded_graph_event_seq_results = self.graph_event_decoder(
-                output.flatten(end_dim=1), input["node_embeddings"]
-            )
-            return {
-                "event_type_logits": decoded_graph_event_seq_results[
-                    "event_type_logits"
-                ].view(batch, graph_event_seq_len, -1),
-                "src_logits": decoded_graph_event_seq_results["src_logits"].view(
-                    batch, graph_event_seq_len, -1
-                ),
-                "dst_logits": decoded_graph_event_seq_results["dst_logits"].view(
-                    batch, graph_event_seq_len, -1
-                ),
-                "label_logits": decoded_graph_event_seq_results["label_logits"].view(
-                    batch, graph_event_seq_len, -1
-                ),
-            }
-        return self.greedy_decode(context, input["node_embeddings"])
+        return self.greedy_decode(context, node_embeddings)
+
+    def teacher_force(
+        self,
+        context: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        tgt_event_type_ids: torch.Tensor,
+        tgt_event_src_ids: torch.Tensor,
+        tgt_event_src_mask: torch.Tensor,
+        tgt_event_dst_ids: torch.Tensor,
+        tgt_event_dst_mask: torch.Tensor,
+        tgt_event_label_ids: torch.Tensor,
+        tgt_event_mask: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Calculate logits using teacher forcing, i.e. calculate logits for the next
+        events based on the given target events.
+        """
+        encoded_graph_event_seq = self.graph_event_encoder(
+            tgt_event_type_ids,
+            tgt_event_src_ids,
+            tgt_event_src_mask,
+            tgt_event_dst_ids,
+            tgt_event_dst_mask,
+            tgt_event_label_ids,
+            tgt_event_mask,
+            node_embeddings,
+            self.graph_event_decoder.event_label_head.label_embeddings,
+        )
+        # (batch, graph_event_seq_len, 4 * hidden_dim)
+        output, _ = self.rnn_decoder(encoded_graph_event_seq, context)
+        # (batch, graph_event_seq_len, hidden_dim)
+        batch, graph_event_seq_len, _ = output.size()
+        decoded_graph_event_seq_results = self.graph_event_decoder(
+            output.flatten(end_dim=1), node_embeddings
+        )
+        return {
+            "event_type_logits": decoded_graph_event_seq_results[
+                "event_type_logits"
+            ].view(batch, graph_event_seq_len, -1),
+            "src_logits": decoded_graph_event_seq_results["src_logits"].view(
+                batch, graph_event_seq_len, -1
+            ),
+            "dst_logits": decoded_graph_event_seq_results["dst_logits"].view(
+                batch, graph_event_seq_len, -1
+            ),
+            "label_logits": decoded_graph_event_seq_results["label_logits"].view(
+                batch, graph_event_seq_len, -1
+            ),
+        }
 
     def greedy_decode(
         self,
