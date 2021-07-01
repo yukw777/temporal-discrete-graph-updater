@@ -119,3 +119,63 @@ def test_sldgu_forward_training(
     assert results["src_logits"].size() == (graph_event_seq_len, prev_num_node)
     assert results["dst_logits"].size() == (graph_event_seq_len, prev_num_node)
     assert results["label_logits"].size() == (graph_event_seq_len, num_label)
+
+
+@pytest.mark.parametrize(
+    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len",
+    [
+        (1, 10, 5, 0, 0, 7),
+        (4, 12, 8, 6, 12, 10),
+    ],
+)
+def test_sldgu_forward_eval(
+    sldgu,
+    batch,
+    obs_len,
+    prev_action_len,
+    prev_num_node,
+    prev_num_edge,
+    graph_event_seq_len,
+):
+    sldgu.eval()
+    num_label = (
+        sldgu.seq2seq.graph_event_decoder.event_label_head.num_node_label
+        + sldgu.seq2seq.graph_event_decoder.event_label_head.num_edge_label
+    )
+    results = sldgu(
+        torch.randint(200, (batch, obs_len)),
+        torch.randint(2, (batch, obs_len)).float(),
+        torch.randint(200, (batch, prev_action_len)),
+        torch.randint(2, (batch, prev_action_len)).float(),
+        torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
+        torch.randint(prev_num_node, (graph_event_seq_len,))
+        if prev_num_node > 0
+        else torch.zeros((graph_event_seq_len,)).long(),
+        torch.randint(2, (graph_event_seq_len,)).float(),
+        torch.randint(prev_num_node, (graph_event_seq_len,))
+        if prev_num_node > 0
+        else torch.zeros((graph_event_seq_len,)).long(),
+        torch.randint(2, (graph_event_seq_len,)).float(),
+        torch.randint(prev_num_edge, (graph_event_seq_len,))
+        if prev_num_edge > 0
+        else torch.zeros((graph_event_seq_len,)).long(),
+        torch.randint(num_label, (graph_event_seq_len,)),
+        torch.randint(2, (graph_event_seq_len,)).float(),
+        torch.randint(10, (graph_event_seq_len,)).float(),
+        torch.randint(prev_num_node, (prev_num_node,))
+        if prev_num_node > 0
+        else torch.zeros((prev_num_node,)).long(),
+        torch.randint(prev_num_edge, (prev_num_edge,))
+        if prev_num_edge > 0
+        else torch.zeros((prev_num_edge,)).long(),
+        torch.randint(prev_num_node, (2, prev_num_edge))
+        if prev_num_node > 0
+        else torch.zeros((prev_num_edge,)).long(),
+        torch.randint(10, (prev_num_edge,)),
+    )
+    assert results["decoded_event_type_ids"].dtype == torch.long
+    (decoded_len,) = results["decoded_event_type_ids"].size()
+    assert decoded_len <= sldgu.max_decode_len + 1
+    assert results["decoded_src_ids"].size() == (decoded_len,)
+    assert results["decoded_dst_ids"].size() == (decoded_len,)
+    assert results["decoded_label_ids"].size() == (decoded_len,)
