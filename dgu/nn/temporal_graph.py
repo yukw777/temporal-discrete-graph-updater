@@ -135,24 +135,28 @@ class TemporalGraphNetwork(nn.Module):
         )
 
         # calculate the node embeddings
-        rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
-        # (num_edge)
-        rel_t_embs = self.time_encoder(rel_t)
-        # (num_edge, hidden_dim)
-        node_embeddings = self.gnn(
-            torch.cat(
-                [
-                    self.node_features[node_ids],  # type: ignore
-                    self.memory[node_ids],  # type: ignore
-                ],
-                dim=-1,
-            ),
-            edge_index,
-            torch.cat(
-                [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
-            ),
-        )
-        # (num_node, hidden_dim)
+        if node_ids.size(0) != 0:
+            rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
+            # (num_edge)
+            rel_t_embs = self.time_encoder(rel_t)
+            # (num_edge, hidden_dim)
+            node_embeddings = self.gnn(
+                torch.cat(
+                    [
+                        self.node_features[node_ids],  # type: ignore
+                        self.memory[node_ids],  # type: ignore
+                    ],
+                    dim=-1,
+                ),
+                edge_index,
+                torch.cat(
+                    [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
+                ),
+            )
+            # (num_node, hidden_dim)
+        else:
+            # no nodes, so no node embeddings either
+            node_embeddings = torch.zeros(0, self.hidden_dim, device=node_ids.device)
 
         # update node features
         self.update_node_features(event_type_ids, src_ids, event_embeddings)

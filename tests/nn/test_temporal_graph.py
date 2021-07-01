@@ -377,6 +377,8 @@ def test_tgn_update_last_update(
 @pytest.mark.parametrize(
     "event_seq_len,hidden_dim,event_embedding_dim,num_node,num_edge",
     [
+        (3, 5, 10, 0, 0),
+        (3, 5, 10, 3, 0),
         (3, 5, 10, 4, 8),
         (12, 64, 100, 20, 40),
     ],
@@ -384,23 +386,33 @@ def test_tgn_update_last_update(
 def test_tgn_forward(
     event_seq_len, hidden_dim, event_embedding_dim, num_node, num_edge
 ):
-    tgn = TemporalGraphNetwork(
-        num_node * 2, num_edge * 2, hidden_dim, event_embedding_dim
-    )
+    tgn = TemporalGraphNetwork(100, 200, hidden_dim, event_embedding_dim)
     assert (
         tgn(
             torch.randint(len(EVENT_TYPES), (event_seq_len,)),
-            torch.randint(num_node * 2, (event_seq_len,)),
+            torch.randint(num_node, (event_seq_len,))
+            if num_node > 0
+            else torch.zeros((event_seq_len,)).long(),
             torch.randint(2, (event_seq_len,)).float(),
-            torch.randint(num_node * 2, (event_seq_len,)),
+            torch.randint(num_node, (event_seq_len,))
+            if num_node > 0
+            else torch.zeros((event_seq_len,)).long(),
             torch.randint(2, (event_seq_len,)).float(),
-            torch.randint(num_edge * 2, (event_seq_len,)),
+            torch.randint(num_edge, (event_seq_len,))
+            if num_edge > 0
+            else torch.zeros((event_seq_len,)).long(),
             torch.rand(event_seq_len, event_embedding_dim),
             torch.randint(2, (event_seq_len,)).float(),
             torch.randint(10, (event_seq_len,)).float(),
-            torch.randint(num_node, (num_node,)),
-            torch.randint(num_edge, (num_edge,)),
-            torch.randint(num_node, (2, num_edge)),
+            torch.randint(num_node, (num_node,))
+            if num_node > 0
+            else torch.zeros((num_node,)).long(),
+            torch.randint(num_edge, (num_edge,))
+            if num_edge > 0
+            else torch.zeros((num_edge,)).long(),
+            torch.randint(num_node, (2, num_edge))
+            if num_node > 0
+            else torch.zeros((num_edge,)).long(),
             torch.randint(10, (num_edge,)),
         ).size()
         == (num_node, hidden_dim)
