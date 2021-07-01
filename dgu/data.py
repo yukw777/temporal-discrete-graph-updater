@@ -287,6 +287,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "groundtruth_event_dst_ids": (event_seq_len),
             "groundtruth_event_dst_mask": (event_seq_len),
             "groundtruth_event_label_ids": (event_seq_len),
+            "groundtruth_event_mask": (event_seq_len),
         }
         """
         # textual observation
@@ -355,7 +356,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
 
         (
-            _,
+            groundtruth_event_mask,
             groundtruth_event_src_mask,
             groundtruth_event_dst_mask,
         ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
@@ -428,6 +429,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
             "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
             "groundtruth_event_label_ids": groundtruth_event_label_ids,
+            "groundtruth_event_mask": groundtruth_event_mask,
         }
 
     def train_dataloader(self) -> DataLoader:

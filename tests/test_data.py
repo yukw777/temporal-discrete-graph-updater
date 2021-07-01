@@ -115,6 +115,7 @@ def tw_cmd_gen_datamodule():
                 "groundtruth_event_dst_ids": torch.tensor([0, 0, 1, 0]),
                 "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
+                "groundtruth_event_mask": torch.tensor([1.0, 1.0, 1.0, 0.0]),
             },
         ),
         (
@@ -362,6 +363,9 @@ def tw_cmd_gen_datamodule():
                 "groundtruth_event_label_ids": torch.tensor(
                     [1, 7, 101, 45, 105, 43, 82, 102, 100, 102, 0]
                 ),
+                "groundtruth_event_mask": torch.tensor(
+                    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
+                ),
             },
         ),
     ],
@@ -413,6 +417,7 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["groundtruth_event_label_ids"].equal(
         expected["groundtruth_event_label_ids"]
     )
+    assert collated["groundtruth_event_mask"].equal(expected["groundtruth_event_mask"])
 
 
 def test_read_label_vocab_files():
