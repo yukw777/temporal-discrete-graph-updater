@@ -50,14 +50,20 @@ def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
 
 
 @pytest.mark.parametrize(
-    "batch,obs_len,prev_action_len,prev_num_node,graph_event_seq_len",
+    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len",
     [
-        (1, 10, 5, 0, 7),
-        (4, 12, 8, 6, 10),
+        (1, 10, 5, 0, 0, 7),
+        (4, 12, 8, 6, 12, 10),
     ],
 )
 def test_sldgu_forward_training(
-    sldgu, batch, obs_len, prev_action_len, prev_num_node, graph_event_seq_len
+    sldgu,
+    batch,
+    obs_len,
+    prev_action_len,
+    prev_num_node,
+    prev_num_edge,
+    graph_event_seq_len,
 ):
     sldgu.train()
     num_label = (
@@ -69,7 +75,31 @@ def test_sldgu_forward_training(
         torch.randint(2, (batch, obs_len)).float(),
         torch.randint(200, (batch, prev_action_len)),
         torch.randint(2, (batch, prev_action_len)).float(),
-        torch.rand(prev_num_node, sldgu.hidden_dim),
+        torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
+        torch.randint(prev_num_node, (graph_event_seq_len,))
+        if prev_num_node > 0
+        else torch.zeros((graph_event_seq_len,)).long(),
+        torch.randint(2, (graph_event_seq_len,)).float(),
+        torch.randint(prev_num_node, (graph_event_seq_len,))
+        if prev_num_node > 0
+        else torch.zeros((graph_event_seq_len,)).long(),
+        torch.randint(2, (graph_event_seq_len,)).float(),
+        torch.randint(prev_num_edge, (graph_event_seq_len,))
+        if prev_num_edge > 0
+        else torch.zeros((graph_event_seq_len,)).long(),
+        torch.randint(num_label, (graph_event_seq_len,)),
+        torch.randint(2, (graph_event_seq_len,)).float(),
+        torch.randint(10, (graph_event_seq_len,)).float(),
+        torch.randint(prev_num_node, (prev_num_node,))
+        if prev_num_node > 0
+        else torch.zeros((prev_num_node,)).long(),
+        torch.randint(prev_num_edge, (prev_num_edge,))
+        if prev_num_edge > 0
+        else torch.zeros((prev_num_edge,)).long(),
+        torch.randint(prev_num_node, (2, prev_num_edge))
+        if prev_num_node > 0
+        else torch.zeros((prev_num_edge,)).long(),
+        torch.randint(10, (prev_num_edge,)),
         tgt_event_type_ids=torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
         tgt_event_src_ids=torch.randint(prev_num_node, (graph_event_seq_len,))
         if prev_num_node > 0

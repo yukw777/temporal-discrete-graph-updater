@@ -87,7 +87,19 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         obs_mask: torch.Tensor,
         prev_action_word_ids: torch.Tensor,
         prev_action_mask: torch.Tensor,
-        prev_node_embeddings: torch.Tensor,
+        prev_event_type_ids: torch.Tensor,
+        prev_event_src_ids: torch.Tensor,
+        prev_event_src_mask: torch.Tensor,
+        prev_event_dst_ids: torch.Tensor,
+        prev_event_dst_mask: torch.Tensor,
+        prev_event_edge_ids: torch.Tensor,
+        prev_event_label_ids: torch.Tensor,
+        prev_event_mask: torch.Tensor,
+        prev_event_timestamps: torch.Tensor,
+        prev_node_ids: torch.Tensor,
+        prev_edge_ids: torch.Tensor,
+        prev_edge_index: torch.Tensor,
+        prev_edge_timestamps: torch.Tensor,
         tgt_event_type_ids: Optional[torch.Tensor] = None,
         tgt_event_src_ids: Optional[torch.Tensor] = None,
         tgt_event_src_mask: Optional[torch.Tensor] = None,
@@ -102,7 +114,19 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             obs_mask: (batch, obs_len)
             prev_action_word_ids: (batch, prev_action_len)
             prev_action_mask: (batch, prev_action_len)
-            prev_node_embeddings: (prev_num_node, hidden_dim)
+            prev_event_type_ids: (prev_event_seq_len)
+            prev_event_src_ids: (prev_event_seq_len)
+            prev_event_src_mask: (prev_event_seq_len)
+            prev_event_dst_ids: (prev_event_seq_len)
+            prev_event_dst_mask: (prev_event_seq_len)
+            prev_event_edge_ids: (prev_event_seq_len)
+            prev_event_label_ids: (prev_event_seq_len)
+            prev_event_mask: (prev_event_seq_len)
+            prev_event_timestamps: (prev_event_seq_len)
+            prev_node_ids: (prev_num_node)
+            prev_edge_ids: (prev_num_edge)
+            prev_edge_index: (2, prev_num_edge)
+            prev_edge_timestamps: (prev_num_edge)
             tgt_event_type_ids: (batch, graph_event_seq_len)
                 Used for teacher forcing.
             tgt_event_src_ids: (graph_event_seq_len)
@@ -138,6 +162,26 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, obs_len, hidden_dim)
         encoded_prev_action = self.encode_text(prev_action_word_ids, prev_action_mask)
         # (batch, prev_action_len, hidden_dim)
+
+        label_embeddings = (
+            self.seq2seq.graph_event_decoder.event_label_head.label_embeddings
+        )
+        prev_label_embeds = label_embeddings[prev_event_label_ids]  # type: ignore
+        prev_node_embeddings = self.tgn(
+            prev_event_type_ids,
+            prev_event_src_ids,
+            prev_event_src_mask,
+            prev_event_dst_ids,
+            prev_event_dst_mask,
+            prev_event_edge_ids,
+            prev_label_embeds,
+            prev_event_mask,
+            prev_event_timestamps,
+            prev_node_ids,
+            prev_edge_ids,
+            prev_edge_index,
+            prev_edge_timestamps,
+        )
 
         delta_g = self.f_delta(
             prev_node_embeddings,
