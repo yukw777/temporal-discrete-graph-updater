@@ -59,13 +59,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
 
         # temporal graph network
-        self.tgn = TemporalGraphNetwork(max_num_nodes, max_num_edges, hidden_dim)
+        assert node_label_embeddings.size(1) == edge_label_embeddings.size(1)
+        self.tgn = TemporalGraphNetwork(
+            max_num_nodes, max_num_edges, hidden_dim, node_label_embeddings.size(1)
+        )
 
         # representation aggregator
         self.repr_aggr = ReprAggregator(hidden_dim)
 
         # graph event seq2seq
-        assert node_label_embeddings.size(1) == edge_label_embeddings.size(1)
         self.seq2seq = RNNGraphEventSeq2Seq(
             hidden_dim,
             max_decode_len,

@@ -10,11 +10,18 @@ from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class TemporalGraphNetwork(nn.Module):
-    def __init__(self, max_num_nodes: int, max_num_edges: int, hidden_dim: int) -> None:
+    def __init__(
+        self,
+        max_num_nodes: int,
+        max_num_edges: int,
+        hidden_dim: int,
+        event_embedding_dim: int,
+    ) -> None:
         super().__init__()
         self.max_num_nodes = max_num_nodes
         self.max_num_edges = max_num_edges
         self.hidden_dim = hidden_dim
+        self.event_embedding_dim = event_embedding_dim
 
         # memory, not persistent as we shouldn't save memories from one game to another
         self.register_buffer(
@@ -30,24 +37,30 @@ class TemporalGraphNetwork(nn.Module):
         # node features, not persistent as we shouldn't save node features
         # from one game to another
         self.register_buffer(
-            "node_features", torch.zeros(max_num_nodes, hidden_dim), persistent=False
+            "node_features",
+            torch.zeros(max_num_nodes, event_embedding_dim),
+            persistent=False,
         )
 
         # edge features, not persistent as we shouldn't save edge features
         # from one game to another
         self.register_buffer(
-            "edge_features", torch.zeros(max_num_edges, hidden_dim), persistent=False
+            "edge_features",
+            torch.zeros(max_num_edges, event_embedding_dim),
+            persistent=False,
         )
 
         # time encoder
         self.time_encoder = TimeEncoder(hidden_dim)
 
         # RNN to update memories
-        self.rnn = nn.GRUCell(5 * hidden_dim, hidden_dim)
+        self.rnn = nn.GRUCell(4 * hidden_dim + event_embedding_dim, hidden_dim)
 
         # GNN for the final node embeddings
         self.gnn = TransformerConv(
-            hidden_dim, hidden_dim, edge_dim=hidden_dim + hidden_dim
+            hidden_dim + event_embedding_dim,
+            hidden_dim,
+            edge_dim=hidden_dim + event_embedding_dim,
         )
 
     def forward(
@@ -76,7 +89,7 @@ class TemporalGraphNetwork(nn.Module):
         dst_ids: (event_seq_len)
         dst_mask: (event_seq_len)
         event_edge_ids: (event_seq_len)
-        event_embeddings: (event_seq_len, hidden_dim)
+        event_embeddings: (event_seq_len, event_embedding_dim)
         event_mask: (event_seq_len)
         event_timestamps: (event_seq_len)
         node_ids: (num_node)
@@ -98,14 +111,14 @@ class TemporalGraphNetwork(nn.Module):
             event_edge_ids,
             event_timestamps,
         )
-        # src_msgs: (event_seq_len, 5 * hidden_dim)
-        # dst_msgs: (event_seq_len, 5 * hidden_dim)
+        # src_msgs: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
+        # dst_msgs: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
 
         # aggregate messages
         agg_src_msgs = self.agg_message(src_msgs, src_ids)
-        # (max_src_id, 5 * hidden_dim)
+        # (max_src_id, 4 * hidden_dim + event_embedding_dim)
         agg_dst_msgs = self.agg_message(dst_msgs, dst_ids)
-        # (max_dst_id, 5 * hidden_dim)
+        # (max_dst_id, 4 * hidden_dim + event_embedding_dim)
 
         # get unique IDs
         uniq_src_ids = src_ids.unique()
@@ -127,7 +140,13 @@ class TemporalGraphNetwork(nn.Module):
         rel_t_embs = self.time_encoder(rel_t)
         # (num_edge, hidden_dim)
         node_embeddings = self.gnn(
-            self.node_features[node_ids] + self.memory[node_ids],  # type: ignore
+            torch.cat(
+                [
+                    self.node_features[node_ids],  # type: ignore
+                    self.memory[node_ids],  # type: ignore
+                ],
+                dim=-1,
+            ),
             edge_index,
             torch.cat(
                 [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
@@ -170,14 +189,14 @@ class TemporalGraphNetwork(nn.Module):
         src_mask: (event_seq_len)
         dst_ids: (event_seq_len)
         dst_mask: (event_seq_len)
-        event_embeddings: (event_seq_len, hidden_dim)
+        event_embeddings: (event_seq_len, event_embedding_dim)
         event_mask: (event_seq_len)
         event_edge_ids: (event_seq_len)
         event_timestamps: (event_seq_len)
 
         output:
-            src_messages: (event_seq_len, 5 * hidden_dim)
-            dst_messages: (event_seq_len, 5 * hidden_dim)
+            src_messages: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
+            dst_messages: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
         """
         # repeat event type id for event type embeddings
         event_type_embs = event_type_ids.unsqueeze(-1).expand(-1, self.hidden_dim)
@@ -247,10 +266,10 @@ class TemporalGraphNetwork(nn.Module):
         """
         Aggregate messages based on the given node IDs. For now we calculate the mean.
 
-        messages: (event_seq_len, 5 * hidden_dim)
+        messages: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
         ids: (event_seq_len)
 
-        output: (num_uniq_ids, 5 * hidden_dim)
+        output: (num_uniq_ids, 4 * hidden_dim + event_embedding_dim)
         """
         return scatter(messages, ids, dim=0, reduce="mean")
 
@@ -265,7 +284,7 @@ class TemporalGraphNetwork(nn.Module):
 
         event_type_ids: (event_seq_len)
         src_ids: (event_seq_len)
-        event_embeddings: (event_seq_len, hidden_dim)
+        event_embeddings: (event_seq_len, event_embedding_dim)
         """
         # update node features using node-add event embeddings
         is_node_add = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
@@ -276,7 +295,7 @@ class TemporalGraphNetwork(nn.Module):
             node_add_src_ids = src_ids[is_node_add]
             # (num_node_add)
             node_add_event_embeddings = event_embeddings[is_node_add]
-            # (num_node_add, hidden_dim)
+            # (num_node_add, event_embedding_dim)
             self.node_features[  # type: ignore
                 node_add_src_ids
             ] = node_add_event_embeddings
@@ -292,7 +311,7 @@ class TemporalGraphNetwork(nn.Module):
 
         event_type_ids: (event_seq_len)
         event_edge_ids: (event_seq_len)
-        event_embeddings: (event_seq_len, hidden_dim)
+        event_embeddings: (event_seq_len, event_embedding_dim)
         """
         # update edge features using edge-add event embeddings
         is_edge_add = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
@@ -303,7 +322,7 @@ class TemporalGraphNetwork(nn.Module):
             edge_add_edge_ids = event_edge_ids[is_edge_add]
             # (num_node_add)
             edge_add_event_embeddings = event_embeddings[is_edge_add]
-            # (num_node_add, hidden_dim)
+            # (num_node_add, event_embedding_dim)
             self.edge_features[  # type: ignore
                 edge_add_edge_ids
             ] = edge_add_event_embeddings

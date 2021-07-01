@@ -124,7 +124,7 @@ def test_tgn_message(
     src_expected,
     dst_expected,
 ):
-    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4)
+    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4, 8)
     for i in range(num_nodes):
         tgn.memory[i] = torch.tensor([i] * 4).float()
     for i in range(num_edges):
@@ -164,7 +164,7 @@ def test_tgn_message(
     ],
 )
 def test_tgn_agg_message(messages, ids, expected):
-    tgn = TemporalGraphNetwork(10, 10, 4)
+    tgn = TemporalGraphNetwork(10, 10, 4, 8)
     assert tgn.agg_message(messages, ids).equal(expected)
 
 
@@ -180,8 +180,8 @@ def test_tgn_agg_message(messages, ids, expected):
                 ]
             ),
             torch.tensor([1, 2, 3]).long(),
-            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 10),
-            torch.zeros(5, 10),
+            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 16),
+            torch.zeros(5, 16),
         ),
         (
             torch.tensor(
@@ -192,8 +192,8 @@ def test_tgn_agg_message(messages, ids, expected):
                 ]
             ),
             torch.tensor([0, 1, 0]).long(),
-            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 10),
-            torch.tensor([[0] * 10, [1] * 10, [0] * 10, [0] * 10, [0] * 10]).float(),
+            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 16),
+            torch.tensor([[0] * 16, [1] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
         ),
         (
             torch.tensor(
@@ -203,8 +203,8 @@ def test_tgn_agg_message(messages, ids, expected):
                 ]
             ),
             torch.tensor([1, 1]).long(),
-            torch.linspace(0, 1, 2).unsqueeze(-1).expand(-1, 10),
-            torch.tensor([[0] * 10, [1] * 10, [0] * 10, [0] * 10, [0] * 10]).float(),
+            torch.linspace(0, 1, 2).unsqueeze(-1).expand(-1, 16),
+            torch.tensor([[0] * 16, [1] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
         ),
         (
             torch.tensor(
@@ -220,13 +220,13 @@ def test_tgn_agg_message(messages, ids, expected):
                 ]
             ),
             torch.tensor([0, 0, 1, 2, 3, 0, 0, 0]),
-            torch.linspace(0, 7, 8).unsqueeze(-1).expand(-1, 10),
-            torch.tensor([[1] * 10, [0] * 10, [0] * 10, [0] * 10, [0] * 10]).float(),
+            torch.linspace(0, 7, 8).unsqueeze(-1).expand(-1, 16),
+            torch.tensor([[1] * 16, [0] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
         ),
     ],
 )
 def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, expected):
-    tgn = TemporalGraphNetwork(5, 5, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 16)
     tgn.update_node_features(event_type_ids, src_ids, event_embeddings)
     assert tgn.node_features.equal(expected)
 
@@ -243,8 +243,8 @@ def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, exp
                 ]
             ),
             torch.tensor([1, 2, 3]).long(),
-            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 10),
-            torch.zeros(5, 10),
+            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 16),
+            torch.zeros(5, 16),
         ),
         (
             torch.tensor(
@@ -255,8 +255,8 @@ def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, exp
                 ]
             ),
             torch.tensor([0, 1, 0]).long(),
-            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 10),
-            torch.tensor([[0] * 10, [1] * 10, [0] * 10, [0] * 10, [0] * 10]).float(),
+            torch.linspace(0, 2, 3).unsqueeze(-1).expand(-1, 16),
+            torch.tensor([[0] * 16, [1] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
         ),
         (
             torch.tensor(
@@ -266,8 +266,8 @@ def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, exp
                 ]
             ),
             torch.tensor([1, 1]).long(),
-            torch.linspace(0, 1, 2).unsqueeze(-1).expand(-1, 10),
-            torch.tensor([[0] * 10, [1] * 10, [0] * 10, [0] * 10, [0] * 10]).float(),
+            torch.linspace(0, 1, 2).unsqueeze(-1).expand(-1, 16),
+            torch.tensor([[0] * 16, [1] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
         ),
         (
             torch.tensor(
@@ -283,15 +283,15 @@ def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, exp
                 ]
             ),
             torch.tensor([0, 0, 1, 2, 3, 0, 0, 0]),
-            torch.linspace(0, 7, 8).unsqueeze(-1).expand(-1, 10),
-            torch.tensor([[0] * 10, [0] * 10, [3] * 10, [0] * 10, [0] * 10]).float(),
+            torch.linspace(0, 7, 8).unsqueeze(-1).expand(-1, 16),
+            torch.tensor([[0] * 16, [0] * 16, [3] * 16, [0] * 16, [0] * 16]).float(),
         ),
     ],
 )
 def test_tgn_update_edge_features(
     event_type_ids, event_edge_ids, event_embeddings, expected
 ):
-    tgn = TemporalGraphNetwork(5, 5, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 16)
     tgn.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
     assert tgn.edge_features.equal(expected)
 
@@ -369,20 +369,24 @@ def test_tgn_update_edge_features(
 def test_tgn_update_last_update(
     event_type_ids, event_edge_ids, event_timestamps, expected
 ):
-    tgn = TemporalGraphNetwork(5, 5, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 16)
     tgn.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
     assert tgn.last_update.equal(expected)
 
 
 @pytest.mark.parametrize(
-    "event_seq_len,hidden_dim,num_node,num_edge",
+    "event_seq_len,hidden_dim,event_embedding_dim,num_node,num_edge",
     [
-        (3, 5, 4, 8),
-        (12, 64, 20, 40),
+        (3, 5, 10, 4, 8),
+        (12, 64, 100, 20, 40),
     ],
 )
-def test_tgn_forward(event_seq_len, hidden_dim, num_node, num_edge):
-    tgn = TemporalGraphNetwork(num_node * 2, num_edge * 2, hidden_dim)
+def test_tgn_forward(
+    event_seq_len, hidden_dim, event_embedding_dim, num_node, num_edge
+):
+    tgn = TemporalGraphNetwork(
+        num_node * 2, num_edge * 2, hidden_dim, event_embedding_dim
+    )
     assert (
         tgn(
             torch.randint(len(EVENT_TYPES), (event_seq_len,)),
@@ -391,7 +395,7 @@ def test_tgn_forward(event_seq_len, hidden_dim, num_node, num_edge):
             torch.randint(num_node * 2, (event_seq_len,)),
             torch.randint(2, (event_seq_len,)).float(),
             torch.randint(num_edge * 2, (event_seq_len,)),
-            torch.rand(event_seq_len, hidden_dim),
+            torch.rand(event_seq_len, event_embedding_dim),
             torch.randint(2, (event_seq_len,)).float(),
             torch.randint(10, (event_seq_len,)).float(),
             torch.randint(num_node, (num_node,)),
