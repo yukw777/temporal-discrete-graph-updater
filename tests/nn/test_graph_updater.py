@@ -29,7 +29,7 @@ def sldgu():
 def test_sldgu_encode_text(sldgu, batch, seq_len):
     assert sldgu.encode_text(
         torch.randint(200, (batch, seq_len)), torch.randint(2, (batch, seq_len)).float()
-    ).size() == (batch, seq_len, sldgu.hidden_dim)
+    ).size() == (batch, seq_len, sldgu.hparams.hidden_dim)
 
 
 @pytest.mark.parametrize(
@@ -39,13 +39,13 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
     assert (
         sldgu.f_delta(
-            torch.rand(prev_num_node, sldgu.hidden_dim),
-            torch.rand(batch, obs_len, sldgu.hidden_dim),
+            torch.rand(prev_num_node, sldgu.hparams.hidden_dim),
+            torch.rand(batch, obs_len, sldgu.hparams.hidden_dim),
             torch.randint(2, (batch, obs_len)).float(),
-            torch.rand(batch, prev_action_len, sldgu.hidden_dim),
+            torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim),
             torch.randint(2, (batch, prev_action_len)).float(),
         ).size()
-        == (batch, 4 * sldgu.hidden_dim)
+        == (batch, 4 * sldgu.hparams.hidden_dim)
     )
 
 
@@ -175,7 +175,7 @@ def test_sldgu_forward_eval(
     )
     assert results["decoded_event_type_ids"].dtype == torch.long
     (decoded_len,) = results["decoded_event_type_ids"].size()
-    assert decoded_len <= sldgu.max_decode_len + 1
+    assert decoded_len <= sldgu.hparams.max_decode_len + 1
     assert results["decoded_src_ids"].size() == (decoded_len,)
     assert results["decoded_dst_ids"].size() == (decoded_len,)
     assert results["decoded_label_ids"].size() == (decoded_len,)

@@ -39,9 +39,18 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_label_embeddings: torch.Tensor,
     ) -> None:
         super().__init__()
-        # constants
-        self.hidden_dim = hidden_dim
-        self.max_decode_len = max_decode_len
+        self.save_hyperparameters(
+            "hidden_dim",
+            "max_num_nodes",
+            "max_num_edges",
+            "word_emb_dim",
+            "text_encoder_num_blocks",
+            "text_encoder_num_conv_layers",
+            "text_encoder_kernel_size",
+            "text_encoder_num_heads",
+            "graph_event_decoder_key_query_dim",
+            "max_decode_len",
+        )
 
         # word embeddings
         assert word_emb_dim == pretrained_word_embeddings.embedding_dim
