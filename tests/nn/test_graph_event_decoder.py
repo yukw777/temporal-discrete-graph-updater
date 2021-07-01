@@ -231,8 +231,10 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
     "label_embedding_dim,batch,obs_seq_len,num_node",
     [
+        (20, 10, 15, 7, 24, 1, 5, 0),
         (20, 10, 15, 7, 24, 1, 5, 12),
         (20, 10, 15, 7, 24, 5, 5, 12),
+        (36, 24, 25, 10, 48, 8, 20, 0),
         (36, 24, 25, 10, 48, 8, 20, 36),
     ],
 )

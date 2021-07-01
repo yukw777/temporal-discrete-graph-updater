@@ -542,6 +542,10 @@ class RNNGraphEventSeq2Seq(nn.Module):
                 .argmax(dim=-1)
                 .masked_fill(end_event_mask, 0)
                 .unsqueeze(-1)
+                if node_embeddings.size(0) > 0
+                else torch.zeros(
+                    batch, 1, device=node_embeddings.device, dtype=torch.long
+                )
                 # (batch, 1)
             )
             decoded_dst_ids.append(
@@ -549,6 +553,10 @@ class RNNGraphEventSeq2Seq(nn.Module):
                 .argmax(dim=-1)
                 .masked_fill(end_event_mask, 0)
                 .unsqueeze(-1)
+                if node_embeddings.size(0) > 0
+                else torch.zeros(
+                    batch, 1, device=node_embeddings.device, dtype=torch.long
+                )
                 # (batch, 1)
             )
             decoded_label_ids.append(
