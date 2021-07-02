@@ -2,8 +2,14 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from dgu.nn.utils import masked_mean, masked_softmax, compute_masks_from_event_type_ids
+from dgu.nn.utils import (
+    masked_mean,
+    masked_softmax,
+    compute_masks_from_event_type_ids,
+    load_fasttext,
+)
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
 
 
 def test_masked_mean():
@@ -142,3 +148,25 @@ def test_compute_masks_from_event_type_ids(
     assert event_mask.equal(expected_event_mask)
     assert src_mask.equal(expected_src_mask)
     assert dst_mask.equal(expected_dst_mask)
+
+
+def test_load_fasttext():
+    preprocessor = SpacyPreprocessor([PAD, UNK, "my", "name", "is", "peter"])
+    emb = load_fasttext("tests/data/test-fasttext.vec", preprocessor)
+    word_ids, _ = preprocessor.preprocess_tokenized(
+        [
+            ["hi", "there", "what's", "your", "name"],
+            ["my", "name", "is", "peter"],
+        ]
+    )
+    embedded = emb(word_ids)
+    # OOVs
+    assert embedded[0, :4].equal(
+        emb(torch.tensor(preprocessor.unk_id)).unsqueeze(0).expand(4, -1)
+    )
+    # name
+    assert embedded[0, 4].equal(emb(torch.tensor(3)))
+    # my name is peter
+    assert embedded[1, :4].equal(emb(torch.tensor([2, 3, 4, 5])))
+    # pad, should be zero
+    assert embedded[1, 4].equal(torch.zeros(300))
