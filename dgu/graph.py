@@ -37,6 +37,7 @@ class TextWorldGraph:
         self.node_id_map: Dict[Node, int] = {}
         self.removed_node_ids: Deque[int] = deque()
         self.removed_edge_ids: Deque[int] = deque()
+        self.next_edge_id = 0
         self._graph = nx.DiGraph()
 
     def process_add_triplet_cmd(
@@ -264,7 +265,8 @@ class TextWorldGraph:
         if len(self.removed_edge_ids) > 0:
             edge_id = self.removed_edge_ids.popleft()
         else:
-            edge_id = self._graph.number_of_edges()
+            edge_id = self.next_edge_id
+            self.next_edge_id += 1
         self._graph.add_edge(
             src_id,
             dst_id,
