@@ -1,6 +1,10 @@
 import pytest
 import json
 import torch
+import pickle
+import shutil
+
+from pathlib import Path
 
 from dgu.data import (
     TemporalDataBatchSampler,
@@ -36,24 +40,6 @@ def test_tw_cmd_gen_dataset_init():
     assert len(dataset) == len(expected_dataset)
     for data, expected_data in zip(dataset, expected_dataset):
         assert data == expected_data
-
-
-@pytest.fixture
-def tw_cmd_gen_datamodule():
-    return TWCmdGenTemporalDataModule(
-        "tests/data/test_data.json",
-        1,
-        1,
-        "tests/data/test_data.json",
-        1,
-        1,
-        "tests/data/test_data.json",
-        1,
-        1,
-        "vocabs/word_vocab.txt",
-        "vocabs/node_vocab.txt",
-        "vocabs/relation_vocab.txt",
-    )
 
 
 @pytest.mark.parametrize(
@@ -371,7 +357,24 @@ def tw_cmd_gen_datamodule():
     ],
 )
 @pytest.mark.parametrize("stage", ["train", "val", "test"])
-def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expected):
+def test_tw_cmd_gen_datamodule_collate(tmpdir, stage, batch, expected):
+    # copy test files to tmpdir so that the serialized files would be saved there
+    shutil.copy2("tests/data/test_data.json", tmpdir)
+    tw_cmd_gen_datamodule = TWCmdGenTemporalDataModule(
+        tmpdir / "test_data.json",
+        1,
+        1,
+        tmpdir / "test_data.json",
+        1,
+        1,
+        tmpdir / "test_data.json",
+        1,
+        1,
+        "vocabs/word_vocab.txt",
+        "vocabs/node_vocab.txt",
+        "vocabs/relation_vocab.txt",
+    )
+    tw_cmd_gen_datamodule.prepare_data()
     tw_cmd_gen_datamodule.setup()
     collated = tw_cmd_gen_datamodule.collate(stage, batch)
     assert collated["obs_word_ids"].equal(expected["obs_word_ids"])
@@ -432,3 +435,26 @@ def test_read_label_vocab_files():
         "in": 4,
         "is": 5,
     }
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("data-path/data.json", Path("data-path/data.pickle")),
+        ("/abs/data-path/data.json", Path("/abs/data-path/data.pickle")),
+    ],
+)
+def test_tw_cmd_gen_datamodule_get_serialized_path(path, expected):
+    assert TWCmdGenTemporalDataModule.get_serialized_path(path) == expected
+
+
+def test_tw_cmd_gen_datamodule_serialize_dataset(tmpdir):
+    original_dataset = TWCmdGenTemporalDataset("tests/data/test_data.json")
+
+    serialized_path = tmpdir / "test_data.pickle"
+    assert not serialized_path.exists()
+    TWCmdGenTemporalDataModule.serialize_dataset(
+        "tests/data/test_data.json", serialized_path
+    )
+    with open(serialized_path, "rb") as f:
+        assert original_dataset == pickle.load(f)

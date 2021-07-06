@@ -40,6 +40,19 @@ class TextWorldGraph:
         self.next_edge_id = 0
         self._graph = nx.DiGraph()
 
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TextWorldGraph):
+            return False
+        return (
+            self.is_dst_node_id_map == o.is_dst_node_id_map
+            and self.exit_node_id_map == o.exit_node_id_map
+            and self.node_id_map == o.node_id_map
+            and self.removed_node_ids == o.removed_node_ids
+            and self.removed_edge_ids == o.removed_edge_ids
+            and self.next_edge_id == o.next_edge_id
+            and nx.is_isomorphic(self._graph, o._graph)
+        )
+
     def process_add_triplet_cmd(
         self,
         game: str,
