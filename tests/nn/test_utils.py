@@ -2,6 +2,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from pathlib import Path
+
 from dgu.nn.utils import (
     masked_mean,
     masked_softmax,
@@ -150,9 +152,11 @@ def test_compute_masks_from_event_type_ids(
     assert dst_mask.equal(expected_dst_mask)
 
 
-def test_load_fasttext():
+def test_load_fasttext(tmpdir):
+    serialized_path = Path(tmpdir / "word-emb.pt")
+    assert not serialized_path.exists()
     preprocessor = SpacyPreprocessor([PAD, UNK, "my", "name", "is", "peter"])
-    emb = load_fasttext("tests/data/test-fasttext.vec", preprocessor)
+    emb = load_fasttext("tests/data/test-fasttext.vec", serialized_path, preprocessor)
     word_ids, _ = preprocessor.preprocess_tokenized(
         [
             ["hi", "there", "what's", "your", "name"],
@@ -170,3 +174,6 @@ def test_load_fasttext():
     assert embedded[1, :4].equal(emb(torch.tensor([2, 3, 4, 5])))
     # pad, should be zero
     assert embedded[1, 4].equal(torch.zeros(300))
+
+    with open(serialized_path, "rb") as f:
+        assert emb.weight.equal(torch.load(f).weight)

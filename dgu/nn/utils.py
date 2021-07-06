@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from typing import Optional, Tuple
+from tqdm import tqdm
+from pathlib import Path
 
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import SpacyPreprocessor
@@ -68,12 +70,19 @@ def compute_masks_from_event_type_ids(
     return event_mask, src_mask, dst_mask
 
 
-def load_fasttext(fname: str, preprocessor: SpacyPreprocessor) -> nn.Embedding:
+def load_fasttext(
+    fname: str, serialized_path: Path, preprocessor: SpacyPreprocessor
+) -> nn.Embedding:
+    # check if we have already serialized it
+    if serialized_path.exists():
+        with open(serialized_path, "rb") as serialized:
+            return torch.load(serialized)
+
     with open(fname, "r") as f:
         _, emb_dim = map(int, f.readline().split())
 
         data = {}
-        for line in f:
+        for line in tqdm(f, desc="loading fasttext embeddings"):
             parts = line.rstrip().split(" ", 1)
             data[parts[0]] = parts[1]
     # embedding for pad is initalized to 0
@@ -81,8 +90,14 @@ def load_fasttext(fname: str, preprocessor: SpacyPreprocessor) -> nn.Embedding:
     emb = nn.Embedding(
         len(preprocessor.word_to_id_dict), emb_dim, padding_idx=preprocessor.pad_id
     )
-    for word, i in preprocessor.word_to_id_dict.items():
+    for word, i in tqdm(
+        preprocessor.word_to_id_dict.items(), desc="constructing word embeddings"
+    ):
         if word in data:
             with torch.no_grad():
                 emb.weight[i] = torch.tensor(list(map(float, data[word].split())))
+
+    # save it before returning
+    torch.save(emb, serialized_path)
+
     return emb
