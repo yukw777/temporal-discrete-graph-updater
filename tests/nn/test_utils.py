@@ -9,6 +9,7 @@ from dgu.nn.utils import (
     masked_softmax,
     compute_masks_from_event_type_ids,
     load_fasttext,
+    find_indices,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -177,3 +178,27 @@ def test_load_fasttext(tmpdir):
 
     with open(serialized_path, "rb") as f:
         assert emb.weight.equal(torch.load(f).weight)
+
+
+@pytest.mark.parametrize(
+    "haystack,needle,expected",
+    [
+        (
+            torch.tensor([], dtype=torch.long),
+            torch.tensor([1, 2]),
+            torch.tensor([], dtype=torch.long),
+        ),
+        (
+            torch.tensor([0, 1, 2, 5, 7], dtype=torch.long),
+            torch.tensor([1, 7]),
+            torch.tensor([1, 4], dtype=torch.long),
+        ),
+        (
+            torch.tensor([3, 2, 5, 6, 8], dtype=torch.long),
+            torch.tensor([6, 2]),
+            torch.tensor([3, 1], dtype=torch.long),
+        ),
+    ],
+)
+def test_find_indices(haystack, needle, expected):
+    assert find_indices(haystack, needle).equal(expected)

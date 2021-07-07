@@ -101,3 +101,7 @@ def load_fasttext(
     torch.save(emb, serialized_path)
 
     return emb
+
+
+def find_indices(haystack: torch.Tensor, needle: torch.Tensor) -> torch.Tensor:
+    return (haystack.unsqueeze(-1) == needle).transpose(0, 1).nonzero(as_tuple=True)[1]
