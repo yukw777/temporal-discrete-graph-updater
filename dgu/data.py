@@ -5,7 +5,7 @@ import torch
 import pickle
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any, Optional, Tuple
+from typing import List, Iterator, Dict, Any, Optional, Tuple, Set
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.nn.utils import compute_masks_from_event_type_ids
+from dgu.nn.utils import compute_masks_from_event_type_ids, find_indices
 from dgu.constants import EVENT_TYPE_ID_MAP
 
 
@@ -310,8 +310,10 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_label_ids": (event_seq_len),
             "groundtruth_event_type_ids": (event_seq_len),
             "groundtruth_event_src_ids": (event_seq_len),
+            "groundtruth_event_subgraph_src_ids": (event_seq_len),
             "groundtruth_event_src_mask": (event_seq_len),
             "groundtruth_event_dst_ids": (event_seq_len),
+            "groundtruth_event_subgraph_dst_ids": (event_seq_len),
             "groundtruth_event_dst_mask": (event_seq_len),
             "groundtruth_event_label_ids": (event_seq_len),
             "groundtruth_event_mask": (event_seq_len),
@@ -409,16 +411,18 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             elif game_walkthrough_timestamp_dict[key] < example["timestamp"]:
                 game_walkthrough_timestamp_dict[key] = example["timestamp"]
 
-        subgraph_node_ids: List[int] = []
+        # always include the 0th node as a placeholder
+        subgraph_node_id_set: Set[int] = {0}
         subgraph_edge_ids: List[int] = []
         subgraph_edge_index: List[Tuple[int, int]] = []
         subgraph_edge_timestamps: List[int] = []
         for key, timestamp in game_walkthrough_timestamp_dict.items():
             node_ids, edge_ids, edge_index = graph.get_subgraph({key})
-            subgraph_node_ids.extend(node_ids)
+            subgraph_node_id_set.update(node_ids)
             subgraph_edge_ids.extend(edge_ids)
             subgraph_edge_index.extend(edge_index)
             subgraph_edge_timestamps.extend([timestamp] * len(edge_ids))
+        subgraph_node_ids = torch.tensor(sorted(subgraph_node_id_set))
 
         event_label_ids = [
             self.label_id_map[event["label"]]
@@ -437,7 +441,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
-            "subgraph_node_ids": torch.tensor(subgraph_node_ids),
+            "subgraph_node_ids": subgraph_node_ids,
             "subgraph_edge_ids": torch.tensor(subgraph_edge_ids),
             "subgraph_edge_index": torch.tensor(subgraph_edge_index).transpose(0, 1),
             "subgraph_edge_timestamps": torch.tensor(subgraph_edge_timestamps),
@@ -452,8 +456,14 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_label_ids": tgt_event_label_ids,
             "groundtruth_event_type_ids": groundtruth_event_type_ids,
             "groundtruth_event_src_ids": groundtruth_event_src_ids,
+            "groundtruth_event_subgraph_src_ids": find_indices(
+                subgraph_node_ids, groundtruth_event_src_ids
+            ),
             "groundtruth_event_src_mask": groundtruth_event_src_mask,
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
+            "groundtruth_event_subgraph_dst_ids": find_indices(
+                subgraph_node_ids, groundtruth_event_dst_ids
+            ),
             "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
             "groundtruth_event_label_ids": groundtruth_event_label_ids,
             "groundtruth_event_mask": groundtruth_event_mask,

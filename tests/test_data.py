@@ -97,8 +97,10 @@ def test_tw_cmd_gen_dataset_init():
                 "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
                 "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
                 "groundtruth_event_src_ids": torch.tensor([0, 1, 0, 0]),
+                "groundtruth_event_subgraph_src_ids": torch.tensor([0, 1, 0, 0]),
                 "groundtruth_event_src_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_dst_ids": torch.tensor([0, 0, 1, 0]),
+                "groundtruth_event_subgraph_dst_ids": torch.tensor([0, 0, 1, 0]),
                 "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
                 "groundtruth_event_mask": torch.tensor([1.0, 1.0, 1.0, 0.0]),
@@ -159,21 +161,21 @@ def test_tw_cmd_gen_dataset_init():
                     "event_seq": [
                         {
                             "type": "node-add",
-                            "node_id": 3,
+                            "node_id": 28,
                             "timestamp": 1,
                             "label": "flour",
                         },
                         {
                             "type": "node-add",
-                            "node_id": 4,
+                            "node_id": 29,
                             "timestamp": 1,
                             "label": "sofa",
                         },
                         {
                             "type": "edge-add",
                             "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "src_id": 28,
+                            "dst_id": 29,
                             "timestamp": 1,
                             "label": "on",
                         },
@@ -197,8 +199,8 @@ def test_tw_cmd_gen_dataset_init():
                         {
                             "type": "edge-delete",
                             "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "src_id": 28,
+                            "dst_id": 29,
                             "timestamp": 2,
                             "label": "on",
                         },
@@ -236,17 +238,6 @@ def test_tw_cmd_gen_dataset_init():
                         1,
                         2,
                         3,
-                        32,
-                        34,
-                        35,
-                        36,
-                        37,
-                        38,
-                        39,
-                        28,
-                        29,
-                        30,
-                        31,
                         18,
                         19,
                         20,
@@ -257,6 +248,17 @@ def test_tw_cmd_gen_dataset_init():
                         25,
                         26,
                         27,
+                        28,
+                        29,
+                        30,
+                        31,
+                        32,
+                        34,
+                        35,
+                        36,
+                        37,
+                        38,
+                        39,
                     ]
                 ),
                 "subgraph_edge_ids": torch.tensor(
@@ -319,11 +321,13 @@ def test_tw_cmd_gen_dataset_init():
                     [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
                 ),
                 "tgt_event_type_ids": torch.tensor([1, 3, 3, 5, 3, 5, 3, 3, 5, 5, 6]),
-                "tgt_event_src_ids": torch.tensor([0, 0, 1, 0, 2, 2, 3, 4, 3, 3, 3]),
+                "tgt_event_src_ids": torch.tensor(
+                    [0, 0, 1, 0, 2, 2, 28, 29, 28, 3, 28]
+                ),
                 "tgt_event_src_mask": torch.tensor(
                     [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 ),
-                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 4]),
+                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 29, 0, 29]),
                 "tgt_event_dst_mask": torch.tensor(
                     [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 ),
@@ -335,13 +339,19 @@ def test_tw_cmd_gen_dataset_init():
                     [3, 3, 5, 3, 5, 3, 3, 5, 5, 6, 2]
                 ),
                 "groundtruth_event_src_ids": torch.tensor(
-                    [0, 1, 0, 2, 2, 3, 4, 3, 3, 3, 0]
+                    [0, 1, 0, 2, 2, 28, 29, 28, 3, 28, 0]
+                ),
+                "groundtruth_event_subgraph_src_ids": torch.tensor(
+                    [0, 1, 0, 2, 2, 14, 15, 14, 3, 14, 0]
                 ),
                 "groundtruth_event_src_mask": torch.tensor(
                     [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
                 ),
                 "groundtruth_event_dst_ids": torch.tensor(
-                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 4, 0]
+                    [0, 0, 1, 0, 0, 0, 0, 29, 0, 29, 0]
+                ),
+                "groundtruth_event_subgraph_dst_ids": torch.tensor(
+                    [0, 0, 1, 0, 0, 0, 0, 15, 0, 15, 0]
                 ),
                 "groundtruth_event_dst_mask": torch.tensor(
                     [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
@@ -408,11 +418,17 @@ def test_tw_cmd_gen_datamodule_collate(tmpdir, stage, batch, expected):
     assert collated["groundtruth_event_src_ids"].equal(
         expected["groundtruth_event_src_ids"]
     )
+    assert collated["groundtruth_event_subgraph_src_ids"].equal(
+        expected["groundtruth_event_subgraph_src_ids"]
+    )
     assert collated["groundtruth_event_src_mask"].equal(
         expected["groundtruth_event_src_mask"]
     )
     assert collated["groundtruth_event_dst_ids"].equal(
         expected["groundtruth_event_dst_ids"]
+    )
+    assert collated["groundtruth_event_subgraph_dst_ids"].equal(
+        expected["groundtruth_event_subgraph_dst_ids"]
     )
     assert collated["groundtruth_event_dst_mask"].equal(
         expected["groundtruth_event_dst_mask"]
