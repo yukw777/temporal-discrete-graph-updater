@@ -252,7 +252,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             to_absolute_path(word_vocab_file)
         )
         self.label_id_map = self.read_label_vocab_files(
-            node_vocab_file, relation_vocab_file
+            to_absolute_path(node_vocab_file), to_absolute_path(relation_vocab_file)
         )
 
     @staticmethod
