@@ -84,7 +84,8 @@ def test_tw_cmd_gen_dataset_init():
                 "prev_action_mask": torch.ones(1, 2),
                 "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
                 "subgraph_edge_ids": torch.tensor([0, 1, 2]),
-                "subgraph_edge_index": {(0, 1), (3, 1), (2, 1)},
+                "subgraph_global_edge_index": {(0, 1), (3, 1), (2, 1)},
+                "subgraph_local_edge_index": {(0, 1), (3, 1), (2, 1)},
                 "subgraph_edge_timestamps": torch.tensor([0, 0, 0]),
                 "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
                 "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
@@ -287,7 +288,7 @@ def test_tw_cmd_gen_dataset_init():
                         24,
                     ]
                 ),
-                "subgraph_edge_index": {
+                "subgraph_global_edge_index": {
                     (0, 1),
                     (2, 1),
                     (3, 1),
@@ -310,6 +311,30 @@ def test_tw_cmd_gen_dataset_init():
                     (36, 31),
                     (37, 31),
                     (39, 32),
+                },
+                "subgraph_local_edge_index": {
+                    (0, 1),
+                    (2, 1),
+                    (3, 1),
+                    (4, 5),
+                    (6, 5),
+                    (7, 5),
+                    (8, 5),
+                    (9, 8),
+                    (9, 10),
+                    (9, 11),
+                    (12, 7),
+                    (13, 7),
+                    (14, 21),
+                    (15, 17),
+                    (16, 17),
+                    (18, 17),
+                    (18, 23),
+                    (19, 17),
+                    (20, 17),
+                    (21, 17),
+                    (22, 17),
+                    (24, 18),
                 },
                 "subgraph_edge_timestamps": torch.tensor(
                     [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2]
@@ -396,9 +421,18 @@ def test_tw_cmd_gen_datamodule_collate(tmpdir, stage, batch, expected):
     assert (
         set(
             (e1, e2)
-            for e1, e2 in collated["subgraph_edge_index"].transpose(0, 1).tolist()
+            for e1, e2 in collated["subgraph_global_edge_index"]
+            .transpose(0, 1)
+            .tolist()
         )
-        == expected["subgraph_edge_index"]
+        == expected["subgraph_global_edge_index"]
+    )
+    assert (
+        set(
+            (e1, e2)
+            for e1, e2 in collated["subgraph_local_edge_index"].transpose(0, 1).tolist()
+        )
+        == expected["subgraph_local_edge_index"]
     )
     assert collated["subgraph_edge_timestamps"].equal(
         expected["subgraph_edge_timestamps"]
