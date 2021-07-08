@@ -101,10 +101,13 @@ class EventNodeHead(nn.Module):
         selected_node_embeddings = self.autoregressive_linear(selected_node_embeddings)
         # (batch, hidden_dim)
         # add it to the autoregressive embedding
-        autoregressive_embedding += selected_node_embeddings
+        # NOTE: make sure not to do an in-place += here as it messes with gradients
+        updated_autoregressive_embedding = (
+            autoregressive_embedding + selected_node_embeddings
+        )
         # (batch, hidden_dim)
 
-        return node_logits, autoregressive_embedding
+        return node_logits, updated_autoregressive_embedding
 
 
 class EventStaticLabelHead(nn.Module):
