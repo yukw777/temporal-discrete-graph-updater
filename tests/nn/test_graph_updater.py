@@ -34,19 +34,18 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 
 @pytest.mark.parametrize(
     "prev_num_node,batch,obs_len,prev_action_len",
-    [(0, 1, 10, 5), (10, 8, 20, 10)],
+    [(0, 1, 10, 5), (0, 8, 20, 10), (10, 8, 20, 10)],
 )
 def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
-    assert (
-        sldgu.f_delta(
-            torch.rand(prev_num_node, sldgu.hparams.hidden_dim),
-            torch.rand(batch, obs_len, sldgu.hparams.hidden_dim),
-            torch.randint(2, (batch, obs_len)).float(),
-            torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim),
-            torch.randint(2, (batch, prev_action_len)).float(),
-        ).size()
-        == (batch, 4 * sldgu.hparams.hidden_dim)
+    delta_g = sldgu.f_delta(
+        torch.rand(prev_num_node, sldgu.hparams.hidden_dim),
+        torch.rand(batch, obs_len, sldgu.hparams.hidden_dim),
+        torch.randint(2, (batch, obs_len)).float(),
+        torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim),
+        torch.randint(2, (batch, prev_action_len)).float(),
     )
+    assert delta_g.size() == (batch, 4 * sldgu.hparams.hidden_dim)
+    assert delta_g.isnan().sum() == 0
 
 
 @pytest.mark.parametrize(

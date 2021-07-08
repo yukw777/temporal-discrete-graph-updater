@@ -286,11 +286,19 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         mean_h_og = masked_mean(h_og, obs_mask)
         # (batch, hidden_dim)
-        mean_h_go = masked_mean(h_go, prev_node_mask)
+        if h_go.size(1) == 0:
+            # if there are no nodes, just use zeros
+            mean_h_go = torch.zeros_like(mean_h_og)
+        else:
+            mean_h_go = masked_mean(h_go, prev_node_mask)
         # (batch, hidden_dim)
         mean_h_ag = masked_mean(h_ag, prev_action_mask)
         # (batch, hidden_dim)
-        mean_h_ga = masked_mean(h_ga, prev_node_mask)
+        if h_ga.size(1) == 0:
+            # if there are no nodes, just use zeros
+            mean_h_ga = torch.zeros_like(mean_h_ag)
+        else:
+            mean_h_ga = masked_mean(h_ga, prev_node_mask)
         # (batch, hidden_dim)
 
         return torch.cat([mean_h_og, mean_h_go, mean_h_ag, mean_h_ga], dim=1)
