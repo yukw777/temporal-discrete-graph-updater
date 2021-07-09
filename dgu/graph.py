@@ -36,6 +36,7 @@ class TextWorldGraph:
         self.exit_node_id_map: Dict[ExitNode, int] = {}
         self.node_id_map: Dict[Node, int] = {}
         self.removed_node_ids: Deque[int] = deque()
+        self.next_node_id = 0
         self.removed_edge_ids: Deque[int] = deque()
         self.next_edge_id = 0
         self._graph = nx.DiGraph()
@@ -310,8 +311,9 @@ class TextWorldGraph:
         if len(self.removed_node_ids) > 0:
             node_id = self.removed_node_ids.popleft()
         else:
-            node_id = self._graph.order()
-        self._graph.add_node(node_id, label=label, **kwargs)
+            node_id = self.next_node_id
+            self.next_node_id += 1
+        self._graph.add_node(node_id, label=label, removed=False, **kwargs)
         return node_id
 
     def remove_node(self, node_id: int) -> None:
@@ -319,17 +321,20 @@ class TextWorldGraph:
         Remove the node with the given id.
         The removed node id is added to removed_node_ids for future use.
         """
-        self._graph.remove_node(node_id)
+        # we actually mark it removed instead of actually removing it.
+        # this is to properly handle node-delete events when generating subgraphs
+        # for training as we don't want to keep the deleted nodes around when
+        # calculating subgraph nodes.
+        attrs = self._graph.nodes[node_id]
+        attrs["removed"] = True
+        self._graph.add_node(node_id, **attrs)
         self.removed_node_ids.append(node_id)
 
     def get_node_labels(self) -> List[str]:
         """
-        Return node labels. If a label is an empty string, the node doesn't exist.
+        Return all the node labels.
         """
-        node_labels = [""] * (self._graph.order() + len(self.removed_node_ids))
-        for node_id, data in self._graph.nodes.data():
-            node_labels[node_id] = data["label"]
-        return node_labels
+        return [data["label"] for _, data in self._graph.nodes.data()]
 
     def get_edge_labels(self) -> List[Tuple[int, int, str]]:
         return [

@@ -11,6 +11,7 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["game"] == "game0"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
+    assert not g._graph.nodes[node_id]["removed"]
     assert g.get_node_labels() == ["n1"]
 
     node_id = g.add_node("n2", game="game0", walkthrough_step=1)
@@ -19,6 +20,7 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["game"] == "game0"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 1
     assert g._graph.nodes[node_id]["label"] == "n2"
+    assert not g._graph.nodes[node_id]["removed"]
     assert g.get_node_labels() == ["n1", "n2"]
 
     node_id = g.add_node("n1", game="game1", walkthrough_step=0)
@@ -27,11 +29,16 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["game"] == "game1"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
+    assert not g._graph.nodes[node_id]["removed"]
     assert g.get_node_labels() == ["n1", "n2", "n1"]
 
     g.remove_node(1)
-    assert g._graph.order() == 2
-    assert g.get_node_labels() == ["n1", "", "n1"]
+    assert g._graph.order() == 3
+    assert g._graph.nodes[1]["game"] == "game0"
+    assert g._graph.nodes[1]["walkthrough_step"] == 1
+    assert g._graph.nodes[1]["label"] == "n2"
+    assert g._graph.nodes[1]["removed"]
+    assert g.get_node_labels() == ["n1", "n2", "n1"]
 
     node_id = g.add_node("n1", game="game2", walkthrough_step=0)
     assert node_id == 1
@@ -462,7 +469,7 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "apple",
         "pear",
-        "",
+        "cut",
         "cut",
         "player",
         "kitchen",
@@ -506,14 +513,14 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "apple",
         "pear",
-        "",
+        "cut",
         "cut",
         "player",
         "kitchen",
         "exit",
         "player",
         "living room",
-        "",
+        "exit",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
@@ -554,7 +561,7 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "player",
         "living room",
-        "",
+        "exit",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
@@ -636,7 +643,7 @@ def test_tw_graph_triplet_cmd_delete():
         {"type": "node-delete", "node_id": 0, "timestamp": 1, "label": "apple"},
     ]
     assert g.get_node_labels() == [
-        "",
+        "apple",
         "kitchen",
         "exit",
         "fridge",
@@ -690,7 +697,14 @@ def test_tw_graph_triplet_cmd_delete():
         },
         {"type": "node-delete", "node_id": 5, "timestamp": 3, "label": "living room"},
     ]
-    assert g.get_node_labels() == ["apple", "kitchen", "exit", "fridge", "closed", ""]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
         (2, 1, "east of"),
@@ -743,7 +757,7 @@ def test_tw_graph_triplet_cmd_delete():
         "kitchen",
         "exit",
         "fridge",
-        "",
+        "closed",
         "living room",
     ]
     assert set(g.get_edge_labels()) == {
@@ -796,7 +810,7 @@ def test_tw_graph_triplet_cmd_delete():
     assert g.get_node_labels() == [
         "apple",
         "kitchen",
-        "",
+        "exit",
         "fridge",
         "closed",
         "living room",
@@ -865,7 +879,7 @@ def test_tw_graph_get_subgraph():
                 {"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n1"},
                 {"type": "node-delete", "node_id": 0, "timestamp": 5, "label": "n1"},
             ],
-            [""],
+            ["n1"],
             set(),
         ),
         (
@@ -874,7 +888,7 @@ def test_tw_graph_get_subgraph():
                 {"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n1"},
                 {"type": "node-delete", "node_id": 0, "timestamp": 5, "label": "n1"},
             ],
-            ["", "n1"],
+            ["n1", "n1"],
             set(),
         ),
         (
