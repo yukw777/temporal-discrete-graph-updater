@@ -81,15 +81,12 @@ class TWCmdGenTemporalDataset(Dataset):
             "timestamp": timestamp for the event,
             "label": label for edge to be added/deleted,
         }
-
-    This dataset also has a global graph that contains all the knowledge graphs
-    for the games. This can be used to generate node and edge labels for batches.
     """
 
     def __init__(self, path: str) -> None:
         with open(path, "r") as f:
             raw_data = json.load(f)
-        self.graph = TextWorldGraph()
+        graph = TextWorldGraph()
         self.data: List[Dict[str, Any]] = []
         walkthrough_examples: List[Dict[str, Any]] = []
         random_examples: List[Dict[str, Any]] = []
@@ -108,7 +105,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 for timestamp, w_example in enumerate(walkthrough_examples):
                     event_seq = list(
                         itertools.chain.from_iterable(
-                            self.graph.process_triplet_cmd(
+                            graph.process_triplet_cmd(
                                 curr_game, curr_walkthrough_step, timestamp, cmd
                             )
                             for cmd in w_example["target_commands"]
@@ -129,7 +126,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 for timestamp, r_example in enumerate(random_examples):
                     event_seq = list(
                         itertools.chain.from_iterable(
-                            self.graph.process_triplet_cmd(
+                            graph.process_triplet_cmd(
                                 curr_game,
                                 curr_walkthrough_step,
                                 len(walkthrough_examples) + timestamp,
@@ -165,7 +162,7 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, w_example in enumerate(walkthrough_examples):
             event_seq = list(
                 itertools.chain.from_iterable(
-                    self.graph.process_triplet_cmd(
+                    graph.process_triplet_cmd(
                         curr_game, curr_walkthrough_step, timestamp, cmd
                     )
                     for cmd in w_example["target_commands"]
@@ -186,7 +183,7 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, r_example in enumerate(random_examples):
             event_seq = list(
                 itertools.chain.from_iterable(
-                    self.graph.process_triplet_cmd(
+                    graph.process_triplet_cmd(
                         curr_game,
                         curr_walkthrough_step,
                         len(walkthrough_examples) + timestamp,
@@ -215,7 +212,7 @@ class TWCmdGenTemporalDataset(Dataset):
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalDataset):
             return False
-        return self.data == o.data and self.graph == o.graph
+        return self.data == o.data
 
 
 class TWCmdGenTemporalDataModule(pl.LightningDataModule):
@@ -284,7 +281,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                 self.test = pickle.load(f)
 
     def collate(
-        self, stage: str, batch: List[Dict[str, Any]]
+        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
     ) -> Dict[str, torch.Tensor]:
         """
         Turn a batch of raw datapoints into tensors.
@@ -357,6 +354,11 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         event_edge_ids: List[int] = []
 
         for example in batch:
+            graph.process_events(
+                example["event_seq"],
+                game=example["game"],
+                walkthrough_step=example["walkthrough_step"],
+            )
             for event in example["event_seq"]:
                 if event["type"] in {"node-add", "node-delete"}:
                     event_src_ids.append(event["node_id"])
@@ -392,16 +394,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         # calculate subgraph information so that we only calculate node embeddings
         # that are relevant.
-        if stage == "train":
-            graph = self.train.graph
-        elif stage == "val":
-            graph = self.valid.graph
-        elif stage == "test":
-            graph = self.test.graph
-        else:
-            raise ValueError(f"Unknown stage: {stage}")
-
-        # figure out the latest timestamp for each (game, walkthrough_step) pair
+        # First, figure out the latest timestamp for each (game, walkthrough_step) pair
         # since we want to calculate the time embeddings at the latest timestamp
         game_walkthrough_timestamp_dict: Dict[Tuple[str, int], int] = {}
         for example in batch:
@@ -483,7 +476,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.train,
             batch_size=self.train_batch_size,
-            collate_fn=partial(self.collate, "train"),
+            collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
             num_workers=self.train_num_workers,
         )
@@ -492,7 +485,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.valid,
             batch_size=self.val_batch_size,
-            collate_fn=partial(self.collate, "val"),
+            collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
             num_workers=self.val_num_workers,
         )
@@ -501,7 +494,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.test,
             batch_size=self.val_batch_size,
-            collate_fn=partial(self.collate, "test"),
+            collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
             num_workers=self.val_num_workers,
         )
