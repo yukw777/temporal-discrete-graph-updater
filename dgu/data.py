@@ -220,13 +220,10 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         self,
         train_path: str,
         train_batch_size: int,
-        train_num_workers: int,
         val_path: str,
         val_batch_size: int,
-        val_num_workers: int,
         test_path: str,
         test_batch_size: int,
-        test_num_workers: int,
         word_vocab_file: str,
         node_vocab_file: str,
         relation_vocab_file: str,
@@ -235,15 +232,12 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         self.train_path = to_absolute_path(train_path)
         self.serialized_train_path = self.get_serialized_path(self.train_path)
         self.train_batch_size = train_batch_size
-        self.train_num_workers = train_num_workers
         self.val_path = to_absolute_path(val_path)
         self.serialized_val_path = self.get_serialized_path(self.val_path)
         self.val_batch_size = val_batch_size
-        self.val_num_workers = val_num_workers
         self.test_path = to_absolute_path(test_path)
         self.serialized_test_path = self.get_serialized_path(self.test_path)
         self.test_batch_size = test_batch_size
-        self.test_num_workers = test_num_workers
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_file)
@@ -478,7 +472,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             batch_size=self.train_batch_size,
             collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=self.train_num_workers,
+            num_workers=1,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -487,7 +481,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             batch_size=self.val_batch_size,
             collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=self.val_num_workers,
+            num_workers=1,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -496,7 +490,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             batch_size=self.val_batch_size,
             collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=self.val_num_workers,
+            num_workers=1,
         )
 
     @staticmethod

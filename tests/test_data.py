@@ -426,12 +426,9 @@ def test_tw_cmd_gen_datamodule_collate(tmpdir, batch, expected):
     tw_cmd_gen_datamodule = TWCmdGenTemporalDataModule(
         tmpdir / "test_data.json",
         1,
-        1,
         tmpdir / "test_data.json",
         1,
-        1,
         tmpdir / "test_data.json",
-        1,
         1,
         "vocabs/word_vocab.txt",
         "vocabs/node_vocab.txt",
