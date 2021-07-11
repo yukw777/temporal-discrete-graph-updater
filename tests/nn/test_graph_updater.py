@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch.nn as nn
 
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.constants import EVENT_TYPES
@@ -9,26 +8,17 @@ from dgu.constants import EVENT_TYPES
 @pytest.fixture
 def sldgu():
     return StaticLabelDiscreteGraphUpdater(
-        64,
-        100,
-        200,
-        100,
-        1,
-        1,
-        3,
-        2,
-        128,
-        100,
-        nn.Embedding(200, 100),
-        torch.rand(20, 100),
-        torch.rand(10, 100),
+        pretrained_word_embedding_path="tests/data/test-fasttext.vec",
+        word_vocab_path="tests/data/test_word_vocab.txt",
+        node_vocab_path="tests/data/test_node_vocab.txt",
+        relation_vocab_path="tests/data/test_relation_vocab.txt",
     )
 
 
 @pytest.mark.parametrize("batch,seq_len", [(1, 10), (8, 24)])
 def test_sldgu_encode_text(sldgu, batch, seq_len):
     assert sldgu.encode_text(
-        torch.randint(200, (batch, seq_len)), torch.randint(2, (batch, seq_len)).float()
+        torch.randint(13, (batch, seq_len)), torch.randint(2, (batch, seq_len)).float()
     ).size() == (batch, seq_len, sldgu.hparams.hidden_dim)
 
 
@@ -49,10 +39,11 @@ def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
 
 
 @pytest.mark.parametrize(
-    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len",
+    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len,"
+    "num_node,subgraph_num_node",
     [
-        (1, 10, 5, 0, 0, 7),
-        (4, 12, 8, 6, 12, 10),
+        (1, 10, 5, 0, 0, 7, 20, 5),
+        (4, 12, 8, 6, 12, 10, 25, 12),
     ],
 )
 def test_sldgu_forward_training(
@@ -63,6 +54,8 @@ def test_sldgu_forward_training(
     prev_num_node,
     prev_num_edge,
     graph_event_seq_len,
+    num_node,
+    subgraph_num_node,
 ):
     sldgu.train()
     num_label = (
@@ -70,9 +63,9 @@ def test_sldgu_forward_training(
         + sldgu.seq2seq.graph_event_decoder.event_label_head.num_edge_label
     )
     results = sldgu(
-        torch.randint(200, (batch, obs_len)),
+        torch.randint(13, (batch, obs_len)),
         torch.randint(2, (batch, obs_len)).float(),
-        torch.randint(200, (batch, prev_action_len)),
+        torch.randint(13, (batch, prev_action_len)),
         torch.randint(2, (batch, prev_action_len)).float(),
         torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
         torch.randint(prev_num_node, (graph_event_seq_len,))
@@ -99,6 +92,7 @@ def test_sldgu_forward_training(
         if prev_num_node > 0
         else torch.zeros((prev_num_edge,)).long(),
         torch.randint(10, (prev_num_edge,)),
+        subgraph_node_ids=torch.randint(num_node, (subgraph_num_node,)),
         tgt_event_type_ids=torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
         tgt_event_src_ids=torch.randint(prev_num_node, (graph_event_seq_len,))
         if prev_num_node > 0
@@ -115,8 +109,8 @@ def test_sldgu_forward_training(
         graph_event_seq_len,
         len(EVENT_TYPES),
     )
-    assert results["src_logits"].size() == (graph_event_seq_len, prev_num_node)
-    assert results["dst_logits"].size() == (graph_event_seq_len, prev_num_node)
+    assert results["src_logits"].size() == (graph_event_seq_len, subgraph_num_node)
+    assert results["dst_logits"].size() == (graph_event_seq_len, subgraph_num_node)
     assert results["label_logits"].size() == (graph_event_seq_len, num_label)
 
 
@@ -142,9 +136,9 @@ def test_sldgu_forward_eval(
         + sldgu.seq2seq.graph_event_decoder.event_label_head.num_edge_label
     )
     results = sldgu(
-        torch.randint(200, (batch, obs_len)),
+        torch.randint(13, (batch, obs_len)),
         torch.randint(2, (batch, obs_len)).float(),
-        torch.randint(200, (batch, prev_action_len)),
+        torch.randint(13, (batch, prev_action_len)),
         torch.randint(2, (batch, prev_action_len)).float(),
         torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
         torch.randint(prev_num_node, (graph_event_seq_len,))

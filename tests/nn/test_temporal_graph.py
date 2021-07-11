@@ -377,9 +377,11 @@ def test_tgn_update_last_update(
 @pytest.mark.parametrize(
     "event_seq_len,hidden_dim,event_embedding_dim,num_node,num_edge",
     [
+        (0, 5, 10, 0, 0),
         (3, 5, 10, 0, 0),
         (3, 5, 10, 3, 0),
         (3, 5, 10, 4, 8),
+        (0, 5, 10, 4, 8),
         (12, 64, 100, 20, 40),
     ],
 )

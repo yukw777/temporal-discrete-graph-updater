@@ -1,0 +1,13 @@
+<pad>
+<unk>
+<bos>
+<eos>
+<sep>
+my
+name
+is
+peter
+to
+of
+a
+in
