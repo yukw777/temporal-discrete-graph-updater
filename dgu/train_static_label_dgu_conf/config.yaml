@@ -25,7 +25,7 @@ model:
   pretrained_word_embedding_path: embedding/crawl-300d-2M.vec
 
 train:
-  learning_rate: 5e-4
+  learning_rate: 1e-3
 
 pl_trainer:
   reload_dataloaders_every_epoch: true
