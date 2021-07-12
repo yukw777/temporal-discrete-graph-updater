@@ -36,8 +36,23 @@ class TextWorldGraph:
         self.exit_node_id_map: Dict[ExitNode, int] = {}
         self.node_id_map: Dict[Node, int] = {}
         self.removed_node_ids: Deque[int] = deque()
+        self.next_node_id = 0
         self.removed_edge_ids: Deque[int] = deque()
+        self.next_edge_id = 0
         self._graph = nx.DiGraph()
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TextWorldGraph):
+            return False
+        return (
+            self.is_dst_node_id_map == o.is_dst_node_id_map
+            and self.exit_node_id_map == o.exit_node_id_map
+            and self.node_id_map == o.node_id_map
+            and self.removed_node_ids == o.removed_node_ids
+            and self.removed_edge_ids == o.removed_edge_ids
+            and self.next_edge_id == o.next_edge_id
+            and nx.is_isomorphic(self._graph, o._graph)
+        )
 
     def process_add_triplet_cmd(
         self,
@@ -55,7 +70,9 @@ class TextWorldGraph:
             # for the given relation, and if not, add a new node.
             exit_node = ExitNode(game, walkthrough_step, rel_label, dst_label)
             if exit_node not in self.exit_node_id_map:
-                src_id = self.add_node(game, walkthrough_step, src_label)
+                src_id = self.add_node(
+                    src_label, game=game, walkthrough_step=walkthrough_step
+                )
                 self.exit_node_id_map[exit_node] = src_id
                 events.append(
                     {
@@ -72,7 +89,9 @@ class TextWorldGraph:
             # and add if it doesn't.
             node = Node(game, walkthrough_step, src_label)
             if node not in self.node_id_map:
-                src_id = self.add_node(game, walkthrough_step, src_label)
+                src_id = self.add_node(
+                    src_label, game=game, walkthrough_step=walkthrough_step
+                )
                 self.node_id_map[node] = src_id
                 events.append(
                     {
@@ -92,7 +111,9 @@ class TextWorldGraph:
             # and add if it doesn't.
             is_dst_node = IsDstNode(game, walkthrough_step, src_label, dst_label)
             if is_dst_node not in self.is_dst_node_id_map:
-                dst_id = self.add_node(game, walkthrough_step, dst_label)
+                dst_id = self.add_node(
+                    dst_label, game=game, walkthrough_step=walkthrough_step
+                )
                 self.is_dst_node_id_map[is_dst_node] = dst_id
                 events.append(
                     {
@@ -109,7 +130,9 @@ class TextWorldGraph:
             # and add if it doesn't.
             node = Node(game, walkthrough_step, dst_label)
             if node not in self.node_id_map:
-                dst_id = self.add_node(game, walkthrough_step, dst_label)
+                dst_id = self.add_node(
+                    dst_label, game=game, walkthrough_step=walkthrough_step
+                )
                 self.node_id_map[node] = dst_id
                 events.append(
                     {
@@ -126,7 +149,9 @@ class TextWorldGraph:
             # the edge already exists, so we're done
             return events
         # the edge doesn't exist, so add it
-        edge_id = self.add_edge(src_id, dst_id, game, walkthrough_step, rel_label)
+        edge_id = self.add_edge(
+            src_id, dst_id, rel_label, game=game, walkthrough_step=walkthrough_step
+        )
         events.append(
             {
                 "type": "edge-add",
@@ -254,25 +279,18 @@ class TextWorldGraph:
             )
         raise ValueError(f"Unknown command {cmd}")
 
-    def add_edge(
-        self, src_id: int, dst_id: int, game: str, walkthrough_step: int, label: str
-    ) -> int:
+    def add_edge(self, src_id: int, dst_id: int, label: str, **kwargs) -> int:
         """
         Add an edge for the given source node, destination node and associated data,
-        then returns the edge ID.
+        then returns the edge ID. The extra keyword arguments are saved as attributes
+        of the edge.
         """
         if len(self.removed_edge_ids) > 0:
             edge_id = self.removed_edge_ids.popleft()
         else:
-            edge_id = self._graph.number_of_edges()
-        self._graph.add_edge(
-            src_id,
-            dst_id,
-            id=edge_id,
-            game=game,
-            walkthrough_step=walkthrough_step,
-            label=label,
-        )
+            edge_id = self.next_edge_id
+            self.next_edge_id += 1
+        self._graph.add_edge(src_id, dst_id, id=edge_id, label=label, **kwargs)
         return edge_id
 
     def remove_edge(self, src_id: int, dst_id: int) -> int:
@@ -285,18 +303,17 @@ class TextWorldGraph:
         self.removed_edge_ids.append(edge_id)
         return edge_id
 
-    def add_node(self, game: str, walkthrough_step: int, label: str) -> int:
+    def add_node(self, label: str, **kwargs) -> int:
         """
-        Add a node for the given game, walkthrough step with the given label.
-        It initializes the id of the node.
+        Add a node with the given label and initializes it with an ID.
+        The extra keyword arguments are saved as attributes of the node.
         """
         if len(self.removed_node_ids) > 0:
             node_id = self.removed_node_ids.popleft()
         else:
-            node_id = self._graph.order()
-        self._graph.add_node(
-            node_id, game=game, walkthrough_step=walkthrough_step, label=label
-        )
+            node_id = self.next_node_id
+            self.next_node_id += 1
+        self._graph.add_node(node_id, label=label, removed=False, **kwargs)
         return node_id
 
     def remove_node(self, node_id: int) -> None:
@@ -304,17 +321,20 @@ class TextWorldGraph:
         Remove the node with the given id.
         The removed node id is added to removed_node_ids for future use.
         """
-        self._graph.remove_node(node_id)
+        # we actually mark it removed instead of actually removing it.
+        # this is to properly handle node-delete events when generating subgraphs
+        # for training as we don't want to keep the deleted nodes around when
+        # calculating subgraph nodes.
+        attrs = self._graph.nodes[node_id]
+        attrs["removed"] = True
+        self._graph.add_node(node_id, **attrs)
         self.removed_node_ids.append(node_id)
 
     def get_node_labels(self) -> List[str]:
         """
-        Return node labels. If a label is an empty string, the node doesn't exist.
+        Return all the node labels.
         """
-        node_labels = [""] * (self._graph.order() + len(self.removed_node_ids))
-        for node_id, data in self._graph.nodes.data():
-            node_labels[node_id] = data["label"]
-        return node_labels
+        return [data["label"] for _, data in self._graph.nodes.data()]
 
     def get_edge_labels(self) -> List[Tuple[int, int, str]]:
         return [
@@ -346,3 +366,24 @@ class TextWorldGraph:
             edge_ids.add(data["id"])
             edge_index.add((src, dst))
         return set(subgraph_view.nodes()), edge_ids, edge_index
+
+    def process_events(self, events: List[Dict[str, Any]], **kwargs) -> None:
+        """
+        Process the given graph events and update the graph. Keyword arguments
+        are used to set attributes for all the nodes and edges added by the given
+        graph events. Useful for specifying the game and walkthrough step.
+        """
+        for event in events:
+            event_type = event["type"]
+            if event_type == "node-add":
+                self.add_node(event["label"], **kwargs)
+            elif event_type == "node-delete":
+                self.remove_node(event["node_id"])
+            elif event_type == "edge-add":
+                self.add_edge(
+                    event["src_id"], event["dst_id"], event["label"], **kwargs
+                )
+            elif event_type == "edge-delete":
+                self.remove_edge(event["src_id"], event["dst_id"])
+            else:
+                raise ValueError(f"Unknown event type: {event_type}")

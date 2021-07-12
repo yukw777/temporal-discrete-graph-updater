@@ -25,9 +25,7 @@ def test_event_type_head(hidden_dim, batch):
 @pytest.mark.parametrize(
     "hidden_dim,key_query_dim,batch,num_node",
     [
-        (12, 8, 1, 0),
         (12, 8, 1, 1),
-        (12, 8, 5, 0),
         (12, 8, 5, 10),
     ],
 )
@@ -102,7 +100,6 @@ def test_event_static_label_head(
     "hidden_dim,key_query_dim,num_node_label,num_edge_label,label_embedding_dim,"
     "batch,num_node",
     [
-        (12, 8, 4, 5, 24, 1, 0),
         (12, 8, 4, 5, 24, 1, 4),
         (12, 8, 4, 5, 24, 10, 12),
         (24, 12, 8, 10, 48, 24, 36),
@@ -134,11 +131,9 @@ def test_static_label_graph_event_decoder(
 @pytest.mark.parametrize(
     "hidden_dim,batch,graph_event_seq_len,num_node,num_label,label_embedding_dim",
     [
-        (10, 1, 5, 0, 24, 12),
         (10, 1, 5, 12, 24, 36),
         (10, 10, 5, 12, 24, 36),
         (24, 16, 10, 24, 48, 64),
-        (24, 16, 10, 0, 48, 64),
     ],
 )
 def test_static_label_graph_event_encoder(
@@ -167,11 +162,12 @@ def test_static_label_graph_event_encoder(
 
 @pytest.mark.parametrize(
     "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
-    "label_embedding_dim,batch,obs_seq_len,graph_event_seq_len,num_node",
+    "label_embedding_dim,batch,obs_seq_len,graph_event_seq_len,num_node,"
+    "subgraph_num_node",
     [
-        (20, 10, 15, 7, 36, 1, 5, 10, 12),
-        (20, 10, 15, 7, 36, 5, 5, 10, 12),
-        (36, 24, 25, 10, 48, 8, 20, 18, 36),
+        (20, 10, 15, 7, 36, 1, 5, 10, 12, 6),
+        (20, 10, 15, 7, 36, 5, 5, 10, 12, 6),
+        (36, 24, 25, 10, 48, 8, 20, 18, 36, 24),
     ],
 )
 def test_rnn_graph_event_seq2seq_teacher_forcing(
@@ -184,6 +180,7 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     obs_seq_len,
     graph_event_seq_len,
     num_node,
+    subgraph_num_node,
 ):
     seq2seq = RNNGraphEventSeq2Seq(
         hidden_dim,
@@ -201,6 +198,7 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     results = seq2seq(
         torch.rand(batch, obs_seq_len, 4 * hidden_dim),
         torch.rand(num_node, hidden_dim),
+        subgraph_node_ids=torch.randint(num_node, (subgraph_num_node,)),
         tgt_event_mask=torch.randint(2, (batch, graph_event_seq_len)).float(),
         tgt_event_type_ids=torch.randint(
             len(EVENT_TYPES), (batch, graph_event_seq_len)
@@ -218,8 +216,16 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
         graph_event_seq_len,
         len(EVENT_TYPES),
     )
-    assert results["src_logits"].size() == (batch, graph_event_seq_len, num_node)
-    assert results["dst_logits"].size() == (batch, graph_event_seq_len, num_node)
+    assert results["src_logits"].size() == (
+        batch,
+        graph_event_seq_len,
+        subgraph_num_node,
+    )
+    assert results["dst_logits"].size() == (
+        batch,
+        graph_event_seq_len,
+        subgraph_num_node,
+    )
     assert results["label_logits"].size() == (
         batch,
         graph_event_seq_len,

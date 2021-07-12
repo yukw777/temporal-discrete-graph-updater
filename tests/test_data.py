@@ -1,7 +1,12 @@
 import pytest
 import json
 import torch
+import pickle
+import shutil
 
+from pathlib import Path
+
+from dgu.graph import TextWorldGraph
 from dgu.data import (
     TemporalDataBatchSampler,
     TWCmdGenTemporalDataset,
@@ -36,24 +41,6 @@ def test_tw_cmd_gen_dataset_init():
     assert len(dataset) == len(expected_dataset)
     for data, expected_data in zip(dataset, expected_dataset):
         assert data == expected_data
-
-
-@pytest.fixture
-def tw_cmd_gen_datamodule():
-    return TWCmdGenTemporalDataModule(
-        "tests/data/test_data.json",
-        1,
-        1,
-        "tests/data/test_data.json",
-        1,
-        1,
-        "tests/data/test_data.json",
-        1,
-        1,
-        "vocabs/word_vocab.txt",
-        "vocabs/node_vocab.txt",
-        "vocabs/relation_vocab.txt",
-    )
 
 
 @pytest.mark.parametrize(
@@ -96,10 +83,11 @@ def tw_cmd_gen_datamodule():
                 "obs_mask": torch.ones(1, 4),
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
-                "subgraph_node_ids": torch.tensor([0, 1, 2, 3]),
-                "subgraph_edge_ids": torch.tensor([0, 1, 2]),
-                "subgraph_edge_index": {(0, 1), (3, 1), (2, 1)},
-                "subgraph_edge_timestamps": torch.tensor([0, 0, 0]),
+                "subgraph_node_ids": torch.tensor([0, 1]),
+                "subgraph_edge_ids": torch.tensor([0]),
+                "subgraph_global_edge_index": {(0, 1)},
+                "subgraph_local_edge_index": {(0, 1)},
+                "subgraph_edge_timestamps": torch.tensor([0]),
                 "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
                 "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
                 "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
@@ -111,10 +99,13 @@ def tw_cmd_gen_datamodule():
                 "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
                 "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
                 "groundtruth_event_src_ids": torch.tensor([0, 1, 0, 0]),
+                "groundtruth_event_subgraph_src_ids": torch.tensor([0, 1, 0, 0]),
                 "groundtruth_event_src_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_dst_ids": torch.tensor([0, 0, 1, 0]),
+                "groundtruth_event_subgraph_dst_ids": torch.tensor([0, 0, 1, 0]),
                 "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
+                "groundtruth_event_mask": torch.tensor([1.0, 1.0, 1.0, 0.0]),
             },
         ),
         (
@@ -200,20 +191,38 @@ def tw_cmd_gen_datamodule():
                     "timestamp": 2,
                     "event_seq": [
                         {
+                            "type": "node-add",
+                            "node_id": 5,
+                            "timestamp": 2,
+                            "label": "flour",
+                        },
+                        {
+                            "type": "node-add",
+                            "node_id": 6,
+                            "timestamp": 2,
+                            "label": "kitchen",
+                        },
+                        {
                             "type": "edge-add",
                             "edge_id": 3,
-                            "src_id": 3,
-                            "dst_id": 0,
+                            "src_id": 5,
+                            "dst_id": 6,
                             "timestamp": 2,
                             "label": "in",
                         },
                         {
                             "type": "edge-delete",
-                            "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "edge_id": 3,
+                            "src_id": 5,
+                            "dst_id": 6,
                             "timestamp": 2,
-                            "label": "on",
+                            "label": "in",
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 5,
+                            "timestamp": 2,
+                            "label": "flour",
                         },
                     ],
                 },
@@ -243,133 +252,191 @@ def tw_cmd_gen_datamodule():
                         [1.0, 1.0, 0.0, 0.0],
                     ]
                 ),
-                "subgraph_node_ids": torch.tensor(
-                    [
-                        0,
-                        1,
-                        2,
-                        3,
-                        32,
-                        34,
-                        35,
-                        36,
-                        37,
-                        38,
-                        39,
-                        28,
-                        29,
-                        30,
-                        31,
-                        18,
-                        19,
-                        20,
-                        21,
-                        22,
-                        23,
-                        24,
-                        25,
-                        26,
-                        27,
-                    ]
-                ),
-                "subgraph_edge_ids": torch.tensor(
-                    [
-                        0,
-                        1,
-                        2,
-                        32,
-                        33,
-                        34,
-                        25,
-                        26,
-                        27,
-                        28,
-                        29,
-                        30,
-                        31,
-                        15,
-                        16,
-                        17,
-                        18,
-                        19,
-                        21,
-                        22,
-                        23,
-                        24,
-                    ]
-                ),
-                "subgraph_edge_index": {
-                    (0, 1),
-                    (2, 1),
-                    (3, 1),
-                    (18, 19),
-                    (20, 19),
-                    (21, 19),
-                    (22, 19),
-                    (23, 22),
-                    (23, 24),
-                    (23, 25),
-                    (26, 21),
-                    (27, 21),
-                    (28, 36),
-                    (29, 31),
-                    (30, 31),
-                    (32, 31),
-                    (32, 38),
-                    (34, 31),
-                    (35, 31),
-                    (36, 31),
-                    (37, 31),
-                    (39, 32),
-                },
-                "subgraph_edge_timestamps": torch.tensor(
-                    [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2]
-                ),
+                "subgraph_node_ids": torch.tensor([0, 1, 2, 3, 4, 5, 6]),
+                "subgraph_edge_ids": torch.tensor([0, 1, 2]),
+                "subgraph_global_edge_index": {(0, 1), (2, 0), (3, 4)},
+                "subgraph_local_edge_index": {(0, 1), (2, 0), (3, 4)},
+                "subgraph_edge_timestamps": torch.tensor([0, 0, 1]),
                 "tgt_event_timestamps": torch.tensor(
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                    [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        2.0,
+                        2.0,
+                        2.0,
+                        2.0,
+                        2.0,
+                    ]
                 ),
                 "tgt_event_mask": torch.tensor(
-                    [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                    [
+                        0.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                    ]
                 ),
-                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5, 3, 5, 3, 3, 5, 5, 6]),
-                "tgt_event_src_ids": torch.tensor([0, 0, 1, 0, 2, 2, 3, 4, 3, 3, 3]),
+                "tgt_event_type_ids": torch.tensor(
+                    [1, 3, 3, 5, 3, 5, 3, 3, 5, 3, 3, 5, 6, 4]
+                ),
+                "tgt_event_src_ids": torch.tensor(
+                    [0, 0, 1, 0, 2, 2, 3, 4, 3, 5, 6, 5, 5, 5]
+                ),
                 "tgt_event_src_mask": torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                    [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                    ]
                 ),
-                "tgt_event_dst_ids": torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 4]),
+                "tgt_event_dst_ids": torch.tensor(
+                    [0, 0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 6, 6, 0]
+                ),
                 "tgt_event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                    [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        0.0,
+                    ]
                 ),
-                "tgt_event_edge_ids": torch.tensor([0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 2]),
+                "tgt_event_edge_ids": torch.tensor(
+                    [0, 0, 0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 3, 0]
+                ),
                 "tgt_event_label_ids": torch.tensor(
-                    [0, 1, 7, 101, 45, 105, 43, 82, 102, 100, 102]
+                    [0, 1, 7, 101, 45, 105, 43, 82, 102, 43, 14, 100, 100, 43]
                 ),
                 "groundtruth_event_type_ids": torch.tensor(
-                    [3, 3, 5, 3, 5, 3, 3, 5, 5, 6, 2]
+                    [3, 3, 5, 3, 5, 3, 3, 5, 3, 3, 5, 6, 4, 2]
                 ),
                 "groundtruth_event_src_ids": torch.tensor(
-                    [0, 1, 0, 2, 2, 3, 4, 3, 3, 3, 0]
+                    [0, 1, 0, 2, 2, 3, 4, 3, 5, 6, 5, 5, 5, 0]
+                ),
+                "groundtruth_event_subgraph_src_ids": torch.tensor(
+                    [0, 1, 0, 2, 2, 3, 4, 3, 5, 6, 5, 5, 5, 0]
                 ),
                 "groundtruth_event_src_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                    [
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        0.0,
+                    ]
                 ),
                 "groundtruth_event_dst_ids": torch.tensor(
-                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 4, 0]
+                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 6, 6, 0, 0]
+                ),
+                "groundtruth_event_subgraph_dst_ids": torch.tensor(
+                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 6, 6, 0, 0]
                 ),
                 "groundtruth_event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+                    [
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                    ]
                 ),
                 "groundtruth_event_label_ids": torch.tensor(
-                    [1, 7, 101, 45, 105, 43, 82, 102, 100, 102, 0]
+                    [1, 7, 101, 45, 105, 43, 82, 102, 43, 14, 100, 100, 43, 0]
+                ),
+                "groundtruth_event_mask": torch.tensor(
+                    [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        0.0,
+                    ]
                 ),
             },
         ),
     ],
 )
-@pytest.mark.parametrize("stage", ["train", "val", "test"])
-def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expected):
+def test_tw_cmd_gen_datamodule_collate(tmpdir, batch, expected):
+    # copy test files to tmpdir so that the serialized files would be saved there
+    shutil.copy2("tests/data/test_data.json", tmpdir)
+    tw_cmd_gen_datamodule = TWCmdGenTemporalDataModule(
+        tmpdir / "test_data.json",
+        1,
+        tmpdir / "test_data.json",
+        1,
+        tmpdir / "test_data.json",
+        1,
+        "vocabs/word_vocab.txt",
+        "vocabs/node_vocab.txt",
+        "vocabs/relation_vocab.txt",
+    )
+    tw_cmd_gen_datamodule.prepare_data()
     tw_cmd_gen_datamodule.setup()
-    collated = tw_cmd_gen_datamodule.collate(stage, batch)
+    collated = tw_cmd_gen_datamodule.collate(TextWorldGraph(), batch)
     assert collated["obs_word_ids"].equal(expected["obs_word_ids"])
     assert collated["obs_mask"].equal(expected["obs_mask"])
     assert collated["prev_action_word_ids"].equal(expected["prev_action_word_ids"])
@@ -379,9 +446,18 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert (
         set(
             (e1, e2)
-            for e1, e2 in collated["subgraph_edge_index"].transpose(0, 1).tolist()
+            for e1, e2 in collated["subgraph_global_edge_index"]
+            .transpose(0, 1)
+            .tolist()
         )
-        == expected["subgraph_edge_index"]
+        == expected["subgraph_global_edge_index"]
+    )
+    assert (
+        set(
+            (e1, e2)
+            for e1, e2 in collated["subgraph_local_edge_index"].transpose(0, 1).tolist()
+        )
+        == expected["subgraph_local_edge_index"]
     )
     assert collated["subgraph_edge_timestamps"].equal(
         expected["subgraph_edge_timestamps"]
@@ -401,11 +477,17 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["groundtruth_event_src_ids"].equal(
         expected["groundtruth_event_src_ids"]
     )
+    assert collated["groundtruth_event_subgraph_src_ids"].equal(
+        expected["groundtruth_event_subgraph_src_ids"]
+    )
     assert collated["groundtruth_event_src_mask"].equal(
         expected["groundtruth_event_src_mask"]
     )
     assert collated["groundtruth_event_dst_ids"].equal(
         expected["groundtruth_event_dst_ids"]
+    )
+    assert collated["groundtruth_event_subgraph_dst_ids"].equal(
+        expected["groundtruth_event_subgraph_dst_ids"]
     )
     assert collated["groundtruth_event_dst_mask"].equal(
         expected["groundtruth_event_dst_mask"]
@@ -413,6 +495,7 @@ def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, stage, batch, expe
     assert collated["groundtruth_event_label_ids"].equal(
         expected["groundtruth_event_label_ids"]
     )
+    assert collated["groundtruth_event_mask"].equal(expected["groundtruth_event_mask"])
 
 
 def test_read_label_vocab_files():
@@ -427,3 +510,26 @@ def test_read_label_vocab_files():
         "in": 4,
         "is": 5,
     }
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("data-path/data.json", Path("data-path/data.pickle")),
+        ("/abs/data-path/data.json", Path("/abs/data-path/data.pickle")),
+    ],
+)
+def test_tw_cmd_gen_datamodule_get_serialized_path(path, expected):
+    assert TWCmdGenTemporalDataModule.get_serialized_path(path) == expected
+
+
+def test_tw_cmd_gen_datamodule_serialize_dataset(tmpdir):
+    original_dataset = TWCmdGenTemporalDataset("tests/data/test_data.json")
+
+    serialized_path = tmpdir / "test_data.pickle"
+    assert not serialized_path.exists()
+    TWCmdGenTemporalDataModule.serialize_dataset(
+        "tests/data/test_data.json", serialized_path
+    )
+    with open(serialized_path, "rb") as f:
+        assert original_dataset == pickle.load(f)

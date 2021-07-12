@@ -1,37 +1,46 @@
+import pytest
+
 from dgu.graph import TextWorldGraph
 
 
 def test_tw_graph_node():
     g = TextWorldGraph()
-    node_id = g.add_node("game0", 0, "n1")
+    node_id = g.add_node("n1", game="game0", walkthrough_step=0)
     assert node_id == 0
     assert g._graph.order() == 1
     assert g._graph.nodes[node_id]["game"] == "game0"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
+    assert not g._graph.nodes[node_id]["removed"]
     assert g.get_node_labels() == ["n1"]
 
-    node_id = g.add_node("game0", 1, "n2")
+    node_id = g.add_node("n2", game="game0", walkthrough_step=1)
     assert node_id == 1
     assert g._graph.order() == 2
     assert g._graph.nodes[node_id]["game"] == "game0"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 1
     assert g._graph.nodes[node_id]["label"] == "n2"
+    assert not g._graph.nodes[node_id]["removed"]
     assert g.get_node_labels() == ["n1", "n2"]
 
-    node_id = g.add_node("game1", 0, "n1")
+    node_id = g.add_node("n1", game="game1", walkthrough_step=0)
     assert node_id == 2
     assert g._graph.order() == 3
     assert g._graph.nodes[node_id]["game"] == "game1"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
+    assert not g._graph.nodes[node_id]["removed"]
     assert g.get_node_labels() == ["n1", "n2", "n1"]
 
     g.remove_node(1)
-    assert g._graph.order() == 2
-    assert g.get_node_labels() == ["n1", "", "n1"]
+    assert g._graph.order() == 3
+    assert g._graph.nodes[1]["game"] == "game0"
+    assert g._graph.nodes[1]["walkthrough_step"] == 1
+    assert g._graph.nodes[1]["label"] == "n2"
+    assert g._graph.nodes[1]["removed"]
+    assert g.get_node_labels() == ["n1", "n2", "n1"]
 
-    node_id = g.add_node("game2", 0, "n1")
+    node_id = g.add_node("n1", game="game2", walkthrough_step=0)
     assert node_id == 1
     assert g._graph.order() == 3
     assert g._graph.nodes[node_id]["game"] == "game2"
@@ -39,7 +48,7 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["label"] == "n1"
     assert g.get_node_labels() == ["n1", "n1", "n1"]
 
-    node_id = g.add_node("game2", 0, "n2")
+    node_id = g.add_node("n2", game="game2", walkthrough_step=0)
     assert node_id == 3
     assert g._graph.order() == 4
     assert g._graph.nodes[node_id]["game"] == "game2"
@@ -50,9 +59,9 @@ def test_tw_graph_node():
 
 def test_tw_graph_edge():
     g = TextWorldGraph()
-    n1_id = g.add_node("game0", 0, "n1")
-    n2_id = g.add_node("game0", 1, "n2")
-    e1_id = g.add_edge(n1_id, n2_id, "game0", 1, "e1")
+    n1_id = g.add_node("n1", game="game0", walkthrough_step=0)
+    n2_id = g.add_node("n2", game="game0", walkthrough_step=1)
+    e1_id = g.add_edge(n1_id, n2_id, "e1", game="game0", walkthrough_step=1)
     assert e1_id == 0
     assert g._graph.number_of_edges() == 1
     assert g._graph[n1_id][n2_id]["id"] == e1_id
@@ -60,8 +69,8 @@ def test_tw_graph_edge():
     assert g._graph[n1_id][n2_id]["walkthrough_step"] == 1
     assert g._graph[n1_id][n2_id]["label"] == "e1"
 
-    n3_id = g.add_node("game0", 2, "n3")
-    e2_id = g.add_edge(n2_id, n3_id, "game0", 2, "e2")
+    n3_id = g.add_node("n3", game="game0", walkthrough_step=2)
+    e2_id = g.add_edge(n2_id, n3_id, "e2", game="game0", walkthrough_step=2)
     assert e2_id == 1
     assert g._graph.number_of_edges() == 2
     assert g._graph[n2_id][n3_id]["id"] == e2_id
@@ -69,9 +78,9 @@ def test_tw_graph_edge():
     assert g._graph[n2_id][n3_id]["walkthrough_step"] == 2
     assert g._graph[n2_id][n3_id]["label"] == "e2"
 
-    n4_id = g.add_node("game1", 0, "n4")
-    n5_id = g.add_node("game1", 1, "n5")
-    e3_id = g.add_edge(n4_id, n5_id, "game1", 1, "e3")
+    n4_id = g.add_node("n4", game="game1", walkthrough_step=0)
+    n5_id = g.add_node("n5", game="game1", walkthrough_step=1)
+    e3_id = g.add_edge(n4_id, n5_id, "e3", game="game1", walkthrough_step=1)
     assert e3_id == 2
     assert g._graph.number_of_edges() == 3
     assert g._graph[n4_id][n5_id]["id"] == e3_id
@@ -83,8 +92,8 @@ def test_tw_graph_edge():
     assert e1_id == removed_e1_id
     assert g._graph.number_of_edges() == 2
 
-    n6_id = g.add_node("game1", 2, "n6")
-    e4_id = g.add_edge(n5_id, n6_id, "game1", 2, "e4")
+    n6_id = g.add_node("n6", game="game1", walkthrough_step=2)
+    e4_id = g.add_edge(n5_id, n6_id, "e4", game="game1", walkthrough_step=2)
     assert e4_id == e1_id
     assert g._graph.number_of_edges() == 3
     assert g._graph[n5_id][n6_id]["id"] == e4_id
@@ -460,7 +469,7 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "apple",
         "pear",
-        "",
+        "cut",
         "cut",
         "player",
         "kitchen",
@@ -504,14 +513,14 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "apple",
         "pear",
-        "",
+        "cut",
         "cut",
         "player",
         "kitchen",
         "exit",
         "player",
         "living room",
-        "",
+        "exit",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
@@ -552,7 +561,7 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "player",
         "living room",
-        "",
+        "exit",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
@@ -634,7 +643,7 @@ def test_tw_graph_triplet_cmd_delete():
         {"type": "node-delete", "node_id": 0, "timestamp": 1, "label": "apple"},
     ]
     assert g.get_node_labels() == [
-        "",
+        "apple",
         "kitchen",
         "exit",
         "fridge",
@@ -688,7 +697,14 @@ def test_tw_graph_triplet_cmd_delete():
         },
         {"type": "node-delete", "node_id": 5, "timestamp": 3, "label": "living room"},
     ]
-    assert g.get_node_labels() == ["apple", "kitchen", "exit", "fridge", "closed", ""]
+    assert g.get_node_labels() == [
+        "apple",
+        "kitchen",
+        "exit",
+        "fridge",
+        "closed",
+        "living room",
+    ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
         (2, 1, "east of"),
@@ -741,7 +757,7 @@ def test_tw_graph_triplet_cmd_delete():
         "kitchen",
         "exit",
         "fridge",
-        "",
+        "closed",
         "living room",
     ]
     assert set(g.get_edge_labels()) == {
@@ -794,7 +810,7 @@ def test_tw_graph_triplet_cmd_delete():
     assert g.get_node_labels() == [
         "apple",
         "kitchen",
-        "",
+        "exit",
         "fridge",
         "closed",
         "living room",
@@ -835,16 +851,99 @@ def test_tw_graph_triplet_cmd_delete():
 
 def test_tw_graph_get_subgraph():
     g = TextWorldGraph()
-    g0_n1_id = g.add_node("game0", 0, "n1")
-    g0_n2_id = g.add_node("game0", 0, "n2")
-    g0_n3_id = g.add_node("game0", 0, "n3")
-    g.add_edge(g0_n1_id, g0_n3_id, "game0", 0, "e1")
-    g.add_node("game1", 0, "n1")
+    g0_n1_id = g.add_node("n1", game="game0", walkthrough_step=0)
+    g0_n2_id = g.add_node("n2", game="game0", walkthrough_step=0)
+    g0_n3_id = g.add_node("n3", game="game0", walkthrough_step=0)
+    g.add_edge(g0_n1_id, g0_n3_id, "e1", game="game0", walkthrough_step=0)
+    g.add_node("n1", game="game1", walkthrough_step=0)
     g.remove_node(g0_n2_id)
-    g2_n1_id = g.add_node("game2", 1, "n1")
-    g2_n2_id = g.add_node("game2", 1, "n2")
-    g.add_edge(g2_n1_id, g2_n2_id, "game2", 1, "e2")
+    g2_n1_id = g.add_node("n1", game="game2", walkthrough_step=1)
+    g2_n2_id = g.add_node("n2", game="game2", walkthrough_step=1)
+    g.add_edge(g2_n1_id, g2_n2_id, "e2", game="game2", walkthrough_step=1)
 
     assert g.get_subgraph({("game0", 0)}) == ({0, 2}, {0}, {(0, 2)})
     assert g.get_subgraph({("game1", 0)}) == ({3}, set(), set())
     assert g.get_subgraph({("game2", 1)}) == ({1, 4}, {1}, {(1, 4)})
+
+
+@pytest.mark.parametrize(
+    "events,expected_node_labels,expected_edge_labels",
+    [
+        (
+            [{"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n1"}],
+            ["n1"],
+            set(),
+        ),
+        (
+            [
+                {"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n1"},
+                {"type": "node-delete", "node_id": 0, "timestamp": 5, "label": "n1"},
+            ],
+            ["n1"],
+            set(),
+        ),
+        (
+            [
+                {"type": "node-add", "node_id": 2, "timestamp": 5, "label": "n1"},
+                {"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n1"},
+                {"type": "node-delete", "node_id": 0, "timestamp": 5, "label": "n1"},
+            ],
+            ["n1", "n1"],
+            set(),
+        ),
+        (
+            [
+                {"type": "node-add", "node_id": 1, "timestamp": 5, "label": "n1"},
+                {"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n2"},
+                {
+                    "type": "edge-add",
+                    "src_id": 0,
+                    "dst_id": 1,
+                    "timestamp": 5,
+                    "label": "e1",
+                },
+            ],
+            ["n1", "n2"],
+            {(0, 1, "e1")},
+        ),
+        (
+            [
+                {"type": "node-add", "node_id": 1, "timestamp": 5, "label": "n1"},
+                {"type": "node-add", "node_id": 0, "timestamp": 5, "label": "n2"},
+                {
+                    "type": "edge-add",
+                    "src_id": 0,
+                    "dst_id": 1,
+                    "timestamp": 5,
+                    "label": "e1",
+                },
+                {
+                    "type": "edge-delete",
+                    "src_id": 0,
+                    "dst_id": 1,
+                    "timestamp": 6,
+                    "label": "e1",
+                },
+                {
+                    "type": "edge-add",
+                    "src_id": 1,
+                    "dst_id": 0,
+                    "timestamp": 7,
+                    "label": "e2",
+                },
+            ],
+            ["n1", "n2"],
+            {(1, 0, "e2")},
+        ),
+    ],
+)
+def test_process_event(events, expected_node_labels, expected_edge_labels):
+    g = TextWorldGraph()
+    attr = "hello"
+    g.process_events(events, attr=attr)
+    assert g.get_node_labels() == expected_node_labels
+    assert set(g.get_edge_labels()) == expected_edge_labels
+    for _, data in g._graph.nodes.data():
+        assert data["attr"] == attr
+    for _, _, data in g._graph.edges.data():
+        assert data["attr"] == attr

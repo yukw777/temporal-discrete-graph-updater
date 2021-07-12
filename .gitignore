@@ -142,3 +142,6 @@ wandb/
 
 # data
 /data/
+
+# embedding
+/embedding/

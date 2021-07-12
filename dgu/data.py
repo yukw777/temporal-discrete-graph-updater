@@ -2,16 +2,18 @@ import itertools
 import json
 import pytorch_lightning as pl
 import torch
+import pickle
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any, Optional, Tuple
+from typing import List, Iterator, Dict, Any, Optional, Tuple, Set
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
+from pathlib import Path
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.nn.utils import compute_masks_from_event_type_ids
+from dgu.nn.utils import compute_masks_from_event_type_ids, find_indices
 from dgu.constants import EVENT_TYPE_ID_MAP
 
 
@@ -79,15 +81,12 @@ class TWCmdGenTemporalDataset(Dataset):
             "timestamp": timestamp for the event,
             "label": label for edge to be added/deleted,
         }
-
-    This dataset also has a global graph that contains all the knowledge graphs
-    for the games. This can be used to generate node and edge labels for batches.
     """
 
     def __init__(self, path: str) -> None:
         with open(path, "r") as f:
             raw_data = json.load(f)
-        self.graph = TextWorldGraph()
+        graph = TextWorldGraph()
         self.data: List[Dict[str, Any]] = []
         walkthrough_examples: List[Dict[str, Any]] = []
         random_examples: List[Dict[str, Any]] = []
@@ -106,7 +105,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 for timestamp, w_example in enumerate(walkthrough_examples):
                     event_seq = list(
                         itertools.chain.from_iterable(
-                            self.graph.process_triplet_cmd(
+                            graph.process_triplet_cmd(
                                 curr_game, curr_walkthrough_step, timestamp, cmd
                             )
                             for cmd in w_example["target_commands"]
@@ -127,7 +126,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 for timestamp, r_example in enumerate(random_examples):
                     event_seq = list(
                         itertools.chain.from_iterable(
-                            self.graph.process_triplet_cmd(
+                            graph.process_triplet_cmd(
                                 curr_game,
                                 curr_walkthrough_step,
                                 len(walkthrough_examples) + timestamp,
@@ -163,7 +162,7 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, w_example in enumerate(walkthrough_examples):
             event_seq = list(
                 itertools.chain.from_iterable(
-                    self.graph.process_triplet_cmd(
+                    graph.process_triplet_cmd(
                         curr_game, curr_walkthrough_step, timestamp, cmd
                     )
                     for cmd in w_example["target_commands"]
@@ -184,7 +183,7 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, r_example in enumerate(random_examples):
             event_seq = list(
                 itertools.chain.from_iterable(
-                    self.graph.process_triplet_cmd(
+                    graph.process_triplet_cmd(
                         curr_game,
                         curr_walkthrough_step,
                         len(walkthrough_examples) + timestamp,
@@ -210,54 +209,73 @@ class TWCmdGenTemporalDataset(Dataset):
     def __len__(self) -> int:
         return len(self.data)
 
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenTemporalDataset):
+            return False
+        return self.data == o.data
+
 
 class TWCmdGenTemporalDataModule(pl.LightningDataModule):
     def __init__(
         self,
         train_path: str,
         train_batch_size: int,
-        train_num_workers: int,
         val_path: str,
         val_batch_size: int,
-        val_num_workers: int,
         test_path: str,
         test_batch_size: int,
-        test_num_workers: int,
         word_vocab_file: str,
         node_vocab_file: str,
         relation_vocab_file: str,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
+        self.serialized_train_path = self.get_serialized_path(self.train_path)
         self.train_batch_size = train_batch_size
-        self.train_num_workers = train_num_workers
         self.val_path = to_absolute_path(val_path)
+        self.serialized_val_path = self.get_serialized_path(self.val_path)
         self.val_batch_size = val_batch_size
-        self.val_num_workers = val_num_workers
         self.test_path = to_absolute_path(test_path)
+        self.serialized_test_path = self.get_serialized_path(self.test_path)
         self.test_batch_size = test_batch_size
-        self.test_num_workers = test_num_workers
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_file)
         )
         self.label_id_map = self.read_label_vocab_files(
-            node_vocab_file, relation_vocab_file
+            to_absolute_path(node_vocab_file), to_absolute_path(relation_vocab_file)
         )
 
+    @staticmethod
+    def get_serialized_path(raw_path: str) -> Path:
+        path = Path(raw_path)
+        return path.parent / (path.stem + ".pickle")
+
+    @classmethod
+    def serialize_dataset(cls, path: str, serialized_path: Path) -> None:
+        if not serialized_path.exists():
+            dataset = TWCmdGenTemporalDataset(path)
+            with open(serialized_path, "wb") as f:
+                pickle.dump(dataset, f)
+
     def prepare_data(self) -> None:
-        pass
+        self.serialize_dataset(self.train_path, self.serialized_train_path)
+        self.serialize_dataset(self.val_path, self.serialized_val_path)
+        self.serialize_dataset(self.test_path, self.serialized_test_path)
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage is None:
-            self.train = TWCmdGenTemporalDataset(self.train_path)
-            self.valid = TWCmdGenTemporalDataset(self.val_path)
+            with open(self.serialized_train_path, "rb") as f:
+                self.train = pickle.load(f)
+            with open(self.serialized_val_path, "rb") as f:
+                self.valid = pickle.load(f)
 
         if stage == "test" or stage is None:
-            self.test = TWCmdGenTemporalDataset(self.test_path)
+            with open(self.serialized_test_path, "rb") as f:
+                self.test = pickle.load(f)
 
     def collate(
-        self, stage: str, batch: List[Dict[str, Any]]
+        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
     ) -> Dict[str, torch.Tensor]:
         """
         Turn a batch of raw datapoints into tensors.
@@ -283,10 +301,13 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_label_ids": (event_seq_len),
             "groundtruth_event_type_ids": (event_seq_len),
             "groundtruth_event_src_ids": (event_seq_len),
+            "groundtruth_event_subgraph_src_ids": (event_seq_len),
             "groundtruth_event_src_mask": (event_seq_len),
             "groundtruth_event_dst_ids": (event_seq_len),
+            "groundtruth_event_subgraph_dst_ids": (event_seq_len),
             "groundtruth_event_dst_mask": (event_seq_len),
             "groundtruth_event_label_ids": (event_seq_len),
+            "groundtruth_event_mask": (event_seq_len),
         }
         """
         # textual observation
@@ -327,6 +348,11 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         event_edge_ids: List[int] = []
 
         for example in batch:
+            graph.process_events(
+                example["event_seq"],
+                game=example["game"],
+                walkthrough_step=example["walkthrough_step"],
+            )
             for event in example["event_seq"]:
                 if event["type"] in {"node-add", "node-delete"}:
                     event_src_ids.append(event["node_id"])
@@ -355,23 +381,14 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
 
         (
-            _,
+            groundtruth_event_mask,
             groundtruth_event_src_mask,
             groundtruth_event_dst_mask,
         ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
 
         # calculate subgraph information so that we only calculate node embeddings
         # that are relevant.
-        if stage == "train":
-            graph = self.train.graph
-        elif stage == "val":
-            graph = self.valid.graph
-        elif stage == "test":
-            graph = self.test.graph
-        else:
-            raise ValueError(f"Unknown stage: {stage}")
-
-        # figure out the latest timestamp for each (game, walkthrough_step) pair
+        # First, figure out the latest timestamp for each (game, walkthrough_step) pair
         # since we want to calculate the time embeddings at the latest timestamp
         game_walkthrough_timestamp_dict: Dict[Tuple[str, int], int] = {}
         for example in batch:
@@ -381,16 +398,27 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             elif game_walkthrough_timestamp_dict[key] < example["timestamp"]:
                 game_walkthrough_timestamp_dict[key] = example["timestamp"]
 
-        subgraph_node_ids: List[int] = []
+        # always include the 0th node as a placeholder
+        subgraph_node_id_set: Set[int] = {0}
         subgraph_edge_ids: List[int] = []
-        subgraph_edge_index: List[Tuple[int, int]] = []
+        subgraph_edge_index_set: Set[Tuple[int, int]] = set()
         subgraph_edge_timestamps: List[int] = []
         for key, timestamp in game_walkthrough_timestamp_dict.items():
             node_ids, edge_ids, edge_index = graph.get_subgraph({key})
-            subgraph_node_ids.extend(node_ids)
+            subgraph_node_id_set.update(node_ids)
             subgraph_edge_ids.extend(edge_ids)
-            subgraph_edge_index.extend(edge_index)
+            subgraph_edge_index_set.update(edge_index)
             subgraph_edge_timestamps.extend([timestamp] * len(edge_ids))
+        subgraph_node_ids = torch.tensor(sorted(subgraph_node_id_set))
+        subgraph_global_edge_index = torch.tensor(
+            sorted(subgraph_edge_index_set)
+        ).transpose(0, 1)
+        subgraph_local_edge_index = torch.stack(
+            [
+                find_indices(subgraph_node_ids, subgraph_global_edge_index[0]),
+                find_indices(subgraph_node_ids, subgraph_global_edge_index[1]),
+            ]
+        )
 
         event_label_ids = [
             self.label_id_map[event["label"]]
@@ -409,9 +437,10 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
-            "subgraph_node_ids": torch.tensor(subgraph_node_ids),
+            "subgraph_node_ids": subgraph_node_ids,
             "subgraph_edge_ids": torch.tensor(subgraph_edge_ids),
-            "subgraph_edge_index": torch.tensor(subgraph_edge_index).transpose(0, 1),
+            "subgraph_global_edge_index": subgraph_global_edge_index,
+            "subgraph_local_edge_index": subgraph_local_edge_index,
             "subgraph_edge_timestamps": torch.tensor(subgraph_edge_timestamps),
             "tgt_event_timestamps": tgt_event_timestamps,
             "tgt_event_mask": tgt_event_mask,
@@ -424,37 +453,44 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_label_ids": tgt_event_label_ids,
             "groundtruth_event_type_ids": groundtruth_event_type_ids,
             "groundtruth_event_src_ids": groundtruth_event_src_ids,
+            "groundtruth_event_subgraph_src_ids": find_indices(
+                subgraph_node_ids, groundtruth_event_src_ids
+            ),
             "groundtruth_event_src_mask": groundtruth_event_src_mask,
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
+            "groundtruth_event_subgraph_dst_ids": find_indices(
+                subgraph_node_ids, groundtruth_event_dst_ids
+            ),
             "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
             "groundtruth_event_label_ids": groundtruth_event_label_ids,
+            "groundtruth_event_mask": groundtruth_event_mask,
         }
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train,
             batch_size=self.train_batch_size,
-            collate_fn=partial(self.collate, "train"),
+            collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=self.train_num_workers,
+            num_workers=1,
         )
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.valid,
             batch_size=self.val_batch_size,
-            collate_fn=partial(self.collate, "val"),
+            collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=self.val_num_workers,
+            num_workers=1,
         )
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(
             self.test,
             batch_size=self.val_batch_size,
-            collate_fn=partial(self.collate, "test"),
+            collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=self.val_num_workers,
+            num_workers=1,
         )
 
     @staticmethod

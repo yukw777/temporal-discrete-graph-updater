@@ -90,13 +90,9 @@ class EventNodeHead(nn.Module):
 
         # autoregressive embedding
         # get the one hot encoding of the selected nodes
-        if node_embeddings.size(0) == 0:
-            # if there are no nodes, just use a zero tensor without taking an argmax
-            one_hot_selected_node = torch.zeros_like(node_logits)
-        else:
-            one_hot_selected_node = F.one_hot(
-                node_logits.argmax(dim=1), num_classes=node_embeddings.size(0)
-            ).float()
+        one_hot_selected_node = F.one_hot(
+            node_logits.argmax(dim=1), num_classes=node_embeddings.size(0)
+        ).float()
         # (batch, num_node)
         # multiply by the key
         selected_node_embeddings = torch.matmul(one_hot_selected_node, key)
@@ -105,10 +101,13 @@ class EventNodeHead(nn.Module):
         selected_node_embeddings = self.autoregressive_linear(selected_node_embeddings)
         # (batch, hidden_dim)
         # add it to the autoregressive embedding
-        autoregressive_embedding += selected_node_embeddings
+        # NOTE: make sure not to do an in-place += here as it messes with gradients
+        updated_autoregressive_embedding = (
+            autoregressive_embedding + selected_node_embeddings
+        )
         # (batch, hidden_dim)
 
-        return node_logits, autoregressive_embedding
+        return node_logits, updated_autoregressive_embedding
 
 
 class EventStaticLabelHead(nn.Module):
@@ -272,26 +271,14 @@ class StaticLabelGraphEventEncoder(nn.Module):
         node_embeddings: (num_node, hidden_dim)
         label_embeddings: (num_label, label_embedding_dim)
 
-        output: (batch, graph_event_seq_len, 4*hidden_dim)
+        output: (batch, graph_event_seq_len, 3*hidden_dim + label_embedding_dim)
         """
-        batch, graph_event_seq_len = src_id.size()
-        hidden_dim = node_embeddings.size(1)
-
-        if node_embeddings.size(0) > 0:
-            src_embeddings = node_embeddings[src_id]
-            src_embeddings *= src_mask.unsqueeze(-1)
-            dst_embeddings = node_embeddings[dst_id]
-            dst_embeddings *= dst_mask.unsqueeze(-1)
-        else:
-            # if there are no nodes, just use a zero tensor
-            src_embeddings = torch.zeros(
-                batch, graph_event_seq_len, hidden_dim, device=node_embeddings.device
-            )
-            dst_embeddings = torch.zeros(
-                batch, graph_event_seq_len, hidden_dim, device=node_embeddings.device
-            )
-        # src_embeddings: (batch, graph_event_seq_len, hidden_dim)
-        # dst_embeddings: (batch, graph_event_seq_len, hidden_dim)
+        src_embeddings = node_embeddings[src_id]
+        src_embeddings *= src_mask.unsqueeze(-1)
+        # (batch, graph_event_seq_len, hidden_dim)
+        dst_embeddings = node_embeddings[dst_id]
+        dst_embeddings *= dst_mask.unsqueeze(-1)
+        # (batch, graph_event_seq_len, hidden_dim)
 
         label_embeddings = label_embeddings[label_id]
         label_embeddings *= label_mask.unsqueeze(-1)
@@ -331,6 +318,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         self,
         delta_g: torch.Tensor,
         node_embeddings: torch.Tensor,
+        subgraph_node_ids: Optional[torch.Tensor] = None,
         tgt_event_mask: Optional[torch.Tensor] = None,
         tgt_event_type_ids: Optional[torch.Tensor] = None,
         tgt_event_src_ids: Optional[torch.Tensor] = None,
@@ -343,6 +331,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         input:
             delta_g: (batch, obs_seq_len, 4 * hidden_dim)
             node_embeddings: (num_node, hidden_dim)
+            subgraph_node_ids: (subgraph_num_node)
             tgt_event_mask: (batch, graph_event_seq_len)
                 Used for teacher forcing.
             tgt_event_type_ids: (batch, graph_event_seq_len)
@@ -362,8 +351,8 @@ class RNNGraphEventSeq2Seq(nn.Module):
         if training:
             {
                 event_type_logits: (batch, graph_event_seq_len, num_event_type)
-                src_logits: (batch, graph_event_seq_len, num_node)
-                dst_logits: (batch, graph_event_seq_len, num_node)
+                src_logits: (batch, graph_event_seq_len, subgraph_num_node)
+                dst_logits: (batch, graph_event_seq_len, subgraph_num_node)
                 label_logits: (batch, graph_event_seq_len, num_label)
             }
         else:
@@ -378,6 +367,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         # (1, batch, hidden_dim)
         if self.training:
             # teacher forcing
+            assert subgraph_node_ids is not None
             assert tgt_event_type_ids is not None
             assert tgt_event_src_ids is not None
             assert tgt_event_src_mask is not None
@@ -389,6 +379,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
             return self.teacher_force(
                 context,
                 node_embeddings,
+                subgraph_node_ids,
                 tgt_event_type_ids,
                 tgt_event_src_ids,
                 tgt_event_src_mask,
@@ -403,6 +394,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         self,
         context: torch.Tensor,
         node_embeddings: torch.Tensor,
+        subgraph_node_ids: torch.Tensor,
         tgt_event_type_ids: torch.Tensor,
         tgt_event_src_ids: torch.Tensor,
         tgt_event_src_mask: torch.Tensor,
@@ -414,6 +406,33 @@ class RNNGraphEventSeq2Seq(nn.Module):
         """
         Calculate logits using teacher forcing, i.e. calculate logits for the next
         events based on the given target events.
+
+        input:
+            context: (batch, obs_seq_len, hidden_dim)
+            node_embeddings: (num_node, hidden_dim)
+            subgraph_node_ids: (subgraph_num_node)
+            tgt_event_type_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_src_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_src_mask: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_dst_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_dst_mask: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_label_ids: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+            tgt_event_mask: (batch, graph_event_seq_len)
+                Used for teacher forcing.
+
+        output:
+            {
+                event_type_logits: (batch, graph_event_seq_len, num_event_type)
+                src_logits: (batch, graph_event_seq_len, subgraph_num_node)
+                dst_logits: (batch, graph_event_seq_len, subgraph_num_node)
+                label_logits: (batch, graph_event_seq_len, num_label)
+            }
         """
         encoded_graph_event_seq = self.graph_event_encoder(
             tgt_event_type_ids,
@@ -431,7 +450,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         # (batch, graph_event_seq_len, hidden_dim)
         batch, graph_event_seq_len, _ = output.size()
         decoded_graph_event_seq_results = self.graph_event_decoder(
-            output.flatten(end_dim=1), node_embeddings
+            output.flatten(end_dim=1), node_embeddings[subgraph_node_ids]
         )
         return {
             "event_type_logits": decoded_graph_event_seq_results[
@@ -466,6 +485,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
             'decoded_label_ids': (batch, decoded_len),
         }
         """
+        # TODO: build up a graph as it decodes.
         # initial start events
         batch = context.size(1)
         decoded_event_type_ids = [
@@ -542,6 +562,10 @@ class RNNGraphEventSeq2Seq(nn.Module):
                 .argmax(dim=-1)
                 .masked_fill(end_event_mask, 0)
                 .unsqueeze(-1)
+                if node_embeddings.size(0) > 0
+                else torch.zeros(
+                    batch, 1, device=node_embeddings.device, dtype=torch.long
+                )
                 # (batch, 1)
             )
             decoded_dst_ids.append(
@@ -549,6 +573,10 @@ class RNNGraphEventSeq2Seq(nn.Module):
                 .argmax(dim=-1)
                 .masked_fill(end_event_mask, 0)
                 .unsqueeze(-1)
+                if node_embeddings.size(0) > 0
+                else torch.zeros(
+                    batch, 1, device=node_embeddings.device, dtype=torch.long
+                )
                 # (batch, 1)
             )
             decoded_label_ids.append(

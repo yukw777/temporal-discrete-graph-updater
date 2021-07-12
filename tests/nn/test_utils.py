@@ -2,8 +2,17 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from dgu.nn.utils import masked_mean, masked_softmax, compute_masks_from_event_type_ids
+from pathlib import Path
+
+from dgu.nn.utils import (
+    masked_mean,
+    masked_softmax,
+    compute_masks_from_event_type_ids,
+    load_fasttext,
+    find_indices,
+)
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
 
 
 def test_masked_mean():
@@ -142,3 +151,54 @@ def test_compute_masks_from_event_type_ids(
     assert event_mask.equal(expected_event_mask)
     assert src_mask.equal(expected_src_mask)
     assert dst_mask.equal(expected_dst_mask)
+
+
+def test_load_fasttext(tmpdir):
+    serialized_path = Path(tmpdir / "word-emb.pt")
+    assert not serialized_path.exists()
+    preprocessor = SpacyPreprocessor([PAD, UNK, "my", "name", "is", "peter"])
+    emb = load_fasttext("tests/data/test-fasttext.vec", serialized_path, preprocessor)
+    word_ids, _ = preprocessor.preprocess_tokenized(
+        [
+            ["hi", "there", "what's", "your", "name"],
+            ["my", "name", "is", "peter"],
+        ]
+    )
+    embedded = emb(word_ids)
+    # OOVs
+    assert embedded[0, :4].equal(
+        emb(torch.tensor(preprocessor.unk_id)).unsqueeze(0).expand(4, -1)
+    )
+    # name
+    assert embedded[0, 4].equal(emb(torch.tensor(3)))
+    # my name is peter
+    assert embedded[1, :4].equal(emb(torch.tensor([2, 3, 4, 5])))
+    # pad, should be zero
+    assert embedded[1, 4].equal(torch.zeros(300))
+
+    with open(serialized_path, "rb") as f:
+        assert emb.weight.equal(torch.load(f).weight)
+
+
+@pytest.mark.parametrize(
+    "haystack,needle,expected",
+    [
+        (
+            torch.tensor([], dtype=torch.long),
+            torch.tensor([1, 2]),
+            torch.tensor([], dtype=torch.long),
+        ),
+        (
+            torch.tensor([0, 1, 2, 5, 7], dtype=torch.long),
+            torch.tensor([1, 7]),
+            torch.tensor([1, 4], dtype=torch.long),
+        ),
+        (
+            torch.tensor([3, 2, 5, 6, 8], dtype=torch.long),
+            torch.tensor([6, 2]),
+            torch.tensor([3, 1], dtype=torch.long),
+        ),
+    ],
+)
+def test_find_indices(haystack, needle, expected):
+    assert find_indices(haystack, needle).equal(expected)
