@@ -467,3 +467,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def on_train_batch_end(self, *unused) -> None:
         self.tgn.memory.detach_()  # type: ignore
+
+    def on_epoch_start(self) -> None:
+        self.tgn.reset()

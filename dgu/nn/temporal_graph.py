@@ -358,3 +358,9 @@ class TemporalGraphNetwork(nn.Module):
             edge_timestamps = event_timestamps[is_edge_event]
             # (num_edge_event)
             self.last_update[edge_ids] = edge_timestamps  # type: ignore
+
+    def reset(self) -> None:
+        self.memory.data.fill_(0)  # type: ignore
+        self.last_update.data.fill_(0)  # type: ignore
+        self.node_features.data.fill_(0)  # type: ignore
+        self.edge_features.data.fill_(0)  # type: ignore
