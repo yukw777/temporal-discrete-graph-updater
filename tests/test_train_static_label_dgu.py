@@ -25,8 +25,8 @@ def test_main(tmp_path):
                 "model.text_encoder_kernel_size=3",
                 "model.graph_event_decoder_key_query_dim=8",
                 f"model.pretrained_word_embedding_path={tmp_path}/test-fasttext.vec",
-                f"+pl_trainer.default_root_dir={tmp_path}",
-                "+pl_trainer.max_epochs=2",
+                f"+trainer.default_root_dir={tmp_path}",
+                "+trainer.max_epochs=2",
             ],
         )
         main(cfg)

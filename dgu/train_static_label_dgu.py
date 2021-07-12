@@ -2,6 +2,7 @@ import hydra
 import pytorch_lightning as pl
 
 from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
 
 from dgu.data import TWCmdGenTemporalDataModule
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
@@ -15,7 +16,7 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed)
 
     # trainer
-    trainer = pl.Trainer(**cfg.pl_trainer)
+    trainer = instantiate(cfg.trainer)
 
     # data module
     dm = TWCmdGenTemporalDataModule(**cfg.data)
