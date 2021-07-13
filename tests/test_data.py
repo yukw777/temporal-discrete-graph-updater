@@ -542,8 +542,13 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
     assert node_id_map == {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7}
     assert edge_id_map == {5: 5, 6: 6, 7: 7, 8: 8}
 
-    # one new game, one old game
-    for _ in range(3):
+    # one old game, one new game
+    src_id = graph.add_node("n1", game="g2", walkthrough_step=0)
+    dst_id = graph.add_node("n2", game="g2", walkthrough_step=0)
+    graph.add_edge(src_id, dst_id, "e1", game="g2", walkthrough_step=0)
+    graph.remove_edge(16, 17)
+    graph.remove_node(17)
+    for _ in range(2):
         src_id = graph.add_node("n1", game="g3", walkthrough_step=0)
         dst_id = graph.add_node("n2", game="g3", walkthrough_step=0)
         graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=0)
@@ -553,15 +558,14 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
         [{"game": "g2", "walkthrough_step": 0}, {"game": "g3", "walkthrough_step": 0}],
     )
     assert node_id_map == {
-        20: 0,
-        21: 1,
-        22: 2,
-        23: 3,
         14: 4,
         15: 5,
         16: 6,
-        17: 7,
         18: 8,
         19: 9,
+        17: 0,
+        20: 1,
+        21: 2,
+        22: 3,
     }
-    assert edge_id_map == {7: 7, 8: 8, 9: 9, 10: 0, 11: 1}
+    assert edge_id_map == {7: 7, 9: 9, 8: 0, 10: 1}

@@ -249,14 +249,14 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             to_absolute_path(node_vocab_file), to_absolute_path(relation_vocab_file)
         )
 
+        self.max_num_nodes = max_num_nodes
+        self.max_num_edges = max_num_edges
         self.unused_node_ids: Deque[int] = deque(i for i in range(max_num_nodes))
         self.unused_edge_ids: Deque[int] = deque(i for i in range(max_num_edges))
         # {(game, walkthrough_step): (
-        #       [(global_node_id, local_node_id), ...],
-        #       [(global_edge_id, local_edge_id), ...])}
-        self.used_ids: Dict[
-            Tuple[str, int], Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]
-        ] = {}
+        #       {global_node_id: local_node_id, ...},
+        #       {global_node_id: local_node_id, ...}}
+        self.used_ids: Dict[Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]] = {}
 
     @staticmethod
     def get_serialized_path(raw_path: str) -> Path:
@@ -300,21 +300,45 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         # and the ones currently in the memory.
         gw_set = set((e["game"], e["walkthrough_step"]) for e in batch)
         old_gw_set = sorted(self.used_ids.keys() - gw_set)
+        common_gw_set = sorted(gw_set.intersection(self.used_ids.keys()))
         new_gw_set = sorted(gw_set - self.used_ids.keys())
 
         # first free the node and edge IDs for the (game, walkthrough_step)'s that
         # are no longer part of the batch
         for gw in old_gw_set:
             node_ids, edge_ids = self.used_ids[gw]
-            self.unused_node_ids.extend(local for _, local in node_ids)
-            self.unused_edge_ids.extend(local for _, local in edge_ids)
+            self.unused_node_ids.extend(sorted(local for _, local in node_ids.items()))
+            self.unused_edge_ids.extend(sorted(local for _, local in edge_ids.items()))
             del self.used_ids[gw]
+
+        # now update the (game, walkthrough_step)'s in the intersection
+        for gw in common_gw_set:
+            node_ids, edge_ids = self.used_ids[gw]
+            global_nids, global_eids, _ = graph.get_subgraph({gw})
+
+            # take care of remove node ids by adding them to unused_node_ids
+            # and removing them from used_ids
+            for removed_node_id in sorted(node_ids.keys() - global_nids):
+                self.unused_node_ids.append(node_ids[removed_node_id])
+                del node_ids[removed_node_id]
+
+            # take care of added node ids
+            for added_node_id in sorted(global_nids - node_ids.keys()):
+                node_ids[added_node_id] = self.unused_node_ids.popleft()
+
+            # do the same for edges
+            for removed_edge_id in sorted(edge_ids.keys() - global_eids):
+                self.unused_edge_ids.append(edge_ids[removed_edge_id])
+                del edge_ids[removed_edge_id]
+
+            for added_edge_id in sorted(global_eids - edge_ids.keys()):
+                edge_ids[added_edge_id] = self.unused_edge_ids.popleft()
 
         # now allocate the node and edge IDs of the new (game, walkthrough_step)'s
         for gw in new_gw_set:
             global_nids, global_eids, _ = graph.get_subgraph({gw})
             self.used_ids[gw] = (
-                list(
+                dict(
                     zip(
                         sorted(global_nids),
                         (
@@ -323,7 +347,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                         ),
                     ),
                 ),
-                list(
+                dict(
                     zip(
                         sorted(global_eids),
                         (
