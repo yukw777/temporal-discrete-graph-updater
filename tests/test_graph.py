@@ -68,6 +68,7 @@ def test_tw_graph_edge():
     assert g._graph[n1_id][n2_id]["game"] == "game0"
     assert g._graph[n1_id][n2_id]["walkthrough_step"] == 1
     assert g._graph[n1_id][n2_id]["label"] == "e1"
+    assert not g._graph[n1_id][n2_id]["removed"]
 
     n3_id = g.add_node("n3", game="game0", walkthrough_step=2)
     e2_id = g.add_edge(n2_id, n3_id, "e2", game="game0", walkthrough_step=2)
@@ -77,6 +78,7 @@ def test_tw_graph_edge():
     assert g._graph[n2_id][n3_id]["game"] == "game0"
     assert g._graph[n2_id][n3_id]["walkthrough_step"] == 2
     assert g._graph[n2_id][n3_id]["label"] == "e2"
+    assert not g._graph[n2_id][n3_id]["removed"]
 
     n4_id = g.add_node("n4", game="game1", walkthrough_step=0)
     n5_id = g.add_node("n5", game="game1", walkthrough_step=1)
@@ -87,19 +89,22 @@ def test_tw_graph_edge():
     assert g._graph[n4_id][n5_id]["game"] == "game1"
     assert g._graph[n4_id][n5_id]["walkthrough_step"] == 1
     assert g._graph[n4_id][n5_id]["label"] == "e3"
+    assert not g._graph[n4_id][n5_id]["removed"]
 
     removed_e1_id = g.remove_edge(n1_id, n2_id)
     assert e1_id == removed_e1_id
-    assert g._graph.number_of_edges() == 2
+    assert g._graph.number_of_edges() == 3
+    assert g._graph[n1_id][n2_id]["removed"]
 
     n6_id = g.add_node("n6", game="game1", walkthrough_step=2)
     e4_id = g.add_edge(n5_id, n6_id, "e4", game="game1", walkthrough_step=2)
     assert e4_id == e1_id
-    assert g._graph.number_of_edges() == 3
+    assert g._graph.number_of_edges() == 4
     assert g._graph[n5_id][n6_id]["id"] == e4_id
     assert g._graph[n5_id][n6_id]["game"] == "game1"
     assert g._graph[n5_id][n6_id]["walkthrough_step"] == 2
     assert g._graph[n5_id][n6_id]["label"] == "e4"
+    assert not g._graph[n5_id][n6_id]["removed"]
 
 
 def test_tw_graph_triplet_cmd():
@@ -483,6 +488,7 @@ def test_tw_graph_triplet_cmd():
         (2, 1, "east of"),
         (3, 1, "west of"),
         (4, 1, "in"),
+        (4, 6, "is"),
         (5, 1, "in"),
         (5, 7, "is"),
         (8, 9, "in"),
@@ -527,11 +533,13 @@ def test_tw_graph_triplet_cmd():
         (2, 1, "east of"),
         (3, 1, "west of"),
         (4, 1, "in"),
+        (4, 6, "is"),
         (5, 1, "in"),
         (5, 7, "is"),
         (8, 9, "in"),
         (10, 9, "east of"),
         (11, 12, "in"),
+        (13, 12, "east of"),
     }
 
     # add cooked to apple from game0-0
@@ -568,12 +576,13 @@ def test_tw_graph_triplet_cmd():
         (2, 1, "east of"),
         (3, 1, "west of"),
         (4, 1, "in"),
+        (4, 6, "is"),
         (5, 1, "in"),
         (5, 7, "is"),
         (8, 9, "in"),
         (10, 9, "east of"),
         (11, 12, "in"),
-        (4, 6, "is"),
+        (13, 12, "east of"),
     }
 
     # add apple in living room for game1-0
@@ -651,10 +660,11 @@ def test_tw_graph_triplet_cmd_delete():
         "living room",
     ]
     assert set(g.get_edge_labels()) == {
+        (0, 1, "in"),
+        (1, 5, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
-        (1, 5, "east of"),
     }
     assert g.process_triplet_cmd("game0", 0, 2, "add , apple , kitchen , in") == [
         {"type": "node-add", "node_id": 0, "timestamp": 2, "label": "apple"},
@@ -707,6 +717,7 @@ def test_tw_graph_triplet_cmd_delete():
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
+        (1, 5, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
@@ -762,9 +773,10 @@ def test_tw_graph_triplet_cmd_delete():
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
+        (1, 5, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
-        (1, 5, "east of"),
+        (3, 4, "is"),
     }
     assert g.process_triplet_cmd("game0", 0, 6, "add , fridge , closed , is") == [
         {"type": "node-add", "node_id": 4, "timestamp": 6, "label": "closed"},
@@ -817,8 +829,9 @@ def test_tw_graph_triplet_cmd_delete():
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
-        (3, 1, "in"),
         (1, 5, "east of"),
+        (2, 1, "east of"),
+        (3, 1, "in"),
         (3, 4, "is"),
     }
     assert g.process_triplet_cmd("game0", 0, 8, "add , exit , kitchen , east_of") == [
@@ -933,7 +946,7 @@ def test_tw_graph_get_subgraph():
                 },
             ],
             ["n1", "n2"],
-            {(1, 0, "e2")},
+            {(0, 1, "e1"), (1, 0, "e2")},
         ),
     ],
 )

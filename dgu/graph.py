@@ -145,7 +145,10 @@ class TextWorldGraph:
             else:
                 dst_id = self.node_id_map[node]
 
-        if self._graph.has_edge(src_id, dst_id):
+        if (
+            self._graph.has_edge(src_id, dst_id)
+            and not self._graph[src_id][dst_id]["removed"]
+        ):
             # the edge already exists, so we're done
             return events
         # the edge doesn't exist, so add it
@@ -214,7 +217,13 @@ class TextWorldGraph:
             }
         )
         # if there are no edges, delete the nodes
-        if self._graph.in_degree(dst_id) == 0 and self._graph.out_degree(dst_id) == 0:
+        if all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.in_edges(dst_id)
+        ) and all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.out_edges(dst_id)
+        ):
             self.remove_node(dst_id)
             if rel_label == IS:
                 del self.is_dst_node_id_map[
@@ -230,7 +239,13 @@ class TextWorldGraph:
                     "label": dst_label,
                 }
             )
-        if self._graph.in_degree(src_id) == 0 and self._graph.out_degree(src_id) == 0:
+        if all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.in_edges(src_id)
+        ) and all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.out_edges(src_id)
+        ):
             self.remove_node(src_id)
             if src_label == "exit":
                 del self.exit_node_id_map[
@@ -290,7 +305,9 @@ class TextWorldGraph:
         else:
             edge_id = self.next_edge_id
             self.next_edge_id += 1
-        self._graph.add_edge(src_id, dst_id, id=edge_id, label=label, **kwargs)
+        self._graph.add_edge(
+            src_id, dst_id, id=edge_id, label=label, removed=False, **kwargs
+        )
         return edge_id
 
     def remove_edge(self, src_id: int, dst_id: int) -> int:
@@ -298,8 +315,10 @@ class TextWorldGraph:
         Remove the node with the given source and destination IDs, then return
         the removed edge ID.
         """
-        edge_id = self._graph[src_id][dst_id]["id"]
-        self._graph.remove_edge(src_id, dst_id)
+        attrs = self._graph[src_id][dst_id]
+        edge_id = attrs["id"]
+        attrs["removed"] = True
+        self._graph.add_edge(src_id, dst_id, **attrs)
         self.removed_edge_ids.append(edge_id)
         return edge_id
 
