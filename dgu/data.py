@@ -470,6 +470,11 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         # get the subgraph ID maps
         node_id_map, edge_id_map = self.calculate_subgraph_maps(graph, batch)
+        # include the 0th node/edge as a placeholder if not there
+        if 0 not in node_id_map:
+            node_id_map[0] = 0
+        if 0 not in edge_id_map:
+            edge_id_map[0] = 0
 
         # translate global IDs to subgraph IDs
         event_src_ids = [node_id_map[i] for i in global_event_src_ids]
@@ -497,7 +502,6 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             elif game_walkthrough_timestamp_dict[key] < example["timestamp"]:
                 game_walkthrough_timestamp_dict[key] = example["timestamp"]
 
-        # always include the 0th node as a placeholder
         edge_index_set: Set[Tuple[int, int]] = set()
         edge_timestamps: List[int] = []
         for key, timestamp in game_walkthrough_timestamp_dict.items():
@@ -510,9 +514,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             )
             edge_timestamps.extend([timestamp] * len(subgraph_edge_ids))
 
-        node_id_set = {0}.union(node_id_map.values())
-        node_ids = torch.tensor(sorted(node_id_set))
-        edge_ids = sorted(edge_id_map.values())
+        node_ids = torch.tensor(sorted(node_id_map.values()))
+        edge_ids = torch.tensor(sorted(edge_id_map.values()))
         edge_index = torch.tensor(sorted(edge_index_set)).transpose(0, 1)
 
         event_label_ids = [
@@ -533,7 +536,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
             "node_ids": node_ids,
-            "edge_ids": torch.tensor(edge_ids),
+            "edge_ids": edge_ids,
             "edge_index": edge_index,
             "edge_timestamps": torch.tensor(edge_timestamps),
             "tgt_event_timestamps": tgt_event_timestamps,
