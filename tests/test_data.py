@@ -14,6 +14,25 @@ from dgu.data import (
 )
 
 
+@pytest.fixture
+def tw_cmd_gen_datamodule(tmpdir):
+    # copy test files to tmpdir so that the serialized files would be saved there
+    shutil.copy2("tests/data/test_data.json", tmpdir)
+    return TWCmdGenTemporalDataModule(
+        tmpdir / "test_data.json",
+        1,
+        tmpdir / "test_data.json",
+        1,
+        tmpdir / "test_data.json",
+        1,
+        "vocabs/word_vocab.txt",
+        "vocabs/node_vocab.txt",
+        "vocabs/relation_vocab.txt",
+        10,
+        10,
+    )
+
+
 @pytest.mark.parametrize(
     "batch_size,event_seq_lens,expected_batches",
     [
@@ -83,11 +102,10 @@ def test_tw_cmd_gen_dataset_init():
                 "obs_mask": torch.ones(1, 4),
                 "prev_action_word_ids": torch.tensor([[257, 305]]),
                 "prev_action_mask": torch.ones(1, 2),
-                "subgraph_node_ids": torch.tensor([0, 1]),
-                "subgraph_edge_ids": torch.tensor([0]),
-                "subgraph_global_edge_index": {(0, 1)},
-                "subgraph_local_edge_index": {(0, 1)},
-                "subgraph_edge_timestamps": torch.tensor([0]),
+                "node_ids": torch.tensor([0, 1]),
+                "edge_ids": torch.tensor([0]),
+                "edge_index": {(0, 1)},
+                "edge_timestamps": torch.tensor([0]),
                 "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
                 "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
                 "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
@@ -99,10 +117,8 @@ def test_tw_cmd_gen_dataset_init():
                 "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
                 "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
                 "groundtruth_event_src_ids": torch.tensor([0, 1, 0, 0]),
-                "groundtruth_event_subgraph_src_ids": torch.tensor([0, 1, 0, 0]),
                 "groundtruth_event_src_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_dst_ids": torch.tensor([0, 0, 1, 0]),
-                "groundtruth_event_subgraph_dst_ids": torch.tensor([0, 0, 1, 0]),
                 "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
                 "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
                 "groundtruth_event_mask": torch.tensor([1.0, 1.0, 1.0, 0.0]),
@@ -252,11 +268,10 @@ def test_tw_cmd_gen_dataset_init():
                         [1.0, 1.0, 0.0, 0.0],
                     ]
                 ),
-                "subgraph_node_ids": torch.tensor([0, 1, 2, 3, 4, 5, 6]),
-                "subgraph_edge_ids": torch.tensor([0, 1, 2]),
-                "subgraph_global_edge_index": {(0, 1), (2, 0), (3, 4)},
-                "subgraph_local_edge_index": {(0, 1), (2, 0), (3, 4)},
-                "subgraph_edge_timestamps": torch.tensor([0, 0, 1]),
+                "node_ids": torch.tensor([0, 1, 2, 3, 4, 5, 6]),
+                "edge_ids": torch.tensor([0, 1, 2, 3]),
+                "edge_index": {(0, 1), (2, 0), (3, 4), (5, 6)},
+                "edge_timestamps": torch.tensor([0, 0, 1, 2]),
                 "tgt_event_timestamps": torch.tensor(
                     [
                         0.0,
@@ -350,9 +365,6 @@ def test_tw_cmd_gen_dataset_init():
                 "groundtruth_event_src_ids": torch.tensor(
                     [0, 1, 0, 2, 2, 3, 4, 3, 5, 6, 5, 5, 5, 0]
                 ),
-                "groundtruth_event_subgraph_src_ids": torch.tensor(
-                    [0, 1, 0, 2, 2, 3, 4, 3, 5, 6, 5, 5, 5, 0]
-                ),
                 "groundtruth_event_src_mask": torch.tensor(
                     [
                         0.0,
@@ -372,9 +384,6 @@ def test_tw_cmd_gen_dataset_init():
                     ]
                 ),
                 "groundtruth_event_dst_ids": torch.tensor(
-                    [0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 6, 6, 0, 0]
-                ),
-                "groundtruth_event_subgraph_dst_ids": torch.tensor(
                     [0, 0, 1, 0, 0, 0, 0, 4, 0, 0, 6, 6, 0, 0]
                 ),
                 "groundtruth_event_dst_mask": torch.tensor(
@@ -420,20 +429,7 @@ def test_tw_cmd_gen_dataset_init():
         ),
     ],
 )
-def test_tw_cmd_gen_datamodule_collate(tmpdir, batch, expected):
-    # copy test files to tmpdir so that the serialized files would be saved there
-    shutil.copy2("tests/data/test_data.json", tmpdir)
-    tw_cmd_gen_datamodule = TWCmdGenTemporalDataModule(
-        tmpdir / "test_data.json",
-        1,
-        tmpdir / "test_data.json",
-        1,
-        tmpdir / "test_data.json",
-        1,
-        "vocabs/word_vocab.txt",
-        "vocabs/node_vocab.txt",
-        "vocabs/relation_vocab.txt",
-    )
+def test_tw_cmd_gen_datamodule_collate(tw_cmd_gen_datamodule, batch, expected):
     tw_cmd_gen_datamodule.prepare_data()
     tw_cmd_gen_datamodule.setup()
     collated = tw_cmd_gen_datamodule.collate(TextWorldGraph(), batch)
@@ -441,27 +437,13 @@ def test_tw_cmd_gen_datamodule_collate(tmpdir, batch, expected):
     assert collated["obs_mask"].equal(expected["obs_mask"])
     assert collated["prev_action_word_ids"].equal(expected["prev_action_word_ids"])
     assert collated["prev_action_mask"].equal(expected["prev_action_mask"])
-    assert collated["subgraph_node_ids"].equal(expected["subgraph_node_ids"])
-    assert collated["subgraph_edge_ids"].equal(expected["subgraph_edge_ids"])
+    assert collated["node_ids"].equal(expected["node_ids"])
+    assert collated["edge_ids"].equal(expected["edge_ids"])
     assert (
-        set(
-            (e1, e2)
-            for e1, e2 in collated["subgraph_global_edge_index"]
-            .transpose(0, 1)
-            .tolist()
-        )
-        == expected["subgraph_global_edge_index"]
+        set((e1, e2) for e1, e2 in collated["edge_index"].transpose(0, 1).tolist())
+        == expected["edge_index"]
     )
-    assert (
-        set(
-            (e1, e2)
-            for e1, e2 in collated["subgraph_local_edge_index"].transpose(0, 1).tolist()
-        )
-        == expected["subgraph_local_edge_index"]
-    )
-    assert collated["subgraph_edge_timestamps"].equal(
-        expected["subgraph_edge_timestamps"]
-    )
+    assert collated["edge_timestamps"].equal(expected["edge_timestamps"])
     assert collated["tgt_event_timestamps"].equal(expected["tgt_event_timestamps"])
     assert collated["tgt_event_mask"].equal(expected["tgt_event_mask"])
     assert collated["tgt_event_type_ids"].equal(expected["tgt_event_type_ids"])
@@ -477,17 +459,11 @@ def test_tw_cmd_gen_datamodule_collate(tmpdir, batch, expected):
     assert collated["groundtruth_event_src_ids"].equal(
         expected["groundtruth_event_src_ids"]
     )
-    assert collated["groundtruth_event_subgraph_src_ids"].equal(
-        expected["groundtruth_event_subgraph_src_ids"]
-    )
     assert collated["groundtruth_event_src_mask"].equal(
         expected["groundtruth_event_src_mask"]
     )
     assert collated["groundtruth_event_dst_ids"].equal(
         expected["groundtruth_event_dst_ids"]
-    )
-    assert collated["groundtruth_event_subgraph_dst_ids"].equal(
-        expected["groundtruth_event_subgraph_dst_ids"]
     )
     assert collated["groundtruth_event_dst_mask"].equal(
         expected["groundtruth_event_dst_mask"]
@@ -533,3 +509,59 @@ def test_tw_cmd_gen_datamodule_serialize_dataset(tmpdir):
     )
     with open(serialized_path, "rb") as f:
         assert original_dataset == pickle.load(f)
+
+
+def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
+    # first with one game
+    graph = TextWorldGraph()
+    for _ in range(5):
+        src_id = graph.add_node("n1", game="g1", walkthrough_step=0)
+        dst_id = graph.add_node("n2", game="g1", walkthrough_step=0)
+        graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=0)
+
+    node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
+        graph, [{"game": "g1", "walkthrough_step": 0}]
+    )
+    assert node_id_map == {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9}
+    assert edge_id_map == {0: 0, 1: 1, 2: 2, 3: 3, 4: 4}
+
+    # now with two new games
+    for _ in range(2):
+        src_id = graph.add_node("n1", game="g1", walkthrough_step=1)
+        dst_id = graph.add_node("n2", game="g1", walkthrough_step=1)
+        graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=1)
+    for _ in range(2):
+        src_id = graph.add_node("n1", game="g2", walkthrough_step=0)
+        dst_id = graph.add_node("n2", game="g2", walkthrough_step=0)
+        graph.add_edge(src_id, dst_id, "e1", game="g2", walkthrough_step=0)
+
+    node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
+        graph,
+        [{"game": "g1", "walkthrough_step": 1}, {"game": "g2", "walkthrough_step": 0}],
+    )
+    assert node_id_map == {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7}
+    assert edge_id_map == {5: 5, 6: 6, 7: 7, 8: 8}
+
+    # one new game, one old game
+    for _ in range(3):
+        src_id = graph.add_node("n1", game="g3", walkthrough_step=0)
+        dst_id = graph.add_node("n2", game="g3", walkthrough_step=0)
+        graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=0)
+
+    node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
+        graph,
+        [{"game": "g2", "walkthrough_step": 0}, {"game": "g3", "walkthrough_step": 0}],
+    )
+    assert node_id_map == {
+        20: 0,
+        21: 1,
+        22: 2,
+        23: 3,
+        14: 4,
+        15: 5,
+        16: 6,
+        17: 7,
+        18: 8,
+        19: 9,
+    }
+    assert edge_id_map == {7: 7, 8: 8, 9: 9, 10: 0, 11: 1}

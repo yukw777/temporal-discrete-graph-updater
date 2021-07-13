@@ -5,7 +5,8 @@ import torch
 import pickle
 
 from tqdm import tqdm
-from typing import List, Iterator, Dict, Any, Optional, Tuple, Set
+from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
+from collections import deque
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.nn.utils import compute_masks_from_event_type_ids, find_indices
+from dgu.nn.utils import compute_masks_from_event_type_ids
 from dgu.constants import EVENT_TYPE_ID_MAP
 
 
@@ -227,6 +228,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         word_vocab_file: str,
         node_vocab_file: str,
         relation_vocab_file: str,
+        max_num_nodes: int,
+        max_num_edges: int,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
@@ -245,6 +248,15 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         self.label_id_map = self.read_label_vocab_files(
             to_absolute_path(node_vocab_file), to_absolute_path(relation_vocab_file)
         )
+
+        self.unused_node_ids: Deque[int] = deque(i for i in range(max_num_nodes))
+        self.unused_edge_ids: Deque[int] = deque(i for i in range(max_num_edges))
+        # {(game, walkthrough_step): (
+        #       [(global_node_id, local_node_id), ...],
+        #       [(global_edge_id, local_edge_id), ...])}
+        self.used_ids: Dict[
+            Tuple[str, int], Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]
+        ] = {}
 
     @staticmethod
     def get_serialized_path(raw_path: str) -> Path:
@@ -273,6 +285,63 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         if stage == "test" or stage is None:
             with open(self.serialized_test_path, "rb") as f:
                 self.test = pickle.load(f)
+
+    def calculate_subgraph_maps(
+        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
+    ) -> Tuple[Dict[int, int], Dict[int, int]]:
+        """
+        Calculate the global-graph-to-subgraph node/edge ID maps based on the given
+        batch.
+
+        output:
+            (node_id_map, edge_id_map)
+        """
+        # get the difference between the (game, walkthrough_step)'s in the batch
+        # and the ones currently in the memory.
+        gw_set = set((e["game"], e["walkthrough_step"]) for e in batch)
+        old_gw_set = sorted(self.used_ids.keys() - gw_set)
+        new_gw_set = sorted(gw_set - self.used_ids.keys())
+
+        # first free the node and edge IDs for the (game, walkthrough_step)'s that
+        # are no longer part of the batch
+        for gw in old_gw_set:
+            node_ids, edge_ids = self.used_ids[gw]
+            self.unused_node_ids.extend(local for _, local in node_ids)
+            self.unused_edge_ids.extend(local for _, local in edge_ids)
+            del self.used_ids[gw]
+
+        # now allocate the node and edge IDs of the new (game, walkthrough_step)'s
+        for gw in new_gw_set:
+            global_nids, global_eids, _ = graph.get_subgraph({gw})
+            self.used_ids[gw] = (
+                list(
+                    zip(
+                        sorted(global_nids),
+                        (
+                            self.unused_node_ids.popleft()
+                            for _ in range(len(global_nids))
+                        ),
+                    ),
+                ),
+                list(
+                    zip(
+                        sorted(global_eids),
+                        (
+                            self.unused_edge_ids.popleft()
+                            for _ in range(len(global_eids))
+                        ),
+                    )
+                ),
+            )
+
+        node_id_map: Dict[int, int] = {}
+        edge_id_map: Dict[int, int] = {}
+        for gw in gw_set:
+            node_ids, edge_ids = self.used_ids[gw]
+            node_id_map.update(node_ids)
+            edge_id_map.update(edge_ids)
+
+        return node_id_map, edge_id_map
 
     def collate(
         self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
@@ -343,37 +412,6 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             ]
         )
 
-        event_src_ids: List[int] = []
-        event_dst_ids: List[int] = []
-        event_edge_ids: List[int] = []
-
-        for example in batch:
-            graph.process_events(
-                example["event_seq"],
-                game=example["game"],
-                walkthrough_step=example["walkthrough_step"],
-            )
-            for event in example["event_seq"]:
-                if event["type"] in {"node-add", "node-delete"}:
-                    event_src_ids.append(event["node_id"])
-                    event_dst_ids.append(0)
-                    event_edge_ids.append(0)
-                else:
-                    event_src_ids.append(event["src_id"])
-                    event_dst_ids.append(event["dst_id"])
-                    event_edge_ids.append(event["edge_id"])
-
-        # placeholder node id for the start event
-        tgt_event_src_ids = torch.tensor([0] + event_src_ids)
-        tgt_event_dst_ids = torch.tensor([0] + event_dst_ids)
-
-        # placeholder edge id for the start event
-        tgt_event_edge_ids = torch.tensor([0] + event_edge_ids)
-
-        # placeholder node id for the end event
-        groundtruth_event_src_ids = torch.tensor(event_src_ids + [0])
-        groundtruth_event_dst_ids = torch.tensor(event_dst_ids + [0])
-
         (
             tgt_event_mask,
             tgt_event_src_mask,
@@ -386,9 +424,46 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             groundtruth_event_dst_mask,
         ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
 
-        # calculate subgraph information so that we only calculate node embeddings
-        # that are relevant.
-        # First, figure out the latest timestamp for each (game, walkthrough_step) pair
+        global_event_src_ids: List[int] = []
+        global_event_dst_ids: List[int] = []
+        global_event_edge_ids: List[int] = []
+
+        for example in batch:
+            graph.process_events(
+                example["event_seq"],
+                game=example["game"],
+                walkthrough_step=example["walkthrough_step"],
+            )
+            for event in example["event_seq"]:
+                if event["type"] in {"node-add", "node-delete"}:
+                    global_event_src_ids.append(event["node_id"])
+                    global_event_dst_ids.append(0)
+                    global_event_edge_ids.append(0)
+                else:
+                    global_event_src_ids.append(event["src_id"])
+                    global_event_dst_ids.append(event["dst_id"])
+                    global_event_edge_ids.append(event["edge_id"])
+
+        # get the subgraph ID maps
+        node_id_map, edge_id_map = self.calculate_subgraph_maps(graph, batch)
+
+        # translate global IDs to subgraph IDs
+        event_src_ids = [node_id_map[i] for i in global_event_src_ids]
+        event_dst_ids = [node_id_map[i] for i in global_event_dst_ids]
+        event_edge_ids = [edge_id_map[i] for i in global_event_edge_ids]
+
+        # placeholder node id for the start event
+        tgt_event_src_ids = torch.tensor([0] + event_src_ids)
+        tgt_event_dst_ids = torch.tensor([0] + event_dst_ids)
+
+        # placeholder edge id for the start event
+        tgt_event_edge_ids = torch.tensor([0] + event_edge_ids)
+
+        # placeholder node id for the end event
+        groundtruth_event_src_ids = torch.tensor(event_src_ids + [0])
+        groundtruth_event_dst_ids = torch.tensor(event_dst_ids + [0])
+
+        # Figure out the latest timestamp for each (game, walkthrough_step) pair
         # since we want to calculate the time embeddings at the latest timestamp
         game_walkthrough_timestamp_dict: Dict[Tuple[str, int], int] = {}
         for example in batch:
@@ -399,26 +474,22 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                 game_walkthrough_timestamp_dict[key] = example["timestamp"]
 
         # always include the 0th node as a placeholder
-        subgraph_node_id_set: Set[int] = {0}
-        subgraph_edge_ids: List[int] = []
-        subgraph_edge_index_set: Set[Tuple[int, int]] = set()
-        subgraph_edge_timestamps: List[int] = []
+        edge_index_set: Set[Tuple[int, int]] = set()
+        edge_timestamps: List[int] = []
         for key, timestamp in game_walkthrough_timestamp_dict.items():
-            node_ids, edge_ids, edge_index = graph.get_subgraph({key})
-            subgraph_node_id_set.update(node_ids)
-            subgraph_edge_ids.extend(edge_ids)
-            subgraph_edge_index_set.update(edge_index)
-            subgraph_edge_timestamps.extend([timestamp] * len(edge_ids))
-        subgraph_node_ids = torch.tensor(sorted(subgraph_node_id_set))
-        subgraph_global_edge_index = torch.tensor(
-            sorted(subgraph_edge_index_set)
-        ).transpose(0, 1)
-        subgraph_local_edge_index = torch.stack(
-            [
-                find_indices(subgraph_node_ids, subgraph_global_edge_index[0]),
-                find_indices(subgraph_node_ids, subgraph_global_edge_index[1]),
-            ]
-        )
+            _, subgraph_edge_ids, subgraph_edge_index = graph.get_subgraph({key})
+            edge_index_set.update(
+                [
+                    (node_id_map[src], node_id_map[dst])
+                    for src, dst in subgraph_edge_index
+                ]
+            )
+            edge_timestamps.extend([timestamp] * len(subgraph_edge_ids))
+
+        node_id_set = {0}.union(node_id_map.values())
+        node_ids = torch.tensor(sorted(node_id_set))
+        edge_ids = sorted(edge_id_map.values())
+        edge_index = torch.tensor(sorted(edge_index_set)).transpose(0, 1)
 
         event_label_ids = [
             self.label_id_map[event["label"]]
@@ -437,11 +508,10 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
-            "subgraph_node_ids": subgraph_node_ids,
-            "subgraph_edge_ids": torch.tensor(subgraph_edge_ids),
-            "subgraph_global_edge_index": subgraph_global_edge_index,
-            "subgraph_local_edge_index": subgraph_local_edge_index,
-            "subgraph_edge_timestamps": torch.tensor(subgraph_edge_timestamps),
+            "node_ids": node_ids,
+            "edge_ids": torch.tensor(edge_ids),
+            "edge_index": edge_index,
+            "edge_timestamps": torch.tensor(edge_timestamps),
             "tgt_event_timestamps": tgt_event_timestamps,
             "tgt_event_mask": tgt_event_mask,
             "tgt_event_type_ids": tgt_event_type_ids,
@@ -453,14 +523,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_label_ids": tgt_event_label_ids,
             "groundtruth_event_type_ids": groundtruth_event_type_ids,
             "groundtruth_event_src_ids": groundtruth_event_src_ids,
-            "groundtruth_event_subgraph_src_ids": find_indices(
-                subgraph_node_ids, groundtruth_event_src_ids
-            ),
             "groundtruth_event_src_mask": groundtruth_event_src_mask,
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
-            "groundtruth_event_subgraph_dst_ids": find_indices(
-                subgraph_node_ids, groundtruth_event_dst_ids
-            ),
             "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
             "groundtruth_event_label_ids": groundtruth_event_label_ids,
             "groundtruth_event_mask": groundtruth_event_mask,
@@ -472,7 +536,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             batch_size=self.train_batch_size,
             collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=1,
+            num_workers=0,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -481,7 +545,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             batch_size=self.val_batch_size,
             collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=1,
+            num_workers=0,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -490,7 +554,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             batch_size=self.val_batch_size,
             collate_fn=partial(self.collate, TextWorldGraph()),
             pin_memory=True,
-            num_workers=1,
+            num_workers=0,
         )
 
     @staticmethod
