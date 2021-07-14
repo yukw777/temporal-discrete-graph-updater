@@ -864,19 +864,39 @@ def test_tw_graph_triplet_cmd_delete():
 
 def test_tw_graph_get_subgraph():
     g = TextWorldGraph()
+    # add four nodes and connect them
     g0_n1_id = g.add_node("n1", game="game0", walkthrough_step=0)
     g0_n2_id = g.add_node("n2", game="game0", walkthrough_step=0)
     g0_n3_id = g.add_node("n3", game="game0", walkthrough_step=0)
+    g0_n4_id = g.add_node("n4", game="game0", walkthrough_step=0)
     g.add_edge(g0_n1_id, g0_n3_id, "e1", game="game0", walkthrough_step=0)
-    g.add_node("n1", game="game1", walkthrough_step=0)
-    g.remove_node(g0_n2_id)
+    g.add_edge(g0_n1_id, g0_n2_id, "e2", game="game0", walkthrough_step=0)
+
+    # remove one edge and add another
+    g.remove_edge(g0_n1_id, g0_n3_id)
+    g.add_edge(g0_n1_id, g0_n4_id, "e3", game="game0", walkthrough_step=0)
+
+    # add two nodes, and connect them in another game
+    g1_n1_id = g.add_node("n1", game="game1", walkthrough_step=0)
+    g1_n2_id = g.add_node("n2", game="game1", walkthrough_step=0)
+    g.add_edge(g1_n1_id, g1_n2_id, "e1", game="game1", walkthrough_step=0)
+
+    # remove the edge and one of the nodes
+    g.remove_edge(g1_n1_id, g1_n2_id)
+    g.remove_node(g1_n2_id)
+
+    # add two nodes and connect them in the third game
     g2_n1_id = g.add_node("n1", game="game2", walkthrough_step=1)
     g2_n2_id = g.add_node("n2", game="game2", walkthrough_step=1)
-    g.add_edge(g2_n1_id, g2_n2_id, "e2", game="game2", walkthrough_step=1)
+    g.add_edge(g2_n1_id, g2_n2_id, "e1", game="game2", walkthrough_step=1)
 
-    assert g.get_subgraph({("game0", 0)}) == ({0, 2}, {0}, {(0, 2)})
-    assert g.get_subgraph({("game1", 0)}) == ({3}, set(), set())
-    assert g.get_subgraph({("game2", 1)}) == ({1, 4}, {1}, {(1, 4)})
+    assert g.get_subgraph({("game0", 0)}) == (
+        {0, 1, 2, 3},
+        [0, 1, 0],
+        [(0, 2), (0, 1), (0, 3)],
+    )
+    assert g.get_subgraph({("game1", 0)}) == ({4}, [], [])
+    assert g.get_subgraph({("game2", 1)}) == ({5, 6}, [2], [(5, 6)])
 
 
 @pytest.mark.parametrize(

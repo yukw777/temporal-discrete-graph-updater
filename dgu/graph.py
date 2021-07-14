@@ -363,7 +363,7 @@ class TextWorldGraph:
 
     def get_subgraph(
         self, game_walkthrough_set: Set[Tuple[str, int]]
-    ) -> Tuple[Set[int], Set[int], Set[Tuple[int, int]]]:
+    ) -> Tuple[Set[int], List[int], List[Tuple[int, int]]]:
         """
         Return the node IDs, edge IDs and edge indices for the subgraph
         corresponding to the given set of (game, walkthrough_step)'s.
@@ -379,11 +379,11 @@ class TextWorldGraph:
             return (game, walkthrough_step) in game_walkthrough_set
 
         subgraph_view = nx.subgraph_view(self._graph, filter_node=filter_node)
-        edge_ids: Set[int] = set()
-        edge_index: Set[Tuple[int, int]] = set()
+        edge_ids: List[int] = []
+        edge_index: List[Tuple[int, int]] = []
         for src, dst, data in subgraph_view.edges.data():
-            edge_ids.add(data["id"])
-            edge_index.add((src, dst))
+            edge_ids.append(data["id"])
+            edge_index.append((src, dst))
         return set(subgraph_view.nodes()), edge_ids, edge_index
 
     def process_events(self, events: List[Dict[str, Any]], **kwargs) -> None:
