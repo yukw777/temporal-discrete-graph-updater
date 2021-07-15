@@ -40,10 +40,10 @@ def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
 
 @pytest.mark.parametrize(
     "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len,"
-    "num_node,subgraph_num_node",
+    "num_node",
     [
-        (1, 10, 5, 0, 0, 7, 20, 5),
-        (4, 12, 8, 6, 12, 10, 25, 12),
+        (1, 10, 5, 0, 0, 7, 20),
+        (4, 12, 8, 6, 12, 10, 25),
     ],
 )
 def test_sldgu_forward_training(
@@ -55,7 +55,6 @@ def test_sldgu_forward_training(
     prev_num_edge,
     graph_event_seq_len,
     num_node,
-    subgraph_num_node,
 ):
     sldgu.train()
     num_label = (
@@ -92,7 +91,7 @@ def test_sldgu_forward_training(
         if prev_num_node > 0
         else torch.zeros((prev_num_edge,)).long(),
         torch.randint(10, (prev_num_edge,)),
-        subgraph_node_ids=torch.randint(num_node, (subgraph_num_node,)),
+        node_ids=torch.randint(num_node, (num_node,)),
         tgt_event_type_ids=torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
         tgt_event_src_ids=torch.randint(prev_num_node, (graph_event_seq_len,))
         if prev_num_node > 0
@@ -109,8 +108,8 @@ def test_sldgu_forward_training(
         graph_event_seq_len,
         len(EVENT_TYPES),
     )
-    assert results["src_logits"].size() == (graph_event_seq_len, subgraph_num_node)
-    assert results["dst_logits"].size() == (graph_event_seq_len, subgraph_num_node)
+    assert results["src_logits"].size() == (graph_event_seq_len, num_node)
+    assert results["dst_logits"].size() == (graph_event_seq_len, num_node)
     assert results["label_logits"].size() == (graph_event_seq_len, num_label)
 
 
