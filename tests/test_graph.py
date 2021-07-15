@@ -101,13 +101,15 @@ def test_tw_graph_edge():
     assert g._graph.number_of_edges() == 3
     assert g._graph[n2_id][n3_id]["removed"]
 
-    readded_e2_id = g.add_edge(n2_id, n3_id, "e2", game="game0", walkthrough_step=2)
+    readded_e2_id = g.add_edge(
+        n2_id, n3_id, "readded_e2", game="game0", walkthrough_step=2
+    )
     assert readded_e2_id == e2_id
     assert g._graph.number_of_edges() == 3
     assert g._graph[n2_id][n3_id]["id"] == readded_e2_id
     assert g._graph[n2_id][n3_id]["game"] == "game0"
     assert g._graph[n2_id][n3_id]["walkthrough_step"] == 2
-    assert g._graph[n2_id][n3_id]["label"] == "e2"
+    assert g._graph[n2_id][n3_id]["label"] == "readded_e2"
     assert not g._graph[n2_id][n3_id]["removed"]
 
     n6_id = g.add_node("n6", game="game1", walkthrough_step=2)

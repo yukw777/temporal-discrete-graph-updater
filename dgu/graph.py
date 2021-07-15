@@ -296,13 +296,11 @@ class TextWorldGraph:
         of the edge.
         """
         if self._graph.has_edge(src_id, dst_id):
-            # if the edge already exists, set removed to False and reuse the id
-            attrs = self._graph[src_id][dst_id]
-            attrs["removed"] = False
-            self._graph.add_edge(src_id, dst_id, **attrs)
-            return attrs["id"]
-        edge_id = self.next_edge_id
-        self.next_edge_id += 1
+            # if the edge already exists, reuse the id
+            edge_id = self._graph[src_id][dst_id]["id"]
+        else:
+            edge_id = self.next_edge_id
+            self.next_edge_id += 1
         self._graph.add_edge(
             src_id, dst_id, id=edge_id, label=label, removed=False, **kwargs
         )
