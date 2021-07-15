@@ -1,8 +1,7 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from collections import deque
-from typing import Dict, List, Deque, Any, Tuple, Set
+from typing import Dict, List, Any, Tuple, Set
 
 from dgu.constants import IS
 
@@ -35,9 +34,7 @@ class TextWorldGraph:
         self.is_dst_node_id_map: Dict[IsDstNode, int] = {}
         self.exit_node_id_map: Dict[ExitNode, int] = {}
         self.node_id_map: Dict[Node, int] = {}
-        self.removed_node_ids: Deque[int] = deque()
         self.next_node_id = 0
-        self.removed_edge_ids: Deque[int] = deque()
         self.next_edge_id = 0
         self._graph = nx.DiGraph()
 
@@ -48,8 +45,6 @@ class TextWorldGraph:
             self.is_dst_node_id_map == o.is_dst_node_id_map
             and self.exit_node_id_map == o.exit_node_id_map
             and self.node_id_map == o.node_id_map
-            and self.removed_node_ids == o.removed_node_ids
-            and self.removed_edge_ids == o.removed_edge_ids
             and self.next_edge_id == o.next_edge_id
             and nx.is_isomorphic(self._graph, o._graph)
         )
@@ -306,11 +301,8 @@ class TextWorldGraph:
             attrs["removed"] = False
             self._graph.add_edge(src_id, dst_id, **attrs)
             return attrs["id"]
-        if len(self.removed_edge_ids) > 0:
-            edge_id = self.removed_edge_ids.popleft()
-        else:
-            edge_id = self.next_edge_id
-            self.next_edge_id += 1
+        edge_id = self.next_edge_id
+        self.next_edge_id += 1
         self._graph.add_edge(
             src_id, dst_id, id=edge_id, label=label, removed=False, **kwargs
         )
@@ -325,7 +317,6 @@ class TextWorldGraph:
         edge_id = attrs["id"]
         attrs["removed"] = True
         self._graph.add_edge(src_id, dst_id, **attrs)
-        self.removed_edge_ids.append(edge_id)
         return edge_id
 
     def add_node(self, label: str, **kwargs) -> int:
@@ -333,11 +324,8 @@ class TextWorldGraph:
         Add a node with the given label and initializes it with an ID.
         The extra keyword arguments are saved as attributes of the node.
         """
-        if len(self.removed_node_ids) > 0:
-            node_id = self.removed_node_ids.popleft()
-        else:
-            node_id = self.next_node_id
-            self.next_node_id += 1
+        node_id = self.next_node_id
+        self.next_node_id += 1
         self._graph.add_node(node_id, label=label, removed=False, **kwargs)
         return node_id
 
@@ -353,7 +341,6 @@ class TextWorldGraph:
         attrs = self._graph.nodes[node_id]
         attrs["removed"] = True
         self._graph.add_node(node_id, **attrs)
-        self.removed_node_ids.append(node_id)
 
     def get_node_labels(self) -> List[str]:
         """

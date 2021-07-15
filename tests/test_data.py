@@ -606,14 +606,15 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
         [{"game": "g2", "walkthrough_step": 0}, {"game": "g3", "walkthrough_step": 0}],
     )
     assert node_id_map == {
+        20: 0,
+        21: 1,
+        22: 2,
+        23: 3,
         14: 4,
         15: 5,
         16: 6,
+        17: 7,
         18: 8,
         19: 9,
-        17: 0,
-        20: 1,
-        21: 2,
-        22: 3,
     }
-    assert edge_id_map == {7: 7, 9: 9, 8: 0, 10: 1}
+    assert edge_id_map == {10: 0, 11: 1, 7: 7, 8: 8, 9: 9}

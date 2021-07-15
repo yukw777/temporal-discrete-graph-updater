@@ -41,20 +41,20 @@ def test_tw_graph_node():
     assert g.get_node_labels() == ["n1", "n2", "n1"]
 
     node_id = g.add_node("n1", game="game2", walkthrough_step=0)
-    assert node_id == 1
-    assert g._graph.order() == 3
-    assert g._graph.nodes[node_id]["game"] == "game2"
-    assert g._graph.nodes[node_id]["walkthrough_step"] == 0
-    assert g._graph.nodes[node_id]["label"] == "n1"
-    assert g.get_node_labels() == ["n1", "n1", "n1"]
-
-    node_id = g.add_node("n2", game="game2", walkthrough_step=0)
     assert node_id == 3
     assert g._graph.order() == 4
     assert g._graph.nodes[node_id]["game"] == "game2"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
+    assert g._graph.nodes[node_id]["label"] == "n1"
+    assert g.get_node_labels() == ["n1", "n2", "n1", "n1"]
+
+    node_id = g.add_node("n2", game="game2", walkthrough_step=0)
+    assert node_id == 4
+    assert g._graph.order() == 5
+    assert g._graph.nodes[node_id]["game"] == "game2"
+    assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n2"
-    assert g.get_node_labels() == ["n1", "n1", "n1", "n2"]
+    assert g.get_node_labels() == ["n1", "n2", "n1", "n1", "n2"]
 
 
 def test_tw_graph_edge():
@@ -112,7 +112,7 @@ def test_tw_graph_edge():
 
     n6_id = g.add_node("n6", game="game1", walkthrough_step=2)
     e4_id = g.add_edge(n5_id, n6_id, "e4", game="game1", walkthrough_step=2)
-    assert e4_id == e1_id
+    assert e4_id == 3
     assert g._graph.number_of_edges() == 4
     assert g._graph[n5_id][n6_id]["id"] == e4_id
     assert g._graph[n5_id][n6_id]["game"] == "game1"
@@ -559,12 +559,12 @@ def test_tw_graph_triplet_cmd():
     # add cooked to apple from game0-0
     events = g.process_triplet_cmd("game0", 0, 6, "add , apple , cooked , is")
     assert events == [
-        {"type": "node-add", "node_id": 6, "timestamp": 6, "label": "cooked"},
+        {"type": "node-add", "node_id": 14, "timestamp": 6, "label": "cooked"},
         {
             "type": "edge-add",
-            "edge_id": 5,
+            "edge_id": 11,
             "src_id": 4,
-            "dst_id": 6,
+            "dst_id": 14,
             "timestamp": 6,
             "label": "is",
         },
@@ -576,7 +576,7 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "apple",
         "pear",
-        "cooked",
+        "cut",
         "cut",
         "player",
         "kitchen",
@@ -584,6 +584,7 @@ def test_tw_graph_triplet_cmd():
         "player",
         "living room",
         "exit",
+        "cooked",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
@@ -591,6 +592,7 @@ def test_tw_graph_triplet_cmd():
         (3, 1, "west of"),
         (4, 1, "in"),
         (4, 6, "is"),
+        (4, 14, "is"),
         (5, 1, "in"),
         (5, 7, "is"),
         (8, 9, "in"),
@@ -602,11 +604,11 @@ def test_tw_graph_triplet_cmd():
     # add apple in living room for game1-0
     events = g.process_triplet_cmd("game1", 0, 6, "add , apple , living room , in")
     assert events == [
-        {"type": "node-add", "node_id": 13, "timestamp": 6, "label": "apple"},
+        {"type": "node-add", "node_id": 15, "timestamp": 6, "label": "apple"},
         {
             "type": "edge-add",
-            "edge_id": 10,
-            "src_id": 13,
+            "edge_id": 12,
+            "src_id": 15,
             "dst_id": 12,
             "timestamp": 6,
             "label": "in",
@@ -619,13 +621,15 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "apple",
         "pear",
-        "cooked",
+        "cut",
         "cut",
         "player",
         "kitchen",
         "exit",
         "player",
         "living room",
+        "exit",
+        "cooked",
         "apple",
     ]
     assert set(g.get_edge_labels()) == {
@@ -633,13 +637,15 @@ def test_tw_graph_triplet_cmd():
         (2, 1, "east of"),
         (3, 1, "west of"),
         (4, 1, "in"),
+        (4, 6, "is"),
+        (4, 14, "is"),
         (5, 1, "in"),
         (5, 7, "is"),
         (8, 9, "in"),
         (10, 9, "east of"),
         (11, 12, "in"),
-        (4, 6, "is"),
-        (13, 12, "in"),
+        (13, 12, "east of"),
+        (15, 12, "in"),
     }
 
 
@@ -681,11 +687,11 @@ def test_tw_graph_triplet_cmd_delete():
         (3, 4, "is"),
     }
     assert g.process_triplet_cmd("game0", 0, 2, "add , apple , kitchen , in") == [
-        {"type": "node-add", "node_id": 0, "timestamp": 2, "label": "apple"},
+        {"type": "node-add", "node_id": 6, "timestamp": 2, "label": "apple"},
         {
             "type": "edge-add",
-            "edge_id": 0,
-            "src_id": 0,
+            "edge_id": 5,
+            "src_id": 6,
             "dst_id": 1,
             "timestamp": 2,
             "label": "in",
@@ -698,13 +704,15 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
+        (1, 5, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
-        (1, 5, "east of"),
+        (6, 1, "in"),
     }
 
     # regular destination node
@@ -728,6 +736,7 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
@@ -735,16 +744,17 @@ def test_tw_graph_triplet_cmd_delete():
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
+        (6, 1, "in"),
     }
     assert g.process_triplet_cmd(
         "game0", 0, 4, "add , kitchen , living room , east_of"
     ) == [
-        {"type": "node-add", "node_id": 5, "timestamp": 4, "label": "living room"},
+        {"type": "node-add", "node_id": 7, "timestamp": 4, "label": "living room"},
         {
             "type": "edge-add",
-            "edge_id": 4,
+            "edge_id": 6,
             "src_id": 1,
-            "dst_id": 5,
+            "dst_id": 7,
             "timestamp": 4,
             "label": "east of",
         },
@@ -756,13 +766,17 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
+        "living room",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
+        (1, 5, "east of"),
+        (1, 7, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
-        (1, 5, "east of"),
+        (6, 1, "in"),
     }
 
     # is source node
@@ -784,21 +798,25 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
+        "living room",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
         (1, 5, "east of"),
+        (1, 7, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
+        (6, 1, "in"),
     }
     assert g.process_triplet_cmd("game0", 0, 6, "add , fridge , closed , is") == [
-        {"type": "node-add", "node_id": 4, "timestamp": 6, "label": "closed"},
+        {"type": "node-add", "node_id": 8, "timestamp": 6, "label": "closed"},
         {
             "type": "edge-add",
-            "edge_id": 3,
+            "edge_id": 7,
             "src_id": 3,
-            "dst_id": 4,
+            "dst_id": 8,
             "timestamp": 6,
             "label": "is",
         },
@@ -810,13 +828,19 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
+        "living room",
+        "closed",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
+        (1, 5, "east of"),
+        (1, 7, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
-        (1, 5, "east of"),
         (3, 4, "is"),
+        (3, 8, "is"),
+        (6, 1, "in"),
     }
 
     # exit source node
@@ -840,20 +864,26 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
+        "living room",
+        "closed",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
         (1, 5, "east of"),
+        (1, 7, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
         (3, 4, "is"),
+        (3, 8, "is"),
+        (6, 1, "in"),
     }
     assert g.process_triplet_cmd("game0", 0, 8, "add , exit , kitchen , east_of") == [
-        {"type": "node-add", "node_id": 2, "timestamp": 8, "label": "exit"},
+        {"type": "node-add", "node_id": 9, "timestamp": 8, "label": "exit"},
         {
             "type": "edge-add",
-            "edge_id": 1,
-            "src_id": 2,
+            "edge_id": 8,
+            "src_id": 9,
             "dst_id": 1,
             "timestamp": 8,
             "label": "east of",
@@ -866,13 +896,21 @@ def test_tw_graph_triplet_cmd_delete():
         "fridge",
         "closed",
         "living room",
+        "apple",
+        "living room",
+        "closed",
+        "exit",
     ]
     assert set(g.get_edge_labels()) == {
         (0, 1, "in"),
+        (1, 5, "east of"),
+        (1, 7, "east of"),
         (2, 1, "east of"),
         (3, 1, "in"),
-        (1, 5, "east of"),
         (3, 4, "is"),
+        (3, 8, "is"),
+        (6, 1, "in"),
+        (9, 1, "east of"),
     }
 
 
@@ -915,7 +953,7 @@ def test_tw_graph_triplet_cmd_delete():
                     ],
                 }
             ],
-            {("g0", 0): ({0, 1, 2, 3}, [0, 1, 0], [(0, 1), (0, 2), (0, 3)])},
+            {("g0", 0): ({0, 1, 2, 3}, [0, 1, 2], [(0, 1), (0, 2), (0, 3)])},
         ),
         (
             [
@@ -1003,8 +1041,8 @@ def test_tw_graph_triplet_cmd_delete():
             ],
             {
                 ("g0", 0): ({0, 1}, [0], [(0, 1)]),
-                ("g1", 0): ({2, 3, 4, 5}, [1, 2, 1], [(2, 3), (2, 4), (2, 5)]),
-                ("g1", 1): ({6, 7, 8}, [3, 4], [(6, 7), (6, 8)]),
+                ("g1", 0): ({2, 3, 4, 5}, [1, 2, 3], [(2, 3), (2, 4), (2, 5)]),
+                ("g1", 1): ({6, 7, 8}, [4, 5], [(6, 7), (6, 8)]),
             },
         ),
     ],
