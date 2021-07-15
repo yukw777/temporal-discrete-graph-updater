@@ -617,4 +617,4 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
         18: 8,
         19: 9,
     }
-    assert edge_id_map == {10: 0, 11: 1, 7: 7, 8: 8, 9: 9}
+    assert edge_id_map == {7: 7, 8: 8, 9: 9}

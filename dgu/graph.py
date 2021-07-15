@@ -2,6 +2,7 @@ import networkx as nx
 
 from dataclasses import dataclass
 from typing import Dict, List, Any, Tuple, Set
+from collections import defaultdict
 
 from dgu.constants import IS
 
@@ -37,6 +38,11 @@ class TextWorldGraph:
         self.next_node_id = 0
         self.next_edge_id = 0
         self._graph = nx.DiGraph()
+
+        self.subgraph_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(set)
+        self.subgraph_edges: Dict[
+            Tuple[str, int], Dict[int, Tuple[int, int]]
+        ] = defaultdict(dict)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TextWorldGraph):
@@ -304,6 +310,11 @@ class TextWorldGraph:
         self._graph.add_edge(
             src_id, dst_id, id=edge_id, label=label, removed=False, **kwargs
         )
+        if "game" in kwargs and "walkthrough_step" in kwargs:
+            self.subgraph_edges[(kwargs["game"], kwargs["walkthrough_step"])][
+                edge_id
+            ] = (src_id, dst_id)
+
         return edge_id
 
     def remove_edge(self, src_id: int, dst_id: int) -> int:
@@ -325,6 +336,10 @@ class TextWorldGraph:
         node_id = self.next_node_id
         self.next_node_id += 1
         self._graph.add_node(node_id, label=label, removed=False, **kwargs)
+        if "game" in kwargs and "walkthrough_step" in kwargs:
+            self.subgraph_node_ids[(kwargs["game"], kwargs["walkthrough_step"])].add(
+                node_id
+            )
         return node_id
 
     def remove_node(self, node_id: int) -> None:
@@ -353,29 +368,24 @@ class TextWorldGraph:
         ]
 
     def get_subgraph(
-        self, game_walkthrough_set: Set[Tuple[str, int]]
+        self, game_walkthrough: Tuple[str, int]
     ) -> Tuple[Set[int], List[int], List[Tuple[int, int]]]:
         """
         Return the node IDs, edge IDs and edge indices for the subgraph
-        corresponding to the given set of (game, walkthrough_step)'s.
+        corresponding to the given (game, walkthrough_step).
 
-        game_walkthrough_set: set of (game, walkthrough_step)
+        game_walkthrough: target (game, walkthrough_step)
 
         returns: (node_ids, edge_ids, edge_index)
         """
 
-        def filter_node(node):
-            game = self._graph.nodes[node]["game"]
-            walkthrough_step = self._graph.nodes[node]["walkthrough_step"]
-            return (game, walkthrough_step) in game_walkthrough_set
-
-        subgraph_view = nx.subgraph_view(self._graph, filter_node=filter_node)
+        node_ids = self.subgraph_node_ids[game_walkthrough]
         edge_ids: List[int] = []
         edge_index: List[Tuple[int, int]] = []
-        for src, dst, data in subgraph_view.edges.data():
-            edge_ids.append(data["id"])
-            edge_index.append((src, dst))
-        return set(subgraph_view.nodes()), edge_ids, edge_index
+        for edge_id, (src_id, dst_id) in self.subgraph_edges[game_walkthrough].items():
+            edge_ids.append(edge_id)
+            edge_index.append((src_id, dst_id))
+        return node_ids, edge_ids, edge_index
 
     def process_events(self, events: List[Dict[str, Any]], **kwargs) -> None:
         """

@@ -1056,7 +1056,7 @@ def test_tw_graph_get_subgraph(batch, expected):
             ex["event_seq"], game=ex["game"], walkthrough_step=ex["walkthrough_step"]
         )
     for gw, answer in expected.items():
-        assert g.get_subgraph({gw}) == answer
+        assert g.get_subgraph(gw) == answer
 
 
 @pytest.mark.parametrize(

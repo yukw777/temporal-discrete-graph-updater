@@ -314,7 +314,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         # now update the (game, walkthrough_step)'s in the intersection
         for gw in common_gw_set:
             node_ids, edge_ids = self.used_ids[gw]
-            global_nids, global_eids, _ = graph.get_subgraph({gw})
+            global_nids, global_eids, _ = graph.get_subgraph(gw)
 
             # take care of remove node ids by adding them to unused_node_ids
             # and removing them from used_ids
@@ -336,7 +336,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         # now allocate the node and edge IDs of the new (game, walkthrough_step)'s
         for gw in new_gw_set:
-            global_nids, global_eids, _ = graph.get_subgraph({gw})
+            global_nids, global_eids, _ = graph.get_subgraph(gw)
             self.used_ids[gw] = (
                 dict(
                     zip(
@@ -580,7 +580,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                 subgraph_node_ids,
                 subgraph_edge_ids,
                 subgraph_edge_index,
-            ) = graph.get_subgraph({key})
+            ) = graph.get_subgraph(key)
             node_id_list.extend(node_id_map[i] for i in subgraph_node_ids)
             edge_id_list.extend(edge_id_map[i] for i in subgraph_edge_ids)
             edge_index_list.extend(
