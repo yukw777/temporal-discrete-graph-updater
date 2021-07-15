@@ -96,6 +96,20 @@ def test_tw_graph_edge():
     assert g._graph.number_of_edges() == 3
     assert g._graph[n1_id][n2_id]["removed"]
 
+    removed_e2_id = g.remove_edge(n2_id, n3_id)
+    assert e2_id == removed_e2_id
+    assert g._graph.number_of_edges() == 3
+    assert g._graph[n2_id][n3_id]["removed"]
+
+    readded_e2_id = g.add_edge(n2_id, n3_id, "e2", game="game0", walkthrough_step=2)
+    assert readded_e2_id == e2_id
+    assert g._graph.number_of_edges() == 3
+    assert g._graph[n2_id][n3_id]["id"] == readded_e2_id
+    assert g._graph[n2_id][n3_id]["game"] == "game0"
+    assert g._graph[n2_id][n3_id]["walkthrough_step"] == 2
+    assert g._graph[n2_id][n3_id]["label"] == "e2"
+    assert not g._graph[n2_id][n3_id]["removed"]
+
     n6_id = g.add_node("n6", game="game1", walkthrough_step=2)
     e4_id = g.add_edge(n5_id, n6_id, "e4", game="game1", walkthrough_step=2)
     assert e4_id == e1_id
@@ -862,41 +876,147 @@ def test_tw_graph_triplet_cmd_delete():
     }
 
 
-def test_tw_graph_get_subgraph():
+@pytest.mark.parametrize(
+    "batch,expected",
+    [
+        (
+            [
+                {
+                    "game": "g0",
+                    "walkthrough_step": 0,
+                    "event_seq": [
+                        {"type": "node-add", "label": "n0"},
+                        {"type": "node-add", "label": "n1"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "e0"},
+                    ],
+                }
+            ],
+            {("g0", 0): ({0, 1}, [0], [(0, 1)])},
+        ),
+        (
+            [
+                {
+                    "game": "g0",
+                    "walkthrough_step": 0,
+                    "event_seq": [
+                        {"type": "node-add", "label": "n0"},
+                        {"type": "node-add", "label": "n1"},
+                        {"type": "node-add", "label": "n2"},
+                        {"type": "node-add", "label": "n3"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "e0"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 2, "label": "e1"},
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "e0",
+                        },
+                        {"type": "edge-add", "src_id": 0, "dst_id": 3, "label": "e2"},
+                    ],
+                }
+            ],
+            {("g0", 0): ({0, 1, 2, 3}, [0, 1, 0], [(0, 1), (0, 2), (0, 3)])},
+        ),
+        (
+            [
+                {
+                    "game": "g0",
+                    "walkthrough_step": 0,
+                    "event_seq": [
+                        {"type": "node-add", "label": "n0"},
+                        {"type": "node-add", "label": "n1"},
+                        {"type": "node-add", "label": "n2"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "e0"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 2, "label": "e1"},
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 2,
+                            "label": "e1",
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "e0",
+                        },
+                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "e0"},
+                    ],
+                }
+            ],
+            {("g0", 0): ({0, 1, 2}, [0, 1], [(0, 1), (0, 2)])},
+        ),
+        (
+            [
+                {
+                    "game": "g0",
+                    "walkthrough_step": 0,
+                    "event_seq": [
+                        {"type": "node-add", "label": "n0"},
+                        {"type": "node-add", "label": "n1"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "e0"},
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "event_seq": [
+                        {"type": "node-add", "label": "n0"},
+                        {"type": "node-add", "label": "n1"},
+                        {"type": "node-add", "label": "n2"},
+                        {"type": "node-add", "label": "n3"},
+                        {"type": "edge-add", "src_id": 2, "dst_id": 3, "label": "e0"},
+                        {"type": "edge-add", "src_id": 2, "dst_id": 4, "label": "e1"},
+                        {
+                            "type": "edge-delete",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "e0",
+                        },
+                        {"type": "edge-add", "src_id": 2, "dst_id": 5, "label": "e2"},
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 1,
+                    "event_seq": [
+                        {"type": "node-add", "label": "n0"},
+                        {"type": "node-add", "label": "n1"},
+                        {"type": "node-add", "label": "n2"},
+                        {"type": "edge-add", "src_id": 6, "dst_id": 7, "label": "e0"},
+                        {"type": "edge-add", "src_id": 6, "dst_id": 8, "label": "e1"},
+                        {
+                            "type": "edge-delete",
+                            "src_id": 6,
+                            "dst_id": 8,
+                            "label": "e1",
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 6,
+                            "dst_id": 7,
+                            "label": "e0",
+                        },
+                        {"type": "edge-add", "src_id": 6, "dst_id": 7, "label": "e0"},
+                    ],
+                },
+            ],
+            {
+                ("g0", 0): ({0, 1}, [0], [(0, 1)]),
+                ("g1", 0): ({2, 3, 4, 5}, [1, 2, 1], [(2, 3), (2, 4), (2, 5)]),
+                ("g1", 1): ({6, 7, 8}, [3, 4], [(6, 7), (6, 8)]),
+            },
+        ),
+    ],
+)
+def test_tw_graph_get_subgraph(batch, expected):
     g = TextWorldGraph()
-    # add four nodes and connect them
-    g0_n1_id = g.add_node("n1", game="game0", walkthrough_step=0)
-    g0_n2_id = g.add_node("n2", game="game0", walkthrough_step=0)
-    g0_n3_id = g.add_node("n3", game="game0", walkthrough_step=0)
-    g0_n4_id = g.add_node("n4", game="game0", walkthrough_step=0)
-    g.add_edge(g0_n1_id, g0_n3_id, "e1", game="game0", walkthrough_step=0)
-    g.add_edge(g0_n1_id, g0_n2_id, "e2", game="game0", walkthrough_step=0)
-
-    # remove one edge and add another
-    g.remove_edge(g0_n1_id, g0_n3_id)
-    g.add_edge(g0_n1_id, g0_n4_id, "e3", game="game0", walkthrough_step=0)
-
-    # add two nodes, and connect them in another game
-    g1_n1_id = g.add_node("n1", game="game1", walkthrough_step=0)
-    g1_n2_id = g.add_node("n2", game="game1", walkthrough_step=0)
-    g.add_edge(g1_n1_id, g1_n2_id, "e1", game="game1", walkthrough_step=0)
-
-    # remove the edge and one of the nodes
-    g.remove_edge(g1_n1_id, g1_n2_id)
-    g.remove_node(g1_n2_id)
-
-    # add two nodes and connect them in the third game
-    g2_n1_id = g.add_node("n1", game="game2", walkthrough_step=1)
-    g2_n2_id = g.add_node("n2", game="game2", walkthrough_step=1)
-    g.add_edge(g2_n1_id, g2_n2_id, "e1", game="game2", walkthrough_step=1)
-
-    assert g.get_subgraph({("game0", 0)}) == (
-        {0, 1, 2, 3},
-        [0, 1, 0],
-        [(0, 2), (0, 1), (0, 3)],
-    )
-    assert g.get_subgraph({("game1", 0)}) == ({4}, [], [])
-    assert g.get_subgraph({("game2", 1)}) == ({5, 6}, [2], [(5, 6)])
+    for ex in batch:
+        g.process_events(
+            ex["event_seq"], game=ex["game"], walkthrough_step=ex["walkthrough_step"]
+        )
+    for gw, answer in expected.items():
+        assert g.get_subgraph({gw}) == answer
 
 
 @pytest.mark.parametrize(

@@ -300,6 +300,12 @@ class TextWorldGraph:
         then returns the edge ID. The extra keyword arguments are saved as attributes
         of the edge.
         """
+        if self._graph.has_edge(src_id, dst_id):
+            # if the edge already exists, set removed to False and reuse the id
+            attrs = self._graph[src_id][dst_id]
+            attrs["removed"] = False
+            self._graph.add_edge(src_id, dst_id, **attrs)
+            return attrs["id"]
         if len(self.removed_edge_ids) > 0:
             edge_id = self.removed_edge_ids.popleft()
         else:
