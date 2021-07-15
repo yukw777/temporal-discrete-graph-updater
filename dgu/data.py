@@ -5,7 +5,7 @@ import torch
 import pickle
 
 from tqdm import tqdm
-from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
+from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple
 from collections import deque
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
@@ -367,38 +367,17 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         return node_id_map, edge_id_map
 
-    def collate(
-        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
+    def collate_textual_inputs(
+        self, batch: List[Dict[str, Any]]
     ) -> Dict[str, torch.Tensor]:
         """
-        Turn a batch of raw datapoints into tensors.
-        {
+        Collate the textual inputs (observation and previous action) of the given batch.
+
+        output: {
             "obs_word_ids": (batch, obs_len),
             "obs_mask": (batch, obs_len),
             "prev_action_word_ids": (batch, prev_action_len),
             "prev_action_mask": (batch, prev_action_len),
-            "node_ids": (num_nodes),
-            "edge_ids": (num_edges),
-            "edge_index": (2, num_edges),
-            "edge_timestamps": (num_edges),
-            "tgt_event_timestamps": (event_seq_len),
-                Used for teacher forcing message calculation.
-            "tgt_event_mask": (event_seq_len),
-                Used for teacher forcing message calculation, and label mask.
-            "tgt_event_type_ids": (event_seq_len),
-            "tgt_event_src_ids": (event_seq_len),
-            "tgt_event_src_mask": (event_seq_len),
-            "tgt_event_dst_ids": (event_seq_len),
-            "tgt_event_dst_mask": (event_seq_len),
-            "tgt_event_edge_ids": (event_seq_len),
-            "tgt_event_label_ids": (event_seq_len),
-            "groundtruth_event_type_ids": (event_seq_len),
-            "groundtruth_event_src_ids": (event_seq_len),
-            "groundtruth_event_src_mask": (event_seq_len),
-            "groundtruth_event_dst_ids": (event_seq_len),
-            "groundtruth_event_dst_mask": (event_seq_len),
-            "groundtruth_event_label_ids": (event_seq_len),
-            "groundtruth_event_mask": (event_seq_len),
         }
         """
         # textual observation
@@ -410,7 +389,33 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
             [example["previous_action"].split() for example in batch]
         )
+        return {
+            "obs_word_ids": obs_word_ids,
+            "obs_mask": obs_mask,
+            "prev_action_word_ids": prev_action_word_ids,
+            "prev_action_mask": prev_action_mask,
+        }
 
+    def collate_non_graphical_inputs(
+        self, batch: List[Dict[str, Any]]
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Collate the non-graphical inputs of the given batch.
+
+        output: {
+            "tgt_event_type_ids": (event_seq_len),
+            "groundtruth_event_type_ids": (event_seq_len),
+            "tgt_event_timestamps": (event_seq_len),
+            "tgt_event_mask": (event_seq_len),
+            "tgt_event_src_mask": (event_seq_len),
+            "tgt_event_dst_mask": (event_seq_len),
+            "groundtruth_event_mask": (event_seq_len),
+            "groundtruth_event_src_mask": (event_seq_len),
+            "groundtruth_event_dst_mask": (event_seq_len),
+            "tgt_event_label_ids": (event_seq_len),
+            "groundtruth_event_label_ids": (event_seq_len),
+        }
+        """
         # event types
         event_type_ids = [
             EVENT_TYPE_ID_MAP[event["type"]]
@@ -446,76 +451,6 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             groundtruth_event_dst_mask,
         ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
 
-        global_event_src_ids: List[int] = []
-        global_event_dst_ids: List[int] = []
-        global_event_edge_ids: List[int] = []
-
-        for example in batch:
-            graph.process_events(
-                example["event_seq"],
-                game=example["game"],
-                walkthrough_step=example["walkthrough_step"],
-            )
-            for event in example["event_seq"]:
-                if event["type"] in {"node-add", "node-delete"}:
-                    global_event_src_ids.append(event["node_id"])
-                    global_event_dst_ids.append(0)
-                    global_event_edge_ids.append(0)
-                else:
-                    global_event_src_ids.append(event["src_id"])
-                    global_event_dst_ids.append(event["dst_id"])
-                    global_event_edge_ids.append(event["edge_id"])
-
-        # get the subgraph ID maps
-        node_id_map, edge_id_map = self.calculate_subgraph_maps(graph, batch)
-        # include the 0th node/edge as a placeholder if not there
-        if 0 not in node_id_map:
-            node_id_map[0] = 0
-        if 0 not in edge_id_map:
-            edge_id_map[0] = 0
-
-        # translate global IDs to subgraph IDs
-        event_src_ids = [node_id_map[i] for i in global_event_src_ids]
-        event_dst_ids = [node_id_map[i] for i in global_event_dst_ids]
-        event_edge_ids = [edge_id_map[i] for i in global_event_edge_ids]
-
-        # placeholder node id for the start event
-        tgt_event_src_ids = torch.tensor([0] + event_src_ids)
-        tgt_event_dst_ids = torch.tensor([0] + event_dst_ids)
-
-        # placeholder edge id for the start event
-        tgt_event_edge_ids = torch.tensor([0] + event_edge_ids)
-
-        # placeholder node id for the end event
-        groundtruth_event_src_ids = torch.tensor(event_src_ids + [0])
-        groundtruth_event_dst_ids = torch.tensor(event_dst_ids + [0])
-
-        # Figure out the latest timestamp for each (game, walkthrough_step) pair
-        # since we want to calculate the time embeddings at the latest timestamp
-        game_walkthrough_timestamp_dict: Dict[Tuple[str, int], int] = {}
-        for example in batch:
-            key = (example["game"], example["walkthrough_step"])
-            if key not in game_walkthrough_timestamp_dict:
-                game_walkthrough_timestamp_dict[key] = example["timestamp"]
-            elif game_walkthrough_timestamp_dict[key] < example["timestamp"]:
-                game_walkthrough_timestamp_dict[key] = example["timestamp"]
-
-        edge_index_set: Set[Tuple[int, int]] = set()
-        edge_timestamps: List[int] = []
-        for key, timestamp in game_walkthrough_timestamp_dict.items():
-            _, subgraph_edge_ids, subgraph_edge_index = graph.get_subgraph({key})
-            edge_index_set.update(
-                [
-                    (node_id_map[src], node_id_map[dst])
-                    for src, dst in subgraph_edge_index
-                ]
-            )
-            edge_timestamps.extend([timestamp] * len(subgraph_edge_ids))
-
-        node_ids = torch.tensor(sorted(node_id_map.values()))
-        edge_ids = torch.tensor(sorted(edge_id_map.values()))
-        edge_index = torch.tensor(sorted(edge_index_set)).transpose(0, 1)
-
         event_label_ids = [
             self.label_id_map[event["label"]]
             for example in batch
@@ -529,31 +464,188 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         )
 
         return {
-            "obs_word_ids": obs_word_ids,
-            "obs_mask": obs_mask,
-            "prev_action_word_ids": prev_action_word_ids,
-            "prev_action_mask": prev_action_mask,
+            "tgt_event_type_ids": tgt_event_type_ids,
+            "groundtruth_event_type_ids": groundtruth_event_type_ids,
+            "tgt_event_timestamps": tgt_event_timestamps,
+            "tgt_event_mask": tgt_event_mask,
+            "tgt_event_src_mask": tgt_event_src_mask,
+            "tgt_event_dst_mask": tgt_event_dst_mask,
+            "groundtruth_event_mask": groundtruth_event_mask,
+            "groundtruth_event_src_mask": groundtruth_event_src_mask,
+            "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
+            "tgt_event_label_ids": tgt_event_label_ids,
+            "groundtruth_event_label_ids": groundtruth_event_label_ids,
+        }
+
+    def collate_graphical_inputs(
+        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Collate the graphical inputs of the given batch.
+
+        output: {
+            "node_ids": (num_nodes),
+            "edge_ids": (num_edges),
+            "edge_index": (2, num_edges),
+            "edge_timestamps": (num_edges),
+            "tgt_event_src_ids": (event_seq_len),
+            "tgt_event_dst_ids": (event_seq_len),
+            "tgt_event_edge_ids": (event_seq_len),
+            "groundtruth_event_src_ids": (event_seq_len),
+            "groundtruth_event_dst_ids": (event_seq_len),
+        }
+        """
+        # update the graph with the graph events in the batch
+        for example in batch:
+            graph.process_events(
+                example["event_seq"],
+                game=example["game"],
+                walkthrough_step=example["walkthrough_step"],
+            )
+
+        # get the subgraph node/edge ID maps based on the updated graph
+        node_id_map, edge_id_map = self.calculate_subgraph_maps(graph, batch)
+
+        # create a map from local node ID => position in node_ids
+        # which will be used for edge indices and groundtruth node IDs
+        node_id_pos_map = {
+            node_id: i for i, node_id in enumerate(sorted(node_id_map.values()))
+        }
+
+        # collect global event node/edge IDs
+        global_event_src_ids: List[int] = []
+        global_event_dst_ids: List[int] = []
+        global_event_edge_ids: List[int] = []
+        for example in batch:
+            for event in example["event_seq"]:
+                if event["type"] in {"node-add", "node-delete"}:
+                    global_event_src_ids.append(event["node_id"])
+                    # use -1 as a placeholder. it will be translated to local 0 later
+                    global_event_dst_ids.append(-1)
+                    global_event_edge_ids.append(-1)
+                else:
+                    global_event_src_ids.append(event["src_id"])
+                    global_event_dst_ids.append(event["dst_id"])
+                    global_event_edge_ids.append(event["edge_id"])
+
+        # translate global IDs to subgraph IDs
+        # source IDs are never masked, so should always be available in node_id_map
+        event_src_ids = [node_id_map[i] for i in global_event_src_ids]
+        event_dst_ids = [0 if i == -1 else node_id_map[i] for i in global_event_dst_ids]
+        event_edge_ids = [
+            0 if i == -1 else edge_id_map[i] for i in global_event_edge_ids
+        ]
+
+        # placeholder node id for the start event
+        tgt_event_src_ids = torch.tensor([0] + event_src_ids)
+        tgt_event_dst_ids = torch.tensor([0] + event_dst_ids)
+
+        # placeholder edge id for the start event
+        tgt_event_edge_ids = torch.tensor([0] + event_edge_ids)
+
+        # translate node IDs into the positions in node_ids
+        # this is necessary to calculate cross entropy losses
+        # placeholder node id 0 for the end event, which is masked in loss calculation
+        groundtruth_event_src_ids = torch.tensor(
+            [
+                0 if nid == -1 else node_id_pos_map[node_id_map[nid]]
+                for nid in global_event_src_ids
+            ]
+            + [0]
+        )
+        groundtruth_event_dst_ids = torch.tensor(
+            [
+                0 if nid == -1 else node_id_pos_map[node_id_map[nid]]
+                for nid in global_event_dst_ids
+            ]
+            + [0]
+        )
+
+        # Figure out the latest timestamp for each (game, walkthrough_step) pair
+        # since we want to calculate the time embeddings at the latest timestamp
+        game_walkthrough_timestamp_dict: Dict[Tuple[str, int], int] = {}
+        for example in batch:
+            key = (example["game"], example["walkthrough_step"])
+            if key not in game_walkthrough_timestamp_dict:
+                game_walkthrough_timestamp_dict[key] = example["timestamp"]
+            elif game_walkthrough_timestamp_dict[key] < example["timestamp"]:
+                game_walkthrough_timestamp_dict[key] = example["timestamp"]
+
+        node_id_list: List[int] = []
+        edge_index_list: List[Tuple[int, int]] = []
+        edge_id_list: List[int] = []
+        edge_timestamps: List[int] = []
+        for key, timestamp in game_walkthrough_timestamp_dict.items():
+            (
+                subgraph_node_ids,
+                subgraph_edge_ids,
+                subgraph_edge_index,
+            ) = graph.get_subgraph({key})
+            node_id_list.extend(node_id_map[i] for i in subgraph_node_ids)
+            edge_id_list.extend(edge_id_map[i] for i in subgraph_edge_ids)
+            edge_index_list.extend(
+                (
+                    node_id_pos_map[node_id_map[src]],
+                    node_id_pos_map[node_id_map[dst]],
+                )
+                for src, dst in subgraph_edge_index
+            )
+            edge_timestamps.extend([timestamp] * len(subgraph_edge_ids))
+
+        node_ids = torch.tensor(node_id_list)
+        edge_ids = torch.tensor(edge_id_list)
+        edge_index = torch.tensor(edge_index_list).transpose(0, 1)
+
+        return {
             "node_ids": node_ids,
             "edge_ids": edge_ids,
             "edge_index": edge_index,
-            "edge_timestamps": torch.tensor(edge_timestamps),
-            "tgt_event_timestamps": tgt_event_timestamps,
-            "tgt_event_mask": tgt_event_mask,
-            "tgt_event_type_ids": tgt_event_type_ids,
+            "edge_timestamps": torch.tensor(edge_timestamps, dtype=torch.float),
             "tgt_event_src_ids": tgt_event_src_ids,
-            "tgt_event_src_mask": tgt_event_src_mask,
             "tgt_event_dst_ids": tgt_event_dst_ids,
-            "tgt_event_dst_mask": tgt_event_dst_mask,
             "tgt_event_edge_ids": tgt_event_edge_ids,
-            "tgt_event_label_ids": tgt_event_label_ids,
-            "groundtruth_event_type_ids": groundtruth_event_type_ids,
             "groundtruth_event_src_ids": groundtruth_event_src_ids,
-            "groundtruth_event_src_mask": groundtruth_event_src_mask,
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
-            "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
-            "groundtruth_event_label_ids": groundtruth_event_label_ids,
-            "groundtruth_event_mask": groundtruth_event_mask,
         }
+
+    def collate(
+        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Turn a batch of raw datapoints into tensors.
+        {
+            "obs_word_ids": (batch, obs_len),
+            "obs_mask": (batch, obs_len),
+            "prev_action_word_ids": (batch, prev_action_len),
+            "prev_action_mask": (batch, prev_action_len),
+            "node_ids": (num_nodes),
+            "edge_ids": (num_edges),
+            "edge_index": (2, num_edges),
+            "edge_timestamps": (num_edges),
+            "tgt_event_timestamps": (event_seq_len),
+                Used for teacher forcing message calculation.
+            "tgt_event_mask": (event_seq_len),
+                Used for teacher forcing message calculation, and label mask.
+            "tgt_event_type_ids": (event_seq_len),
+            "tgt_event_src_ids": (event_seq_len),
+            "tgt_event_src_mask": (event_seq_len),
+            "tgt_event_dst_ids": (event_seq_len),
+            "tgt_event_dst_mask": (event_seq_len),
+            "tgt_event_edge_ids": (event_seq_len),
+            "tgt_event_label_ids": (event_seq_len),
+            "groundtruth_event_type_ids": (event_seq_len),
+            "groundtruth_event_src_ids": (event_seq_len),
+            "groundtruth_event_src_mask": (event_seq_len),
+            "groundtruth_event_dst_ids": (event_seq_len),
+            "groundtruth_event_dst_mask": (event_seq_len),
+            "groundtruth_event_label_ids": (event_seq_len),
+            "groundtruth_event_mask": (event_seq_len),
+        }
+        """
+        results = self.collate_textual_inputs(batch)
+        results.update(self.collate_non_graphical_inputs(batch))
+        results.update(self.collate_graphical_inputs(graph, batch))
+        return results
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
