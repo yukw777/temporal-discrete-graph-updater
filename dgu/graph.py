@@ -1,8 +1,8 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from collections import deque
-from typing import Dict, List, Deque, Any, Tuple, Set
+from typing import Dict, List, Any, Tuple, Set
+from collections import defaultdict
 
 from dgu.constants import IS
 
@@ -35,11 +35,14 @@ class TextWorldGraph:
         self.is_dst_node_id_map: Dict[IsDstNode, int] = {}
         self.exit_node_id_map: Dict[ExitNode, int] = {}
         self.node_id_map: Dict[Node, int] = {}
-        self.removed_node_ids: Deque[int] = deque()
         self.next_node_id = 0
-        self.removed_edge_ids: Deque[int] = deque()
         self.next_edge_id = 0
         self._graph = nx.DiGraph()
+
+        self.subgraph_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(set)
+        self.subgraph_edges: Dict[
+            Tuple[str, int], Dict[int, Tuple[int, int]]
+        ] = defaultdict(dict)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TextWorldGraph):
@@ -48,8 +51,6 @@ class TextWorldGraph:
             self.is_dst_node_id_map == o.is_dst_node_id_map
             and self.exit_node_id_map == o.exit_node_id_map
             and self.node_id_map == o.node_id_map
-            and self.removed_node_ids == o.removed_node_ids
-            and self.removed_edge_ids == o.removed_edge_ids
             and self.next_edge_id == o.next_edge_id
             and nx.is_isomorphic(self._graph, o._graph)
         )
@@ -145,7 +146,10 @@ class TextWorldGraph:
             else:
                 dst_id = self.node_id_map[node]
 
-        if self._graph.has_edge(src_id, dst_id):
+        if (
+            self._graph.has_edge(src_id, dst_id)
+            and not self._graph[src_id][dst_id]["removed"]
+        ):
             # the edge already exists, so we're done
             return events
         # the edge doesn't exist, so add it
@@ -214,7 +218,13 @@ class TextWorldGraph:
             }
         )
         # if there are no edges, delete the nodes
-        if self._graph.in_degree(dst_id) == 0 and self._graph.out_degree(dst_id) == 0:
+        if all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.in_edges(dst_id)
+        ) and all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.out_edges(dst_id)
+        ):
             self.remove_node(dst_id)
             if rel_label == IS:
                 del self.is_dst_node_id_map[
@@ -230,7 +240,13 @@ class TextWorldGraph:
                     "label": dst_label,
                 }
             )
-        if self._graph.in_degree(src_id) == 0 and self._graph.out_degree(src_id) == 0:
+        if all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.in_edges(src_id)
+        ) and all(
+            self._graph[src][dst]["removed"]
+            for src, dst in self._graph.out_edges(src_id)
+        ):
             self.remove_node(src_id)
             if src_label == "exit":
                 del self.exit_node_id_map[
@@ -285,12 +301,20 @@ class TextWorldGraph:
         then returns the edge ID. The extra keyword arguments are saved as attributes
         of the edge.
         """
-        if len(self.removed_edge_ids) > 0:
-            edge_id = self.removed_edge_ids.popleft()
+        if self._graph.has_edge(src_id, dst_id):
+            # if the edge already exists, reuse the id
+            edge_id = self._graph[src_id][dst_id]["id"]
         else:
             edge_id = self.next_edge_id
             self.next_edge_id += 1
-        self._graph.add_edge(src_id, dst_id, id=edge_id, label=label, **kwargs)
+        self._graph.add_edge(
+            src_id, dst_id, id=edge_id, label=label, removed=False, **kwargs
+        )
+        if "game" in kwargs and "walkthrough_step" in kwargs:
+            self.subgraph_edges[(kwargs["game"], kwargs["walkthrough_step"])][
+                edge_id
+            ] = (src_id, dst_id)
+
         return edge_id
 
     def remove_edge(self, src_id: int, dst_id: int) -> int:
@@ -298,9 +322,10 @@ class TextWorldGraph:
         Remove the node with the given source and destination IDs, then return
         the removed edge ID.
         """
-        edge_id = self._graph[src_id][dst_id]["id"]
-        self._graph.remove_edge(src_id, dst_id)
-        self.removed_edge_ids.append(edge_id)
+        attrs = self._graph[src_id][dst_id]
+        edge_id = attrs["id"]
+        attrs["removed"] = True
+        self._graph.add_edge(src_id, dst_id, **attrs)
         return edge_id
 
     def add_node(self, label: str, **kwargs) -> int:
@@ -308,12 +333,13 @@ class TextWorldGraph:
         Add a node with the given label and initializes it with an ID.
         The extra keyword arguments are saved as attributes of the node.
         """
-        if len(self.removed_node_ids) > 0:
-            node_id = self.removed_node_ids.popleft()
-        else:
-            node_id = self.next_node_id
-            self.next_node_id += 1
+        node_id = self.next_node_id
+        self.next_node_id += 1
         self._graph.add_node(node_id, label=label, removed=False, **kwargs)
+        if "game" in kwargs and "walkthrough_step" in kwargs:
+            self.subgraph_node_ids[(kwargs["game"], kwargs["walkthrough_step"])].add(
+                node_id
+            )
         return node_id
 
     def remove_node(self, node_id: int) -> None:
@@ -328,7 +354,6 @@ class TextWorldGraph:
         attrs = self._graph.nodes[node_id]
         attrs["removed"] = True
         self._graph.add_node(node_id, **attrs)
-        self.removed_node_ids.append(node_id)
 
     def get_node_labels(self) -> List[str]:
         """
@@ -343,29 +368,24 @@ class TextWorldGraph:
         ]
 
     def get_subgraph(
-        self, game_walkthrough_set: Set[Tuple[str, int]]
-    ) -> Tuple[Set[int], Set[int], Set[Tuple[int, int]]]:
+        self, game_walkthrough: Tuple[str, int]
+    ) -> Tuple[Set[int], List[int], List[Tuple[int, int]]]:
         """
         Return the node IDs, edge IDs and edge indices for the subgraph
-        corresponding to the given set of (game, walkthrough_step)'s.
+        corresponding to the given (game, walkthrough_step).
 
-        game_walkthrough_set: set of (game, walkthrough_step)
+        game_walkthrough: target (game, walkthrough_step)
 
         returns: (node_ids, edge_ids, edge_index)
         """
 
-        def filter_node(node):
-            game = self._graph.nodes[node]["game"]
-            walkthrough_step = self._graph.nodes[node]["walkthrough_step"]
-            return (game, walkthrough_step) in game_walkthrough_set
-
-        subgraph_view = nx.subgraph_view(self._graph, filter_node=filter_node)
-        edge_ids: Set[int] = set()
-        edge_index: Set[Tuple[int, int]] = set()
-        for src, dst, data in subgraph_view.edges.data():
-            edge_ids.add(data["id"])
-            edge_index.add((src, dst))
-        return set(subgraph_view.nodes()), edge_ids, edge_index
+        node_ids = self.subgraph_node_ids[game_walkthrough]
+        edge_ids: List[int] = []
+        edge_index: List[Tuple[int, int]] = []
+        for edge_id, (src_id, dst_id) in self.subgraph_edges[game_walkthrough].items():
+            edge_ids.append(edge_id)
+            edge_index.append((src_id, dst_id))
+        return node_ids, edge_ids, edge_index
 
     def process_events(self, events: List[Dict[str, Any]], **kwargs) -> None:
         """

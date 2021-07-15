@@ -152,10 +152,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # raw message storage for training
         # initialize with an empty subgraph and [start, end] graph events.
         self.raw_msg = {
-            "subgraph_node_ids": torch.zeros(0, dtype=torch.long),
-            "subgraph_edge_ids": torch.zeros(0, dtype=torch.long),
-            "subgraph_local_edge_index": torch.zeros(2, 0, dtype=torch.long),
-            "subgraph_edge_timestamps": torch.zeros(0),
+            "node_ids": torch.zeros(0, dtype=torch.long),
+            "edge_ids": torch.zeros(0, dtype=torch.long),
+            "edge_index": torch.zeros(2, 0, dtype=torch.long),
+            "edge_timestamps": torch.zeros(0),
             "tgt_event_timestamps": torch.zeros(2),
             "tgt_event_mask": torch.zeros(2),
             "tgt_event_type_ids": torch.tensor(
@@ -190,7 +190,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_edge_ids: torch.Tensor,
         prev_edge_index: torch.Tensor,
         prev_edge_timestamps: torch.Tensor,
-        subgraph_node_ids: Optional[torch.Tensor] = None,
+        node_ids: Optional[torch.Tensor] = None,
         tgt_event_type_ids: Optional[torch.Tensor] = None,
         tgt_event_src_ids: Optional[torch.Tensor] = None,
         tgt_event_src_mask: Optional[torch.Tensor] = None,
@@ -218,7 +218,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_edge_ids: (prev_num_edge)
             prev_edge_index: (2, prev_num_edge)
             prev_edge_timestamps: (prev_num_edge)
-            subgraph_node_ids: (subgraph_num_node)
+            node_ids: (num_node)
             tgt_event_type_ids: (batch, graph_event_seq_len)
                 Used for teacher forcing.
             tgt_event_src_ids: (graph_event_seq_len)
@@ -238,8 +238,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         if training:
             {
                 event_type_logits: (graph_event_seq_len, num_event_type)
-                src_logits: (graph_event_seq_len, subgraph_num_node)
-                dst_logits: (graph_event_seq_len, subgraph_num_node)
+                src_logits: (graph_event_seq_len, num_node)
+                dst_logits: (graph_event_seq_len, num_node)
                 label_logits: (graph_event_seq_len, num_label)
             }
         else:
@@ -292,7 +292,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         results = self.seq2seq(
             delta_g.unsqueeze(0),
             self.tgn.memory,  # type: ignore
-            subgraph_node_ids=subgraph_node_ids,
+            node_ids=node_ids,
             tgt_event_mask=None
             if tgt_event_mask is None
             else tgt_event_mask.unsqueeze(0),
@@ -409,11 +409,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             self.raw_msg["tgt_event_label_ids"].to(self.device),
             self.raw_msg["tgt_event_mask"].to(self.device),
             self.raw_msg["tgt_event_timestamps"].to(self.device),
-            self.raw_msg["subgraph_node_ids"].to(self.device),
-            self.raw_msg["subgraph_edge_ids"].to(self.device),
-            self.raw_msg["subgraph_local_edge_index"].to(self.device),
-            self.raw_msg["subgraph_edge_timestamps"].to(self.device),
-            batch["subgraph_node_ids"],
+            self.raw_msg["node_ids"].to(self.device),
+            self.raw_msg["edge_ids"].to(self.device),
+            self.raw_msg["edge_index"].to(self.device),
+            self.raw_msg["edge_timestamps"].to(self.device),
+            batch["node_ids"],
             tgt_event_type_ids=batch["tgt_event_type_ids"],
             tgt_event_src_ids=batch["tgt_event_src_ids"],
             tgt_event_src_mask=batch["tgt_event_src_mask"],
@@ -433,25 +433,21 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.raw_msg["tgt_event_label_ids"] = batch["tgt_event_label_ids"]
         self.raw_msg["tgt_event_mask"] = batch["tgt_event_mask"]
         self.raw_msg["tgt_event_timestamps"] = batch["tgt_event_timestamps"]
-        self.raw_msg["subgraph_node_ids"] = batch["subgraph_node_ids"]
-        self.raw_msg["subgraph_edge_ids"] = batch["subgraph_edge_ids"]
-        self.raw_msg["subgraph_local_edge_index"] = batch["subgraph_local_edge_index"]
-        self.raw_msg["subgraph_edge_timestamps"] = batch["subgraph_edge_timestamps"]
+        self.raw_msg["node_ids"] = batch["node_ids"]
+        self.raw_msg["edge_ids"] = batch["edge_ids"]
+        self.raw_msg["edge_index"] = batch["edge_index"]
+        self.raw_msg["edge_timestamps"] = batch["edge_timestamps"]
 
         # calculate losses
         event_type_loss = self.criterion(
             results["event_type_logits"], batch["groundtruth_event_type_ids"]
         ).mean()
         src_loss = torch.mean(
-            self.criterion(
-                results["src_logits"], batch["groundtruth_event_subgraph_src_ids"]
-            )
+            self.criterion(results["src_logits"], batch["groundtruth_event_src_ids"])
             * batch["groundtruth_event_src_mask"]
         )
         dst_loss = torch.mean(
-            self.criterion(
-                results["dst_logits"], batch["groundtruth_event_subgraph_dst_ids"]
-            )
+            self.criterion(results["dst_logits"], batch["groundtruth_event_dst_ids"])
             * batch["groundtruth_event_dst_mask"]
         )
         label_loss = torch.mean(

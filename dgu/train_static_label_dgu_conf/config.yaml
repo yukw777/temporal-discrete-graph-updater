@@ -2,7 +2,7 @@ seed: 42
 
 data:
   train_path: data/cmd_gen.0.2/train.json
-  train_batch_size: 200
+  train_batch_size: 8
   val_path: data/cmd_gen.0.2/valid.json
   val_batch_size: 1
   test_path: data/cmd_gen.0.2/test.json
@@ -13,8 +13,8 @@ data:
 
 model:
   hidden_dim: 64
-  max_num_nodes: 2400000
-  max_num_edges: 2600000
+  max_num_nodes: 200
+  max_num_edges: 200
   word_emb_dim: 300
   text_encoder_num_blocks: 1
   text_encoder_num_conv_layers: 5

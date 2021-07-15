@@ -19,7 +19,11 @@ def main(cfg: DictConfig) -> None:
     trainer = instantiate(cfg.trainer)
 
     # data module
-    dm = TWCmdGenTemporalDataModule(**cfg.data)
+    dm = TWCmdGenTemporalDataModule(
+        **cfg.data,
+        max_num_nodes=cfg.model.max_num_nodes,
+        max_num_edges=cfg.model.max_num_edges,
+    )
 
     # lightning module
     lm = StaticLabelDiscreteGraphUpdater(

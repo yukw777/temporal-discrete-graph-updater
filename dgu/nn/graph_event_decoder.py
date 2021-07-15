@@ -318,7 +318,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         self,
         delta_g: torch.Tensor,
         node_embeddings: torch.Tensor,
-        subgraph_node_ids: Optional[torch.Tensor] = None,
+        node_ids: Optional[torch.Tensor] = None,
         tgt_event_mask: Optional[torch.Tensor] = None,
         tgt_event_type_ids: Optional[torch.Tensor] = None,
         tgt_event_src_ids: Optional[torch.Tensor] = None,
@@ -331,7 +331,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         input:
             delta_g: (batch, obs_seq_len, 4 * hidden_dim)
             node_embeddings: (num_node, hidden_dim)
-            subgraph_node_ids: (subgraph_num_node)
+            node_ids: (num_node)
             tgt_event_mask: (batch, graph_event_seq_len)
                 Used for teacher forcing.
             tgt_event_type_ids: (batch, graph_event_seq_len)
@@ -351,8 +351,8 @@ class RNNGraphEventSeq2Seq(nn.Module):
         if training:
             {
                 event_type_logits: (batch, graph_event_seq_len, num_event_type)
-                src_logits: (batch, graph_event_seq_len, subgraph_num_node)
-                dst_logits: (batch, graph_event_seq_len, subgraph_num_node)
+                src_logits: (batch, graph_event_seq_len, num_node)
+                dst_logits: (batch, graph_event_seq_len, num_node)
                 label_logits: (batch, graph_event_seq_len, num_label)
             }
         else:
@@ -367,7 +367,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         # (1, batch, hidden_dim)
         if self.training:
             # teacher forcing
-            assert subgraph_node_ids is not None
+            assert node_ids is not None
             assert tgt_event_type_ids is not None
             assert tgt_event_src_ids is not None
             assert tgt_event_src_mask is not None
@@ -379,7 +379,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
             return self.teacher_force(
                 context,
                 node_embeddings,
-                subgraph_node_ids,
+                node_ids,
                 tgt_event_type_ids,
                 tgt_event_src_ids,
                 tgt_event_src_mask,
@@ -394,7 +394,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         self,
         context: torch.Tensor,
         node_embeddings: torch.Tensor,
-        subgraph_node_ids: torch.Tensor,
+        node_ids: torch.Tensor,
         tgt_event_type_ids: torch.Tensor,
         tgt_event_src_ids: torch.Tensor,
         tgt_event_src_mask: torch.Tensor,
@@ -410,7 +410,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         input:
             context: (batch, obs_seq_len, hidden_dim)
             node_embeddings: (num_node, hidden_dim)
-            subgraph_node_ids: (subgraph_num_node)
+            node_ids: (num_node)
             tgt_event_type_ids: (batch, graph_event_seq_len)
                 Used for teacher forcing.
             tgt_event_src_ids: (batch, graph_event_seq_len)
@@ -429,8 +429,8 @@ class RNNGraphEventSeq2Seq(nn.Module):
         output:
             {
                 event_type_logits: (batch, graph_event_seq_len, num_event_type)
-                src_logits: (batch, graph_event_seq_len, subgraph_num_node)
-                dst_logits: (batch, graph_event_seq_len, subgraph_num_node)
+                src_logits: (batch, graph_event_seq_len, num_node)
+                dst_logits: (batch, graph_event_seq_len, num_node)
                 label_logits: (batch, graph_event_seq_len, num_label)
             }
         """
@@ -450,7 +450,7 @@ class RNNGraphEventSeq2Seq(nn.Module):
         # (batch, graph_event_seq_len, hidden_dim)
         batch, graph_event_seq_len, _ = output.size()
         decoded_graph_event_seq_results = self.graph_event_decoder(
-            output.flatten(end_dim=1), node_embeddings[subgraph_node_ids]
+            output.flatten(end_dim=1), node_embeddings[node_ids]
         )
         return {
             "event_type_logits": decoded_graph_event_seq_results[

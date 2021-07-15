@@ -162,12 +162,11 @@ def test_static_label_graph_event_encoder(
 
 @pytest.mark.parametrize(
     "hidden_dim,key_query_dim,num_node_label,num_edge_label,"
-    "label_embedding_dim,batch,obs_seq_len,graph_event_seq_len,num_node,"
-    "subgraph_num_node",
+    "label_embedding_dim,batch,obs_seq_len,graph_event_seq_len,num_node",
     [
-        (20, 10, 15, 7, 36, 1, 5, 10, 12, 6),
-        (20, 10, 15, 7, 36, 5, 5, 10, 12, 6),
-        (36, 24, 25, 10, 48, 8, 20, 18, 36, 24),
+        (20, 10, 15, 7, 36, 1, 5, 10, 12),
+        (20, 10, 15, 7, 36, 5, 5, 10, 12),
+        (36, 24, 25, 10, 48, 8, 20, 18, 36),
     ],
 )
 def test_rnn_graph_event_seq2seq_teacher_forcing(
@@ -180,7 +179,6 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     obs_seq_len,
     graph_event_seq_len,
     num_node,
-    subgraph_num_node,
 ):
     seq2seq = RNNGraphEventSeq2Seq(
         hidden_dim,
@@ -198,7 +196,7 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
     results = seq2seq(
         torch.rand(batch, obs_seq_len, 4 * hidden_dim),
         torch.rand(num_node, hidden_dim),
-        subgraph_node_ids=torch.randint(num_node, (subgraph_num_node,)),
+        node_ids=torch.randint(num_node, (num_node,)),
         tgt_event_mask=torch.randint(2, (batch, graph_event_seq_len)).float(),
         tgt_event_type_ids=torch.randint(
             len(EVENT_TYPES), (batch, graph_event_seq_len)
@@ -216,16 +214,8 @@ def test_rnn_graph_event_seq2seq_teacher_forcing(
         graph_event_seq_len,
         len(EVENT_TYPES),
     )
-    assert results["src_logits"].size() == (
-        batch,
-        graph_event_seq_len,
-        subgraph_num_node,
-    )
-    assert results["dst_logits"].size() == (
-        batch,
-        graph_event_seq_len,
-        subgraph_num_node,
-    )
+    assert results["src_logits"].size() == (batch, graph_event_seq_len, num_node)
+    assert results["dst_logits"].size() == (batch, graph_event_seq_len, num_node)
     assert results["label_logits"].size() == (
         batch,
         graph_event_seq_len,
