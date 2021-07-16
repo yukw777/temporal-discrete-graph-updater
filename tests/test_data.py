@@ -599,7 +599,7 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
     for _ in range(2):
         src_id = graph.add_node("n1", game="g3", walkthrough_step=0)
         dst_id = graph.add_node("n2", game="g3", walkthrough_step=0)
-        graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=0)
+        graph.add_edge(src_id, dst_id, "e1", game="g3", walkthrough_step=0)
 
     node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
         graph,
@@ -617,4 +617,4 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
         18: 8,
         19: 9,
     }
-    assert edge_id_map == {7: 7, 8: 8, 9: 9}
+    assert edge_id_map == {7: 7, 8: 8, 9: 9, 10: 0, 11: 1}
