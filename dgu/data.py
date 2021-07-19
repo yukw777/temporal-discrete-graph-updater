@@ -63,7 +63,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 "walkthrough_step": walkthrough step,
                 "observation": "observation...",
                 "previous_action": "previous action...",
-                "graph event": {graph event}
+                "event_seq": [graph event, ...],
             },
             ...
         ]
@@ -100,57 +100,59 @@ class TWCmdGenTemporalDataset(Dataset):
 
         for example in tqdm(
             # add a bogus game at the end to take care of the last datapoints
-            raw_data["examples"] + [{"game": "bogus", "step": [-1, 0]}],
+            raw_data["examples"] + [{"game": "", "step": [0, 0]}],
             desc="processing examples",
         ):
             game = example["game"]
             if curr_game == "":
-                # if it's the first game, set it right away
+                # if it's the first or last (bogus) game, set it right away
                 curr_game = game
             walkthrough_step, _ = example["step"]
             if curr_walkthrough_step != walkthrough_step:
                 # a new walkthrough step has been taken
                 # add the walkthrough examples so far
                 for timestamp, w_example in enumerate(walkthrough_examples):
-                    event_seq = itertools.chain.from_iterable(
-                        graph.process_triplet_cmd(
-                            curr_game, curr_walkthrough_step, timestamp, cmd
+                    event_seq = list(
+                        itertools.chain.from_iterable(
+                            graph.process_triplet_cmd(
+                                curr_game, curr_walkthrough_step, timestamp, cmd
+                            )
+                            for cmd in w_example["target_commands"]
                         )
-                        for cmd in w_example["target_commands"]
                     )
-                    batch[(curr_game, curr_walkthrough_step)].extend(
+                    batch[(curr_game, curr_walkthrough_step)].append(
                         {
                             "game": curr_game,
                             "walkthrough_step": curr_walkthrough_step,
                             "observation": w_example["observation"],
                             "previous_action": w_example["previous_action"],
                             "timestamp": timestamp,
-                            "graph_event": event,
+                            "event_seq": event_seq,
                         }
-                        for event in event_seq
                     )
 
                 # add the random examples
                 for timestamp, r_example in enumerate(random_examples):
-                    event_seq = itertools.chain.from_iterable(
-                        graph.process_triplet_cmd(
-                            curr_game,
-                            curr_walkthrough_step,
-                            len(walkthrough_examples) + timestamp,
-                            cmd,
+                    event_seq = list(
+                        itertools.chain.from_iterable(
+                            graph.process_triplet_cmd(
+                                curr_game,
+                                curr_walkthrough_step,
+                                len(walkthrough_examples) + timestamp,
+                                cmd,
+                            )
+                            for cmd in r_example["target_commands"]
                         )
-                        for cmd in r_example["target_commands"]
                     )
-                    batch[(curr_game, curr_walkthrough_step)].extend(
+                    batch[(curr_game, curr_walkthrough_step)].append(
                         {
                             "game": curr_game,
                             "walkthrough_step": curr_walkthrough_step,
                             "observation": r_example["observation"],
                             "previous_action": r_example["previous_action"],
                             "timestamp": len(walkthrough_examples) + timestamp,
-                            "graph_event": event,
+                            "event_seq": event_seq,
                         }
-                        for event in event_seq
                     )
 
                 if curr_game != game:
