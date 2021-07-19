@@ -29,7 +29,9 @@ def test_event_type_head(graph_event_embedding_dim, hidden_dim, batch):
     "node_embedding_dim,autoregressive_embedding_dim,hidden_dim,"
     "key_query_dim,batch,num_node",
     [
+        (24, 12, 8, 4, 1, 0),
         (24, 12, 8, 4, 1, 1),
+        (24, 12, 8, 4, 5, 0),
         (24, 12, 8, 4, 5, 10),
     ],
 )

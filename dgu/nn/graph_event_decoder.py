@@ -84,6 +84,13 @@ class EventNodeHead(nn.Module):
             node_logits: (batch, num_node)
             autoregressive_embedding: (batch, autoregressive_embedding_dim)
         """
+        if node_embeddings.size(1) == 0:
+            # if there are no nodes, just return
+            return (
+                torch.zeros(node_embeddings.size(0), 0, device=node_embeddings.device),
+                autoregressive_embedding,
+            )
+
         # calculate the key from node_embeddings
         key = self.key_linear(node_embeddings)
         # (batch, num_node, key_query_dim)
