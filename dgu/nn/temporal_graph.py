@@ -14,18 +14,27 @@ class TemporalGraphNetwork(nn.Module):
         self,
         max_num_nodes: int,
         max_num_edges: int,
-        hidden_dim: int,
+        event_type_emb_dim: int,
+        memory_dim: int,
+        time_enc_dim: int,
         event_embedding_dim: int,
+        output_dim: int,
     ) -> None:
         super().__init__()
         self.max_num_nodes = max_num_nodes
         self.max_num_edges = max_num_edges
-        self.hidden_dim = hidden_dim
+        self.event_type_emb_dim = event_type_emb_dim
+        self.memory_dim = memory_dim
+        self.time_enc_dim = time_enc_dim
         self.event_embedding_dim = event_embedding_dim
+        self.output_dim = output_dim
+
+        # event type embedding
+        self.event_type_emb = nn.Embedding(len(EVENT_TYPE_ID_MAP), event_type_emb_dim)
 
         # memory, not persistent as we shouldn't save memories from one game to another
         self.register_buffer(
-            "memory", torch.zeros(max_num_nodes, hidden_dim), persistent=False
+            "memory", torch.zeros(max_num_nodes, memory_dim), persistent=False
         )
 
         # last updated timestamp for edges, not persistent as we shouldn't save last
@@ -51,16 +60,19 @@ class TemporalGraphNetwork(nn.Module):
         )
 
         # time encoder
-        self.time_encoder = TimeEncoder(hidden_dim)
+        self.time_encoder = TimeEncoder(time_enc_dim)
 
         # RNN to update memories
-        self.rnn = nn.GRUCell(4 * hidden_dim + event_embedding_dim, hidden_dim)
+        self.rnn = nn.GRUCell(
+            event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim,
+            memory_dim,
+        )
 
         # GNN for the final node embeddings
         self.gnn = TransformerConv(
-            hidden_dim + event_embedding_dim,
-            hidden_dim,
-            edge_dim=hidden_dim + event_embedding_dim,
+            event_embedding_dim + memory_dim,
+            output_dim,
+            edge_dim=time_enc_dim + event_embedding_dim,
         )
 
     def forward(
@@ -83,21 +95,21 @@ class TemporalGraphNetwork(nn.Module):
         Calculate the updated node embeddings based on the given events. Node
         embeddings are calculated for nodes specified by node_ids.
 
-        event_type_ids: (event_seq_len)
-        src_ids: (event_seq_len)
-        src_mask: (event_seq_len)
-        dst_ids: (event_seq_len)
-        dst_mask: (event_seq_len)
-        event_edge_ids: (event_seq_len)
-        event_embeddings: (event_seq_len, event_embedding_dim)
-        event_mask: (event_seq_len)
-        event_timestamps: (event_seq_len)
-        node_ids: (num_node)
-        edge_ids: (num_edge)
-        edge_index: (2, num_edge)
-        edge_timestamps: (num_edge)
+        event_type_ids: (batch, event_seq_len)
+        src_ids: (batch, event_seq_len)
+        src_mask: (batch, event_seq_len)
+        dst_ids: (batch, event_seq_len)
+        dst_mask: (batch, event_seq_len)
+        event_edge_ids: (batch, event_seq_len)
+        event_embeddings: (batch, event_seq_len, event_embedding_dim)
+        event_mask: (batch, event_seq_len)
+        event_timestamps: (batch, event_seq_len)
+        node_ids: (batch, num_node)
+        edge_ids: (batch, num_edge)
+        edge_index: (batch, 2, num_edge)
+        edge_timestamps: (batch, num_edge)
 
-        output: (num_node, hidden_dim)
+        output: (batch, num_node, hidden_dim)
         """
         # calculate messages
         src_msgs, dst_msgs = self.message(
@@ -111,14 +123,24 @@ class TemporalGraphNetwork(nn.Module):
             event_edge_ids,
             event_timestamps,
         )
-        # src_msgs: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
-        # dst_msgs: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
+        # src_msgs: (
+        #     batch,
+        #     event_seq_len,
+        #     event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        # )
+        # dst_msgs: (
+        #     batch,
+        #     event_seq_len,
+        #     event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        # )
 
         # aggregate messages
-        agg_src_msgs = self.agg_message(src_msgs, src_ids)
-        # (max_src_id, 4 * hidden_dim + event_embedding_dim)
-        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids)
-        # (max_dst_id, 4 * hidden_dim + event_embedding_dim)
+        agg_src_msgs = self.agg_message(src_msgs, src_ids).flatten(end_dim=1)
+        # (batch * max_src_id,
+        #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
+        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids).flatten(end_dim=1)
+        # (batch * max_dst_id,
+        #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
 
         # get unique IDs
         uniq_src_ids = src_ids.unique()
@@ -129,34 +151,49 @@ class TemporalGraphNetwork(nn.Module):
         # (num_uniq_src_ids + num_uniq_dst_ids)
 
         # update the memories
-        self.memory[uniq_ids] = self.rnn(  # type: ignore
-            torch.cat([agg_src_msgs[uniq_src_ids], agg_dst_msgs[uniq_dst_ids]]),
-            self.memory[uniq_ids],  # type: ignore
-        )
+        # note that source IDs and destination IDs never overlap as we don't have
+        # self-loops in our graphs.
+        if uniq_ids.size(0) > 0:
+            self.memory[uniq_ids] = self.rnn(  # type: ignore
+                torch.cat([agg_src_msgs[uniq_src_ids], agg_dst_msgs[uniq_dst_ids]]),
+                # (num_uniq_src_ids + num_uniq_dst_ids,
+                #  event_type_emb_dim + 2 * memory_dim + time_enc_dim +
+                #  event_embedding_dim)
+                self.memory[uniq_ids],  # type: ignore
+                # (num_uniq_src_ids + num_uniq_dst_ids, memory_dim)
+            )
 
         # calculate the node embeddings
-        if node_ids.size(0) != 0:
+        if node_ids.size(1) != 0:
             rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
-            # (num_edge)
-            rel_t_embs = self.time_encoder(rel_t)
-            # (num_edge, hidden_dim)
+            # (batch, num_edge)
+            rel_t_embs = self.time_encoder(rel_t).view(
+                rel_t.size(0), -1, self.time_enc_dim
+            )
+            # (batch, num_edge, time_enc_dim)
+            flat_node_ids = node_ids.flatten()
+            # (batch * num_node)
             node_embeddings = self.gnn(
                 torch.cat(
                     [
-                        self.node_features[node_ids],  # type: ignore
-                        self.memory[node_ids],  # type: ignore
+                        self.node_features[flat_node_ids],  # type: ignore
+                        self.memory[flat_node_ids],  # type: ignore
                     ],
                     dim=-1,
                 ),
-                edge_index,
+                # (batch * num_node, event_embedding_dim + memory_dim)
+                edge_index.transpose(0, 1).flatten(start_dim=1),
+                # (2, batch * num_node)
                 torch.cat(
                     [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
-                ),
+                ).flatten(end_dim=1),
+                # (batch * num_node, time_enc_dim + event_embedding_dim)
             )
-            # (num_node, hidden_dim)
+            # (batch * num_node, output_dim)
         else:
             # no nodes, so no node embeddings either
-            node_embeddings = torch.zeros(0, self.hidden_dim, device=node_ids.device)
+            node_embeddings = torch.zeros(0, self.output_dim, device=node_ids.device)
+            # (0, output_dim)
 
         # update node features
         self.update_node_features(event_type_ids, src_ids, event_embeddings)
@@ -167,7 +204,8 @@ class TemporalGraphNetwork(nn.Module):
         # update last updated timestamps
         self.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
 
-        return node_embeddings
+        return node_embeddings.view(node_ids.size(0), -1, self.output_dim)
+        # (batch, num_node, output_dim)
 
     def message(
         self,
@@ -188,38 +226,46 @@ class TemporalGraphNetwork(nn.Module):
         Special events like pad, start, end are masked out. Node events are also
         masked out for destination node messages.
 
-        event_type_ids: (event_seq_len)
-        src_ids: (event_seq_len)
-        src_mask: (event_seq_len)
-        dst_ids: (event_seq_len)
-        dst_mask: (event_seq_len)
-        event_embeddings: (event_seq_len, event_embedding_dim)
-        event_mask: (event_seq_len)
-        event_edge_ids: (event_seq_len)
-        event_timestamps: (event_seq_len)
+        event_type_ids: (batch, event_seq_len)
+        src_ids: (batch, event_seq_len)
+        src_mask: (batch, event_seq_len)
+        dst_ids: (batch, event_seq_len)
+        dst_mask: (batch, event_seq_len)
+        event_embeddings: (batch, event_seq_len, event_embedding_dim)
+        event_mask: (batch, event_seq_len)
+        event_edge_ids: (batch, event_seq_len)
+        event_timestamps: (batch, event_seq_len)
 
         output:
-            src_messages: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
-            dst_messages: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
+            src_messages: (
+                batch,
+                event_seq_len,
+                event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+            )
+            dst_messages: (
+                batch,
+                event_seq_len,
+                event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+            )
         """
         # repeat event type id for event type embeddings
-        event_type_embs = event_type_ids.unsqueeze(-1).expand(-1, self.hidden_dim)
-        # (event_seq_len, hidden_dim)
+        event_type_embs = self.event_type_emb(event_type_ids)
+        # (batch, event_seq_len, event_type_emb_dim)
 
         # use the memory for node embeddings
         src_embs = self.memory[src_ids] * src_mask.unsqueeze(-1)  # type: ignore
-        # (event_seq_len, hidden_dim)
+        # (batch, event_seq_len, hidden_dim)
         dst_embs = self.memory[dst_ids] * dst_mask.unsqueeze(-1)  # type: ignore
-        # (event_seq_len, hidden_dim)
+        # (batch, event_seq_len, hidden_dim)
 
         # calculate relative timestamps for edge events
         edge_last_update = self.last_update[event_edge_ids]  # type: ignore
-        # (event_seq_len)
+        # (batch, event_seq_len)
 
         # multiply edge_last_update by dst_mask so that we
         # only subtract last update timestamps for edge events
         rel_edge_timestamps = event_timestamps - edge_last_update * dst_mask
-        # (event_seq_len)
+        # (batch, event_seq_len)
 
         # only select node events from event_timestamps
         # and only select edge events from rel_edge_timestamps (use dst_mask)
@@ -229,11 +275,13 @@ class TemporalGraphNetwork(nn.Module):
             event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
             event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
         )
-        # (event_seq_len)
+        # (batch, event_seq_len)
         timestamp_emb = self.time_encoder(
             event_timestamps * is_node_event + rel_edge_timestamps * dst_mask
-        ) * event_mask.unsqueeze(-1)
-        # (event_seq_len, hidden_dim)
+        ).view(event_timestamps.size(0), -1, self.time_enc_dim) * event_mask.unsqueeze(
+            -1
+        )
+        # (batch, event_seq_len, time_enc_dim)
 
         # mask out special events
         src_messages = (
@@ -245,11 +293,15 @@ class TemporalGraphNetwork(nn.Module):
                     timestamp_emb,
                     event_embeddings,
                 ],
-                dim=1,
+                dim=-1,
             )
             * event_mask.unsqueeze(-1)
         )
-        # (event_seq_len, 5 * hidden_dim)
+        # (
+        #   batch,
+        #   event_seq_len,
+        #   event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        # )
         dst_messages = (
             torch.cat(
                 [
@@ -259,23 +311,35 @@ class TemporalGraphNetwork(nn.Module):
                     timestamp_emb,
                     event_embeddings,
                 ],
-                dim=1,
+                dim=-1,
             )
             * dst_mask.unsqueeze(-1)
         )
-        # (event_seq_len, 5 * hidden_dim)
+        # (
+        #   batch,
+        #   event_seq_len,
+        #   event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        # )
         return src_messages, dst_messages
 
     def agg_message(self, messages: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
         """
         Aggregate messages based on the given node IDs. For now we calculate the mean.
 
-        messages: (event_seq_len, 4 * hidden_dim + event_embedding_dim)
-        ids: (event_seq_len)
+        messages: (
+            batch,
+            event_seq_len,
+            event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        )
+        ids: (batch, event_seq_len)
 
-        output: (num_uniq_ids, 4 * hidden_dim + event_embedding_dim)
+        output: (
+            batch,
+            max_src_id,
+            event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        )
         """
-        return scatter(messages, ids, dim=0, reduce="mean")
+        return scatter(messages, ids, dim=1, reduce="mean")
 
     def update_node_features(
         self,
@@ -286,23 +350,21 @@ class TemporalGraphNetwork(nn.Module):
         """
         Update node features using node-add event embeddings.
 
-        event_type_ids: (event_seq_len)
-        src_ids: (event_seq_len)
-        event_embeddings: (event_seq_len, event_embedding_dim)
+        event_type_ids: (batch, event_seq_len)
+        src_ids: (batch, event_seq_len)
+        event_embeddings: (batch, event_seq_len, event_embedding_dim)
         """
         # update node features using node-add event embeddings
-        is_node_add = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        is_node_add = event_type_ids.flatten() == EVENT_TYPE_ID_MAP["node-add"]
+        # (batch * event_seq_len)
+        node_add_src_ids = src_ids.flatten()[is_node_add]
         # (num_node_add)
-        if is_node_add.size(0) > 0:
-            # there could technically be duplicates, but we ignore them.
-            # PyTorch seems to assign the first of the duplicates.
-            node_add_src_ids = src_ids[is_node_add]
-            # (num_node_add)
-            node_add_event_embeddings = event_embeddings[is_node_add]
-            # (num_node_add, event_embedding_dim)
-            self.node_features[  # type: ignore
-                node_add_src_ids
-            ] = node_add_event_embeddings
+
+        # Duplicates are not possible because we generate a new ID for
+        # every added node.
+        node_add_event_embeddings = event_embeddings.flatten(end_dim=1)[is_node_add]
+        # (num_node_add, event_embedding_dim)
+        self.node_features[node_add_src_ids] = node_add_event_embeddings  # type: ignore
 
     def update_edge_features(
         self,
@@ -313,23 +375,23 @@ class TemporalGraphNetwork(nn.Module):
         """
         Update edge features using edge-add event embeddings.
 
-        event_type_ids: (event_seq_len)
-        event_edge_ids: (event_seq_len)
-        event_embeddings: (event_seq_len, event_embedding_dim)
+        event_type_ids: (batch, event_seq_len)
+        event_edge_ids: (batch, event_seq_len)
+        event_embeddings: (batch, event_seq_len, event_embedding_dim)
         """
         # update edge features using edge-add event embeddings
-        is_edge_add = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        is_edge_add = event_type_ids.flatten() == EVENT_TYPE_ID_MAP["edge-add"]
+        # (batch * event_seq_len)
+        edge_add_edge_ids = event_edge_ids.flatten()[is_edge_add]
         # (num_edge_add)
-        if is_edge_add.size(0) > 0:
-            # there could technically be duplicates, but we ignore them.
-            # PyTorch seems to assign the first of the duplicates.
-            edge_add_edge_ids = event_edge_ids[is_edge_add]
-            # (num_node_add)
-            edge_add_event_embeddings = event_embeddings[is_edge_add]
-            # (num_node_add, event_embedding_dim)
-            self.edge_features[  # type: ignore
-                edge_add_edge_ids
-            ] = edge_add_event_embeddings
+
+        # Duplicates are not possible because we generate a new ID for
+        # every added edge.
+        edge_add_event_embeddings = event_embeddings.flatten(end_dim=1)[is_edge_add]
+        # (num_edge_add, event_embedding_dim)
+        self.edge_features[  # type: ignore
+            edge_add_edge_ids
+        ] = edge_add_event_embeddings
 
     def update_last_update(
         self,
@@ -340,24 +402,25 @@ class TemporalGraphNetwork(nn.Module):
         """
         Update last update timestamps for edges.
 
-        event_type_ids: (event_seq_len)
-        event_edge_ids: (event_seq_len)
-        event_timestamps: (event_seq_len)
+        event_type_ids: (batch, event_seq_len)
+        event_edge_ids: (batch, event_seq_len)
+        event_timestamps: (batch, event_seq_len)
         """
         # update last update timestamps using edge events
+        flat_event_type_ids = event_type_ids.flatten()
         is_edge_event = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+            flat_event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
+            flat_event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
         )
+        # (batch * event_seq_len)
+
+        # Duplicates are possible here but it's OK, b/c PyTorch
+        # automatically assigns the latest last update value in the given batch.
+        edge_ids = event_edge_ids.flatten()[is_edge_event]
         # (num_edge_event)
-        if is_edge_event.size(0) > 0:
-            # there could technically be duplicates, but we ignore them.
-            # PyTorch seems to assign the first of the duplicates.
-            edge_ids = event_edge_ids[is_edge_event]
-            # (num_edge_event)
-            edge_timestamps = event_timestamps[is_edge_event]
-            # (num_edge_event)
-            self.last_update[edge_ids] = edge_timestamps  # type: ignore
+        edge_timestamps = event_timestamps.flatten()[is_edge_event]
+        # (num_edge_event)
+        self.last_update[edge_ids] = edge_timestamps  # type: ignore
 
     def reset(self) -> None:
         self.memory.data.fill_(0)  # type: ignore
