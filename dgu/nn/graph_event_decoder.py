@@ -78,7 +78,7 @@ class EventNodeHead(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
-        node_embeddings: (num_node, node_embedding_dim)
+        node_embeddings: (batch, num_node, node_embedding_dim)
 
         output:
             node_logits: (batch, num_node)
@@ -86,23 +86,25 @@ class EventNodeHead(nn.Module):
         """
         # calculate the key from node_embeddings
         key = self.key_linear(node_embeddings)
-        # (num_node, key_query_dim)
+        # (batch, num_node, key_query_dim)
 
         # calculate the query from autoregressive_embedding
         query = self.query_linear(autoregressive_embedding)
         # (batch, key_query_dim)
 
-        node_logits = torch.matmul(query, key.transpose(0, 1))
+        node_logits = torch.matmul(key, query.unsqueeze(-1)).squeeze(-1)
         # (batch, num_node)
 
         # autoregressive embedding
         # get the one hot encoding of the selected nodes
         one_hot_selected_node = F.one_hot(
-            node_logits.argmax(dim=1), num_classes=node_embeddings.size(0)
+            node_logits.argmax(dim=1), num_classes=node_embeddings.size(1)
         ).float()
         # (batch, num_node)
         # multiply by the key
-        selected_node_embeddings = torch.matmul(one_hot_selected_node, key)
+        selected_node_embeddings = torch.bmm(
+            one_hot_selected_node.unsqueeze(1), key
+        ).squeeze(1)
         # (batch, key_query_dim)
         # pass it through a linear layer
         selected_node_embeddings = self.autoregressive_linear(selected_node_embeddings)
@@ -233,7 +235,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
         label logits for new graph events.
 
         graph_event_embeddings: (batch, graph_event_embedding_dim)
-        node_embeddings: (num_node, node_embedding_dim)
+        node_embeddings: (batch, num_node, node_embedding_dim)
 
         output: {
             "event_type_logits": (batch, num_event_type),
@@ -282,7 +284,7 @@ class RNNGraphEventDecoder(nn.Module):
         """
         input:
             delta_g: (batch, input_dim)
-            node_embeddings: (num_node, node_embedding_dim)
+            node_embeddings: (batch, num_node, node_embedding_dim)
             hidden: (batch, hidden_dim)
 
         output:
