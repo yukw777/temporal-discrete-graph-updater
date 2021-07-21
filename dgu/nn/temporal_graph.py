@@ -152,7 +152,7 @@ class TemporalGraphNetwork(nn.Module):
 
         # update the memories
         # note that source IDs and destination IDs never overlap as we don't have
-        # self-loops in our graphs.
+        # self-loops in our graphs (except for the pad edge, but that doesn't matter).
         if uniq_ids.size(0) > 0:
             self.memory[uniq_ids] = self.rnn(  # type: ignore
                 torch.cat([agg_src_msgs[uniq_src_ids], agg_dst_msgs[uniq_dst_ids]]),

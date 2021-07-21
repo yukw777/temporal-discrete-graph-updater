@@ -44,6 +44,11 @@ class TextWorldGraph:
             Tuple[str, int], Dict[int, Tuple[int, int]]
         ] = defaultdict(dict)
 
+        # add a placeholder pad node which is not connected to any other nodes
+        self.add_node("")
+        # add a placeholder pad edge, which is a self-loop of the pad node
+        self.add_edge(0, 0, "")
+
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TextWorldGraph):
             return False
