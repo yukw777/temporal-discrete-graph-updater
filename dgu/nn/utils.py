@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Any
 from tqdm import tqdm
 from pathlib import Path
+from torch.nn.utils.rnn import pad_sequence
 
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import SpacyPreprocessor
@@ -105,3 +106,36 @@ def load_fasttext(
 
 def find_indices(haystack: torch.Tensor, needle: torch.Tensor) -> torch.Tensor:
     return (haystack.unsqueeze(-1) == needle).transpose(0, 1).nonzero(as_tuple=True)[1]
+
+
+def pad_batch_seq_of_seq(
+    batch_seq_of_seq: List[List[List[Any]]],
+    max_len_outer: int,
+    max_len_inner: int,
+    outer_padding_value: Any,
+    inner_padding_value: Any,
+) -> torch.Tensor:
+    """
+    batch_seq_of_seq: unpadded batch of sequence of sequences
+    max_len_outer: max length of the outer sequence
+    max_len_inner: max length of the inner sequence
+    outer_padding_value: value to pad the outer sequence
+    inner_padding_value: value to pad the inner sequence
+
+    output: padded batch of sequence of sequences
+    """
+    return torch.stack(
+        [
+            pad_sequence(
+                [
+                    torch.tensor(seq)
+                    for seq in seq_of_seq
+                    + [[outer_padding_value] * max_len_inner]
+                    * (max_len_outer - len(seq_of_seq))
+                ],
+                batch_first=True,
+                padding_value=inner_padding_value,
+            )
+            for seq_of_seq in batch_seq_of_seq
+        ]
+    )
