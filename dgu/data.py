@@ -220,7 +220,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         self.unused_edge_ids: Deque[int] = deque(i for i in range(max_num_edges))
         # {(game, walkthrough_step): (
         #       {global_node_id: local_node_id, ...},
-        #       {global_node_id: local_node_id, ...}}
+        #       {global_edge_id: local_edge_id, ...})}
         self.used_ids: Dict[Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]] = {}
 
     @staticmethod
