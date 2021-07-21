@@ -5,7 +5,7 @@ import torch
 import pickle
 
 from tqdm import tqdm
-from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple
+from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict, deque
 from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
@@ -223,6 +223,11 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         #       {global_edge_id: local_edge_id, ...})}
         self.used_ids: Dict[Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]] = {}
 
+        self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(set)
+        self.global_edges: Dict[
+            Tuple[str, int], Dict[int, Tuple[int, int]]
+        ] = defaultdict(dict)
+
     @staticmethod
     def get_serialized_path(raw_path: str) -> Path:
         path = Path(raw_path)
@@ -251,19 +256,13 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             with open(self.serialized_test_path, "rb") as f:
                 self.test = pickle.load(f)
 
-    def calculate_subgraph_maps(
-        self, graph: TextWorldGraph, batch: List[Dict[str, Any]]
-    ) -> Tuple[Dict[int, int], Dict[int, int]]:
+    def allocate_local_ids(self, game: str, walkthrough_step: int) -> None:
         """
-        Calculate the global-graph-to-subgraph node/edge ID maps based on the given
-        batch.
-
-        output:
-            (node_id_map, edge_id_map)
+        Allocate local IDs to global IDs in the batch.
         """
         # get the difference between the (game, walkthrough_step)'s in the batch
         # and the ones currently in the memory.
-        gw_set = set((e["game"], e["walkthrough_step"]) for e in batch)
+        gw_set = set([(game, walkthrough_step)])
         old_gw_set = sorted(self.used_ids.keys() - gw_set)
         common_gw_set = sorted(gw_set.intersection(self.used_ids.keys()))
         new_gw_set = sorted(gw_set - self.used_ids.keys())
@@ -279,7 +278,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         # now update the (game, walkthrough_step)'s in the intersection
         for gw in common_gw_set:
             node_ids, edge_ids = self.used_ids[gw]
-            global_nids, global_eids, _ = graph.get_subgraph(gw)
+            global_nids = self.local_node_ids[gw]
+            global_eids = self.local_edges[gw].keys()
 
             # take care of remove node ids by adding them to unused_node_ids
             # and removing them from used_ids
@@ -301,7 +301,8 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
         # now allocate the node and edge IDs of the new (game, walkthrough_step)'s
         for gw in new_gw_set:
-            global_nids, global_eids, _ = graph.get_subgraph(gw)
+            global_nids = self.local_node_ids[gw]
+            global_eids = self.local_edges[gw].keys()
             self.used_ids[gw] = (
                 dict(
                     zip(
@@ -322,15 +323,6 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                     )
                 ),
             )
-
-        node_id_map: Dict[int, int] = {}
-        edge_id_map: Dict[int, int] = {}
-        for gw in gw_set:
-            node_ids, edge_ids = self.used_ids[gw]
-            node_id_map.update(node_ids)
-            edge_id_map.update(edge_ids)
-
-        return node_id_map, edge_id_map
 
     def collate_textual_inputs(
         self, batch: List[Dict[str, Any]]
@@ -441,6 +433,22 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             "tgt_event_label_ids": tgt_event_label_ids,
             "groundtruth_event_label_ids": groundtruth_event_label_ids,
         }
+
+    def update_subgraph(
+        self, game: str, walkthrough_step: int, event: Dict[str, Any]
+    ) -> None:
+        """
+        Update subgraphs for games based on the given event.
+        Basically keeps track of all the added nodes and edges.
+        """
+        event_type = event["type"]
+        if event_type == "node-add":
+            self.global_node_ids[(game, walkthrough_step)].add(event["node_id"])
+        elif event_type == "edge-add":
+            self.global_edges[(game, walkthrough_step)][event["edge_id"]] = (
+                event["src_id"],
+                event["dst_id"],
+            )
 
     def collate_graphical_inputs(
         self, graph: TextWorldGraph, batch: List[Dict[str, Any]]

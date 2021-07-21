@@ -1,8 +1,7 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from typing import Dict, List, Any, Tuple, Set
-from collections import defaultdict
+from typing import Dict, List, Any, Tuple
 
 from dgu.constants import IS
 
@@ -38,11 +37,6 @@ class TextWorldGraph:
         self.next_node_id = 0
         self.next_edge_id = 0
         self._graph = nx.DiGraph()
-
-        self.subgraph_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(set)
-        self.subgraph_edges: Dict[
-            Tuple[str, int], Dict[int, Tuple[int, int]]
-        ] = defaultdict(dict)
 
         # add a placeholder pad node which is not connected to any other nodes
         self.add_node("")
@@ -315,11 +309,6 @@ class TextWorldGraph:
         self._graph.add_edge(
             src_id, dst_id, id=edge_id, label=label, removed=False, **kwargs
         )
-        if "game" in kwargs and "walkthrough_step" in kwargs:
-            self.subgraph_edges[(kwargs["game"], kwargs["walkthrough_step"])][
-                edge_id
-            ] = (src_id, dst_id)
-
         return edge_id
 
     def remove_edge(self, src_id: int, dst_id: int) -> int:
@@ -341,10 +330,6 @@ class TextWorldGraph:
         node_id = self.next_node_id
         self.next_node_id += 1
         self._graph.add_node(node_id, label=label, removed=False, **kwargs)
-        if "game" in kwargs and "walkthrough_step" in kwargs:
-            self.subgraph_node_ids[(kwargs["game"], kwargs["walkthrough_step"])].add(
-                node_id
-            )
         return node_id
 
     def remove_node(self, node_id: int) -> None:
@@ -371,44 +356,3 @@ class TextWorldGraph:
             (src_id, dst_id, data["label"])
             for src_id, dst_id, data in self._graph.edges.data()
         ]
-
-    def get_subgraph(
-        self, game_walkthrough: Tuple[str, int]
-    ) -> Tuple[Set[int], List[int], List[Tuple[int, int]]]:
-        """
-        Return the node IDs, edge IDs and edge indices for the subgraph
-        corresponding to the given (game, walkthrough_step).
-
-        game_walkthrough: target (game, walkthrough_step)
-
-        returns: (node_ids, edge_ids, edge_index)
-        """
-
-        node_ids = self.subgraph_node_ids[game_walkthrough]
-        edge_ids: List[int] = []
-        edge_index: List[Tuple[int, int]] = []
-        for edge_id, (src_id, dst_id) in self.subgraph_edges[game_walkthrough].items():
-            edge_ids.append(edge_id)
-            edge_index.append((src_id, dst_id))
-        return node_ids, edge_ids, edge_index
-
-    def process_events(self, events: List[Dict[str, Any]], **kwargs) -> None:
-        """
-        Process the given graph events and update the graph. Keyword arguments
-        are used to set attributes for all the nodes and edges added by the given
-        graph events. Useful for specifying the game and walkthrough step.
-        """
-        for event in events:
-            event_type = event["type"]
-            if event_type == "node-add":
-                self.add_node(event["label"], **kwargs)
-            elif event_type == "node-delete":
-                self.remove_node(event["node_id"])
-            elif event_type == "edge-add":
-                self.add_edge(
-                    event["src_id"], event["dst_id"], event["label"], **kwargs
-                )
-            elif event_type == "edge-delete":
-                self.remove_edge(event["src_id"], event["dst_id"])
-            else:
-                raise ValueError(f"Unknown event type: {event_type}")

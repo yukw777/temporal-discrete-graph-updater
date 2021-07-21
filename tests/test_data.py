@@ -618,3 +618,78 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
         19: 9,
     }
     assert edge_id_map == {7: 7, 8: 8, 9: 9, 10: 0, 11: 1}
+
+
+@pytest.mark.parametrize(
+    "events,expected_local_node_ids,expected_local_edges",
+    [
+        (
+            [("g0", 0, {"type": "node-add", "node_id": 1})],
+            {("g0", 0): {1}},
+            {},
+        ),
+        (
+            [
+                ("g0", 0, {"type": "node-add", "node_id": 1}),
+                ("g0", 0, {"type": "node-delete", "node_id": 1}),
+            ],
+            {("g0", 0): {1}},
+            {},
+        ),
+        (
+            [
+                ("g0", 0, {"type": "node-add", "node_id": 2}),
+                ("g0", 1, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 3}),
+                ("g0", 1, {"type": "node-add", "node_id": 4}),
+                ("g1", 0, {"type": "node-add", "node_id": 5}),
+                ("g0", 1, {"type": "node-delete", "node_id": 1}),
+                ("g1", 0, {"type": "node-delete", "node_id": 3}),
+            ],
+            {("g0", 0): {2}, ("g0", 1): {1, 4}, ("g1", 0): {3, 5}},
+            {},
+        ),
+        (
+            [
+                ("g0", 0, {"type": "node-add", "node_id": 2}),
+                ("g0", 1, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 3}),
+                ("g0", 1, {"type": "node-add", "node_id": 4}),
+                ("g1", 0, {"type": "node-add", "node_id": 5}),
+                ("g0", 1, {"type": "node-delete", "node_id": 1}),
+                ("g1", 0, {"type": "node-delete", "node_id": 3}),
+                ("g0", 1, {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 4}),
+                ("g1", 0, {"type": "edge-add", "edge_id": 2, "src_id": 5, "dst_id": 3}),
+            ],
+            {("g0", 0): {2}, ("g0", 1): {1, 4}, ("g1", 0): {3, 5}},
+            {("g0", 1): {1: (1, 4)}, ("g1", 0): {2: (5, 3)}},
+        ),
+        (
+            [
+                ("g0", 0, {"type": "node-add", "node_id": 2}),
+                ("g0", 1, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 3}),
+                ("g0", 1, {"type": "node-add", "node_id": 4}),
+                ("g1", 0, {"type": "node-add", "node_id": 5}),
+                ("g0", 1, {"type": "node-delete", "node_id": 1}),
+                ("g1", 0, {"type": "node-delete", "node_id": 3}),
+                ("g0", 1, {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 4}),
+                ("g1", 0, {"type": "edge-add", "edge_id": 2, "src_id": 5, "dst_id": 3}),
+                (
+                    "g1",
+                    0,
+                    {"type": "edge-delete", "edge_id": 2, "src_id": 5, "dst_id": 3},
+                ),
+            ],
+            {("g0", 0): {2}, ("g0", 1): {1, 4}, ("g1", 0): {3, 5}},
+            {("g0", 1): {1: (1, 4)}, ("g1", 0): {2: (5, 3)}},
+        ),
+    ],
+)
+def test_tw_cmd_gen_datamodule_update_subgraph(
+    tw_cmd_gen_datamodule, events, expected_local_node_ids, expected_local_edges
+):
+    for game, walkthrough_step, event in events:
+        tw_cmd_gen_datamodule.update_subgraph(game, walkthrough_step, event)
+    assert tw_cmd_gen_datamodule.global_node_ids == expected_local_node_ids
+    assert tw_cmd_gen_datamodule.global_edges == expected_local_edges
