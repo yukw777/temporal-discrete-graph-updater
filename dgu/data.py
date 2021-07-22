@@ -183,16 +183,21 @@ class TWCmdGenTemporalDataset(Dataset):
 
 
 class TWCmdGenTemporalDataCollator:
-    def __init__(self, max_node_id: int, max_edge_id: int) -> None:
+    def __init__(
+        self, max_node_id: int, max_edge_id: int, preprocessor: SpacyPreprocessor
+    ) -> None:
         self.max_node_id = max_node_id
         self.max_edge_id = max_edge_id
         self.worker_id_space_initialized = False
+
         self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
             self.create_node_id_set
         )
         self.global_edges: Dict[
             Tuple[str, int], Dict[int, Tuple[int, int]]
         ] = defaultdict(self.create_edges_dict)
+
+        self.preprocessor = preprocessor
 
     @staticmethod
     def create_node_id_set() -> Set[int]:
@@ -274,6 +279,35 @@ class TWCmdGenTemporalDataCollator:
 
         # set the flag to True so it doesn't get reinitialized
         self.worker_id_space_initialized = True
+
+    def collate_textual_inputs(
+        self, obs: List[str], prev_actions: List[str]
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Collate observations and previous actions.
+
+        output: {
+            "obs_word_ids": (batch, obs_len),
+            "obs_mask": (batch, obs_len),
+            "prev_action_word_ids": (batch, prev_action_len),
+            "prev_action_mask": (batch, prev_action_len),
+        }
+        """
+        # textual observation
+        obs_word_ids, obs_mask = self.preprocessor.preprocess_tokenized(
+            [ob.split() for ob in obs]
+        )
+
+        # textual previous action
+        prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
+            [prev_action.split() for prev_action in prev_actions]
+        )
+        return {
+            "obs_word_ids": obs_word_ids,
+            "obs_mask": obs_mask,
+            "prev_action_word_ids": prev_action_word_ids,
+            "prev_action_mask": prev_action_mask,
+        }
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         pass

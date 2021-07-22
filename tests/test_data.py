@@ -13,6 +13,7 @@ from dgu.data import (
     TWCmdGenTemporalDataModule,
     TWCmdGenTemporalDataCollator,
 )
+from dgu.preprocessor import SpacyPreprocessor
 
 
 @pytest.fixture
@@ -69,15 +70,11 @@ def test_tw_cmd_gen_dataset_init():
 
 
 @pytest.mark.parametrize(
-    "batch,expected",
+    "obs,prev_actions,expected",
     [
         (
-            [
-                {
-                    "observation": "you are hungry ! let 's cook a delicious meal .",
-                    "previous_action": "drop knife",
-                },
-            ],
+            ["you are hungry ! let 's cook a delicious meal ."],
+            ["drop knife"],
             {
                 "obs_word_ids": torch.tensor(
                     [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
@@ -89,15 +86,10 @@ def test_tw_cmd_gen_dataset_init():
         ),
         (
             [
-                {
-                    "observation": "you are hungry ! let 's cook a delicious meal .",
-                    "previous_action": "drop knife",
-                },
-                {
-                    "observation": "you take the knife from the table .",
-                    "previous_action": "take knife from table",
-                },
+                "you are hungry ! let 's cook a delicious meal .",
+                "you take the knife from the table .",
             ],
+            ["drop knife", "take knife from table"],
             {
                 "obs_word_ids": torch.tensor(
                     [
@@ -121,8 +113,10 @@ def test_tw_cmd_gen_dataset_init():
         ),
     ],
 )
-def test_collate_textual_inputs(tw_cmd_gen_datamodule, batch, expected):
-    results = tw_cmd_gen_datamodule.collate_textual_inputs(batch)
+def test_tw_cmd_gen_collator_collate_textual_inputs(
+    tw_cmd_gen_collator, obs, prev_actions, expected
+):
+    results = tw_cmd_gen_collator.collate_textual_inputs(obs, prev_actions)
     for k in ["obs_word_ids", "obs_mask", "prev_action_word_ids", "prev_action_mask"]:
         assert results[k].equal(expected[k])
 
@@ -719,7 +713,11 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
     expected_unused_worker_node_ids,
     expected_unused_worker_edge_ids,
 ):
-    collator = TWCmdGenTemporalDataCollator(max_node_id, max_edge_id)
+    collator = TWCmdGenTemporalDataCollator(
+        max_node_id,
+        max_edge_id,
+        SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt"),
+    )
     assert not collator.worker_id_space_initialized
     with pytest.raises(AttributeError):
         getattr(collator, "unused_worker_node_ids")
