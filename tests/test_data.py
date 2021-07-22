@@ -590,65 +590,217 @@ def test_tw_cmd_gen_datamodule_serialize_dataset(tmpdir):
         assert original_dataset == pickle.load(f)
 
 
-def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
-    # first with one game
-    graph = TextWorldGraph()
-    for _ in range(5):
-        src_id = graph.add_node("n1", game="g1", walkthrough_step=0)
-        dst_id = graph.add_node("n2", game="g1", walkthrough_step=0)
-        graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=0)
+@pytest.mark.parametrize(
+    "worker_info,events,expected",
+    [
+        (
+            None,
+            [
+                ("g1", 0, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 2}),
+                (
+                    "g1",
+                    0,
+                    {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 2},
+                ),
+            ],
+            [
+                (
+                    [2, 3, 4, 5, 6, 7, 8, 9],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 1}, {0: 0})},
+                ),
+                (
+                    [3, 4, 5, 6, 7, 8, 9],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0})},
+                ),
+                (
+                    [3, 4, 5, 6, 7, 8, 9],
+                    [2, 3, 4, 5, 6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0, 1: 1})},
+                ),
+            ],
+        ),
+        (
+            None,
+            [
+                ("g1", 0, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 2}),
+                (
+                    "g1",
+                    0,
+                    {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 2},
+                ),
+                ("g1", 1, {"type": "node-add", "node_id": 3}),
+                ("g1", 1, {"type": "node-add", "node_id": 4}),
+                (
+                    "g1",
+                    1,
+                    {"type": "edge-add", "edge_id": 2, "src_id": 3, "dst_id": 4},
+                ),
+            ],
+            [
+                (
+                    [2, 3, 4, 5, 6, 7, 8, 9],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 1}, {0: 0})},
+                ),
+                (
+                    [3, 4, 5, 6, 7, 8, 9],
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0})},
+                ),
+                (
+                    [3, 4, 5, 6, 7, 8, 9],
+                    [2, 3, 4, 5, 6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0, 1: 1})},
+                ),
+                (
+                    [4, 5, 6, 7, 8, 9],
+                    [2, 3, 4, 5, 6, 7, 8, 9],
+                    {
+                        ("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0, 1: 1}),
+                        ("g1", 1): ({0: 0, 3: 3}, {0: 0}),
+                    },
+                ),
+                (
+                    [5, 6, 7, 8, 9],
+                    [2, 3, 4, 5, 6, 7, 8, 9],
+                    {
+                        ("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0, 1: 1}),
+                        ("g1", 1): ({0: 0, 3: 3, 4: 4}, {0: 0}),
+                    },
+                ),
+                (
+                    [5, 6, 7, 8, 9],
+                    [3, 4, 5, 6, 7, 8, 9],
+                    {
+                        ("g1", 0): ({0: 0, 1: 1, 2: 2}, {0: 0, 1: 1}),
+                        ("g1", 1): ({0: 0, 3: 3, 4: 4}, {0: 0, 2: 2}),
+                    },
+                ),
+            ],
+        ),
+        (
+            (1, 2),
+            [
+                ("g1", 0, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 2}),
+                (
+                    "g1",
+                    0,
+                    {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 2},
+                ),
+            ],
+            [
+                (
+                    [7, 8, 9],
+                    [6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 6}, {0: 0})},
+                ),
+                (
+                    [8, 9],
+                    [6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0})},
+                ),
+                (
+                    [8, 9],
+                    [7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0, 1: 6})},
+                ),
+            ],
+        ),
+        (
+            (1, 2),
+            [
+                ("g1", 0, {"type": "node-add", "node_id": 1}),
+                ("g1", 0, {"type": "node-add", "node_id": 2}),
+                (
+                    "g1",
+                    0,
+                    {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 2},
+                ),
+                ("g1", 1, {"type": "node-add", "node_id": 3}),
+                ("g1", 1, {"type": "node-add", "node_id": 4}),
+                (
+                    "g1",
+                    1,
+                    {"type": "edge-add", "edge_id": 2, "src_id": 3, "dst_id": 4},
+                ),
+            ],
+            [
+                (
+                    [7, 8, 9],
+                    [6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 6}, {0: 0})},
+                ),
+                (
+                    [8, 9],
+                    [6, 7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0})},
+                ),
+                (
+                    [8, 9],
+                    [7, 8, 9],
+                    {("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0, 1: 6})},
+                ),
+                (
+                    [9],
+                    [7, 8, 9],
+                    {
+                        ("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0, 1: 6}),
+                        ("g1", 1): ({0: 0, 3: 8}, {0: 0}),
+                    },
+                ),
+                (
+                    [],
+                    [7, 8, 9],
+                    {
+                        ("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0, 1: 6}),
+                        ("g1", 1): ({0: 0, 3: 8, 4: 9}, {0: 0}),
+                    },
+                ),
+                (
+                    [],
+                    [8, 9],
+                    {
+                        ("g1", 0): ({0: 0, 1: 6, 2: 7}, {0: 0, 1: 6}),
+                        ("g1", 1): ({0: 0, 3: 8, 4: 9}, {0: 0, 2: 7}),
+                    },
+                ),
+            ],
+        ),
+    ],
+)
+def test_tw_cmd_gen_collator_allocate_worker_ids(
+    tw_cmd_gen_collator, worker_info, events, expected
+):
+    def check():
+        for (game, walkthrough_step, event), (
+            expected_unused_node_ids,
+            expected_unused_edge_ids,
+            expected_allocated_id_map,
+        ) in zip(events, expected):
+            tw_cmd_gen_collator.update_subgraph(game, walkthrough_step, event)
+            tw_cmd_gen_collator.allocate_worker_ids(game, walkthrough_step)
+            assert (
+                list(tw_cmd_gen_collator.unused_worker_node_ids)
+                == expected_unused_node_ids
+            )
+            assert (
+                list(tw_cmd_gen_collator.unused_worker_edge_ids)
+                == expected_unused_edge_ids
+            )
+            assert (
+                tw_cmd_gen_collator.allocated_global_worker_id_map
+                == expected_allocated_id_map
+            )
 
-    node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
-        graph, [{"game": "g1", "walkthrough_step": 0}]
-    )
-    assert node_id_map == {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9}
-    assert edge_id_map == {0: 0, 1: 1, 2: 2, 3: 3, 4: 4}
-
-    # now with two new games
-    for _ in range(2):
-        src_id = graph.add_node("n1", game="g1", walkthrough_step=1)
-        dst_id = graph.add_node("n2", game="g1", walkthrough_step=1)
-        graph.add_edge(src_id, dst_id, "e1", game="g1", walkthrough_step=1)
-    for _ in range(2):
-        src_id = graph.add_node("n1", game="g2", walkthrough_step=0)
-        dst_id = graph.add_node("n2", game="g2", walkthrough_step=0)
-        graph.add_edge(src_id, dst_id, "e1", game="g2", walkthrough_step=0)
-
-    node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
-        graph,
-        [{"game": "g1", "walkthrough_step": 1}, {"game": "g2", "walkthrough_step": 0}],
-    )
-    assert node_id_map == {10: 0, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7}
-    assert edge_id_map == {5: 5, 6: 6, 7: 7, 8: 8}
-
-    # one old game, one new game
-    src_id = graph.add_node("n1", game="g2", walkthrough_step=0)
-    dst_id = graph.add_node("n2", game="g2", walkthrough_step=0)
-    graph.add_edge(src_id, dst_id, "e1", game="g2", walkthrough_step=0)
-    graph.remove_edge(16, 17)
-    graph.remove_node(17)
-    for _ in range(2):
-        src_id = graph.add_node("n1", game="g3", walkthrough_step=0)
-        dst_id = graph.add_node("n2", game="g3", walkthrough_step=0)
-        graph.add_edge(src_id, dst_id, "e1", game="g3", walkthrough_step=0)
-
-    node_id_map, edge_id_map = tw_cmd_gen_datamodule.calculate_subgraph_maps(
-        graph,
-        [{"game": "g2", "walkthrough_step": 0}, {"game": "g3", "walkthrough_step": 0}],
-    )
-    assert node_id_map == {
-        20: 0,
-        21: 1,
-        22: 2,
-        23: 3,
-        14: 4,
-        15: 5,
-        16: 6,
-        17: 7,
-        18: 8,
-        19: 9,
-    }
-    assert edge_id_map == {7: 7, 8: 8, 9: 9, 10: 0, 11: 1}
+    tw_cmd_gen_collator.init_worker_id_space(worker_info)
+    check()
+    tw_cmd_gen_collator.init_worker_id_space(worker_info)
+    check()
 
 
 @pytest.mark.parametrize(
@@ -720,6 +872,7 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
 def test_tw_cmd_gen_collator_update_subgraph(
     tw_cmd_gen_collator, events, expected_local_node_ids, expected_local_edges
 ):
+    tw_cmd_gen_collator.init_worker_id_space(None)
     for game, walkthrough_step, event in events:
         tw_cmd_gen_collator.update_subgraph(game, walkthrough_step, event)
     assert tw_cmd_gen_collator.global_node_ids == expected_local_node_ids

@@ -194,13 +194,6 @@ class TWCmdGenTemporalDataCollator:
         self.max_edge_id = max_edge_id
         self.worker_id_space_initialized = False
 
-        self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
-            self.create_node_id_set
-        )
-        self.global_edges: Dict[
-            Tuple[str, int], Dict[int, Tuple[int, int]]
-        ] = defaultdict(self.create_edges_dict)
-
         self.preprocessor = preprocessor
         self.label_id_map = label_id_map
 
@@ -282,8 +275,47 @@ class TWCmdGenTemporalDataCollator:
             Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]
         ] = defaultdict(self.create_global_worker_id_tuple)
 
+        self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
+            self.create_node_id_set
+        )
+        self.global_edges: Dict[
+            Tuple[str, int], Dict[int, Tuple[int, int]]
+        ] = defaultdict(self.create_edges_dict)
+
         # set the flag to True so it doesn't get reinitialized
         self.worker_id_space_initialized = True
+
+    def allocate_worker_ids(self, game: str, walkthrough_step: int) -> None:
+        """
+        Allocate worker IDs to global IDs for the game.
+        """
+        # retrieve the global-to-worker node/edge ID map that needs to be updated
+        (
+            allocated_node_id_map,
+            allocated_edge_id_map,
+        ) = self.allocated_global_worker_id_map[(game, walkthrough_step)]
+
+        # retrieve the global node IDs that have worker node IDs
+        global_node_ids = self.global_node_ids[(game, walkthrough_step)]
+
+        # assign worker node IDs to unallocated global node IDs
+        for unallocated_global_node_id in (
+            global_node_ids - allocated_node_id_map.keys()
+        ):
+            allocated_node_id_map[
+                unallocated_global_node_id
+            ] = self.unused_worker_node_ids.popleft()
+
+        # retrieve the global edge IDs and edge indices that have worker node/edge IDs
+        global_edges = self.global_edges[(game, walkthrough_step)]
+
+        # assign worker edge IDs and node IDs to global edge IDs and edge indices
+        for unallocated_global_edge_id in (
+            global_edges.keys() - allocated_edge_id_map.keys()
+        ):
+            allocated_edge_id_map[
+                unallocated_global_edge_id
+            ] = self.unused_worker_edge_ids.popleft()
 
     def collate_textual_inputs(
         self, obs: List[str], prev_actions: List[str]
