@@ -1,3 +1,4 @@
+import math
 import itertools
 import json
 import pytorch_lightning as pl
@@ -182,11 +183,10 @@ class TWCmdGenTemporalDataset(Dataset):
 
 
 class TWCmdGenTemporalDataCollator:
-    def __init__(
-        self, node_id_range: Tuple[int, int], edge_id_range: Tuple[int, int]
-    ) -> None:
-        self.node_id_range = node_id_range
-        self.edge_id_range = edge_id_range
+    def __init__(self, max_node_id: int, max_edge_id: int) -> None:
+        self.max_node_id = max_node_id
+        self.max_edge_id = max_edge_id
+        self.worker_id_space_initialized = False
         self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
             self.create_node_id_set
         )
@@ -204,6 +204,11 @@ class TWCmdGenTemporalDataCollator:
         # always include the placeholder, self-loop edge 0
         return {0: (0, 0)}
 
+    @staticmethod
+    def create_global_worker_id_tuple() -> Tuple[Dict[int, int], Dict[int, int]]:
+        # always map worker node/edge ID 0 to the padding node/edge ID
+        return ({0: 0}, {0: 0})
+
     def update_subgraph(
         self, game: str, walkthrough_step: int, event: Dict[str, Any]
     ) -> None:
@@ -219,6 +224,56 @@ class TWCmdGenTemporalDataCollator:
                 event["src_id"],
                 event["dst_id"],
             )
+
+    def init_worker_id_space(self, worker_info: Optional[Tuple[int, int]]) -> None:
+        """
+        Initialize the node/edge ID space for the worker. If info is None, there
+        are no workers so assign the whole ID space. Otherwise, divide up the overall
+        ID space into equal chunks and assign.
+
+        worker_info: (worker_id, num_workers)
+        """
+        # NOTE: the ID space starts from 1 since 0 is for padding
+        if worker_info is None:
+            # main process, assign the whole ID space
+            node_id_start = 1
+            node_id_end = self.max_node_id
+            edge_id_start = 1
+            edge_id_end = self.max_edge_id
+        else:
+            # worker process, assign a chunk of the whole ID space
+            worker_id, num_workers = worker_info
+
+            def calc_start_end(
+                min_id: int, max_id: int, worker_id: int, num_workers: int
+            ) -> Tuple[int, int]:
+                per_worker = int(math.ceil((max_id - min_id) / float(num_workers)))
+                id_start = min_id + worker_id * per_worker
+                id_end = min(id_start + per_worker, max_id)
+                return id_start, id_end
+
+            node_id_start, node_id_end = calc_start_end(
+                1, self.max_node_id, worker_id, num_workers
+            )
+            edge_id_start, edge_id_end = calc_start_end(
+                1, self.max_edge_id, worker_id, num_workers
+            )
+        self.unused_worker_node_ids: Deque[int] = deque(
+            i for i in range(node_id_start, node_id_end)
+        )
+        self.unused_worker_edge_ids: Deque[int] = deque(
+            i for i in range(edge_id_start, edge_id_end)
+        )
+
+        # {(game, walkthrough_step): (
+        #       {global_node_id: worker_node_id, ...},
+        #       {global_edge_id: worker_edge_id, ...})}
+        self.allocated_global_worker_id_map: Dict[
+            Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]
+        ] = defaultdict(self.create_global_worker_id_tuple)
+
+        # set the flag to True so it doesn't get reinitialized
+        self.worker_id_space_initialized = True
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         pass

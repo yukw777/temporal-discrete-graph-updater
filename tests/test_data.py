@@ -699,3 +699,36 @@ def test_tw_cmd_gen_collator_update_subgraph(
         tw_cmd_gen_collator.update_subgraph(game, walkthrough_step, event)
     assert tw_cmd_gen_collator.global_node_ids == expected_local_node_ids
     assert tw_cmd_gen_collator.global_edges == expected_local_edges
+
+
+@pytest.mark.parametrize(
+    "max_node_id,max_edge_id,worker_info,expected_unused_worker_node_ids,"
+    "expected_unused_worker_edge_ids",
+    [
+        (10, 10, None, [1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 5, 6, 7, 8, 9]),
+        (12, 16, (0, 4), [1, 2, 3], [1, 2, 3, 4]),
+        (12, 16, (1, 4), [4, 5, 6], [5, 6, 7, 8]),
+        (12, 16, (2, 4), [7, 8, 9], [9, 10, 11, 12]),
+        (12, 16, (3, 4), [10, 11], [13, 14, 15]),
+    ],
+)
+def test_tw_cmd_gen_collator_init_worker_id_space(
+    max_node_id,
+    max_edge_id,
+    worker_info,
+    expected_unused_worker_node_ids,
+    expected_unused_worker_edge_ids,
+):
+    collator = TWCmdGenTemporalDataCollator(max_node_id, max_edge_id)
+    assert not collator.worker_id_space_initialized
+    with pytest.raises(AttributeError):
+        getattr(collator, "unused_worker_node_ids")
+    with pytest.raises(AttributeError):
+        getattr(collator, "unused_worker_edge_ids")
+    with pytest.raises(AttributeError):
+        getattr(collator, "allocated_global_worker_id_map")
+    collator.init_worker_id_space(worker_info)
+    assert collator.worker_id_space_initialized
+    assert list(collator.unused_worker_node_ids) == expected_unused_worker_node_ids
+    assert list(collator.unused_worker_edge_ids) == expected_unused_worker_edge_ids
+    assert collator.allocated_global_worker_id_map == {}
