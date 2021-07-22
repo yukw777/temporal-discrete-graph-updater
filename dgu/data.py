@@ -184,7 +184,11 @@ class TWCmdGenTemporalDataset(Dataset):
 
 class TWCmdGenTemporalDataCollator:
     def __init__(
-        self, max_node_id: int, max_edge_id: int, preprocessor: SpacyPreprocessor
+        self,
+        max_node_id: int,
+        max_edge_id: int,
+        preprocessor: SpacyPreprocessor,
+        label_id_map: Dict[str, int],
     ) -> None:
         self.max_node_id = max_node_id
         self.max_edge_id = max_edge_id
@@ -198,6 +202,7 @@ class TWCmdGenTemporalDataCollator:
         ] = defaultdict(self.create_edges_dict)
 
         self.preprocessor = preprocessor
+        self.label_id_map = label_id_map
 
     @staticmethod
     def create_node_id_set() -> Set[int]:
@@ -307,6 +312,111 @@ class TWCmdGenTemporalDataCollator:
             "obs_mask": obs_mask,
             "prev_action_word_ids": prev_action_word_ids,
             "prev_action_mask": prev_action_mask,
+        }
+
+    def collate_non_graphical_inputs(
+        self, batch_step: List[Dict[str, Any]]
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Collate the non-graphical inputs of the given batch.
+
+        output: {
+            "tgt_event_type_ids": (batch, event_seq_len),
+            "tgt_event_timestamps": (batch, event_seq_len),
+            "tgt_event_mask": (batch, event_seq_len),
+            "tgt_event_src_mask": (batch, event_seq_len),
+            "tgt_event_dst_mask": (batch, event_seq_len),
+            "tgt_event_label_ids": (batch, event_seq_len),
+            "groundtruth_event_type_ids": (batch, event_seq_len),
+            "groundtruth_event_mask": (batch, event_seq_len),
+            "groundtruth_event_src_mask": (batch, event_seq_len),
+            "groundtruth_event_dst_mask": (batch, event_seq_len),
+            "groundtruth_event_label_ids": (batch, event_seq_len),
+        }
+        """
+        # event types
+        batch_event_type_ids = [
+            [EVENT_TYPE_ID_MAP[event["type"]] for event in step["event_seq"]]
+            for step in batch_step
+        ]
+        # prepend a start event
+        tgt_event_type_ids = pad_sequence(
+            [
+                torch.tensor([EVENT_TYPE_ID_MAP["start"]] + event_type_ids)
+                for event_type_ids in batch_event_type_ids
+            ],
+            batch_first=True,
+            padding_value=EVENT_TYPE_ID_MAP["pad"],
+        )
+        # append an end event
+        groundtruth_event_type_ids = pad_sequence(
+            [
+                torch.tensor(event_type_ids + [EVENT_TYPE_ID_MAP["end"]])
+                for event_type_ids in batch_event_type_ids
+            ],
+            batch_first=True,
+            padding_value=EVENT_TYPE_ID_MAP["pad"],
+        )
+
+        (
+            tgt_event_mask,
+            tgt_event_src_mask,
+            tgt_event_dst_mask,
+        ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
+
+        (
+            groundtruth_event_mask,
+            groundtruth_event_src_mask,
+            groundtruth_event_dst_mask,
+        ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
+
+        # event timestamps
+        batch_event_timestamps = [
+            [event["timestamp"] for event in step["event_seq"]] for step in batch_step
+        ]
+        tgt_event_timestamps = pad_sequence(
+            [
+                # 0 timestamp for start event
+                torch.tensor([0.0] + event_timestamps)
+                for event_timestamps in batch_event_timestamps
+            ],
+            batch_first=True,
+        )
+
+        # labels
+        batch_event_label_ids = [
+            [self.label_id_map[event["label"]] for event in step["event_seq"]]
+            for step in batch_step
+        ]
+        tgt_event_label_ids = pad_sequence(
+            [
+                torch.tensor([self.label_id_map[""]] + event_label_ids)
+                for event_label_ids in batch_event_label_ids
+            ],
+            batch_first=True,
+            padding_value=self.label_id_map[""],
+        )
+        groundtruth_event_label_ids = pad_sequence(
+            [
+                torch.tensor(event_label_ids + [self.label_id_map[""]])
+                for event_label_ids in batch_event_label_ids
+            ],
+            batch_first=True,
+            padding_value=self.label_id_map[""],
+        )
+
+        return {
+            "tgt_event_type_ids": tgt_event_type_ids,
+            "tgt_event_timestamps": tgt_event_timestamps,
+            "tgt_event_mask": tgt_event_mask,
+            "tgt_event_src_mask": tgt_event_src_mask,
+            "tgt_event_dst_mask": tgt_event_dst_mask,
+            "tgt_event_label_ids": tgt_event_label_ids,
+            "groundtruth_event_type_ids": groundtruth_event_type_ids,
+            "groundtruth_event_mask": groundtruth_event_mask,
+            "groundtruth_event_src_mask": groundtruth_event_src_mask,
+            "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
+            "groundtruth_event_label_ids": groundtruth_event_label_ids,
         }
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:

@@ -38,7 +38,12 @@ def tw_cmd_gen_datamodule(tmpdir):
 
 @pytest.fixture
 def tw_cmd_gen_collator():
-    return TWCmdGenTemporalDataCollator(10, 10)
+    return TWCmdGenTemporalDataCollator(
+        10,
+        10,
+        SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt"),
+        read_label_vocab_files("vocabs/node_vocab.txt", "vocabs/relation_vocab.txt"),
+    )
 
 
 @pytest.mark.parametrize(
@@ -123,7 +128,7 @@ def test_tw_cmd_gen_collator_collate_textual_inputs(
 
 
 @pytest.mark.parametrize(
-    "batch,expected",
+    "batch_step,expected",
     [
         (
             [
@@ -145,20 +150,20 @@ def test_tw_cmd_gen_collator_collate_textual_inputs(
                             "label": "is",
                         },
                     ],
-                }
+                },
             ],
             {
-                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5]),
-                "groundtruth_event_type_ids": torch.tensor([3, 3, 5, 2]),
-                "tgt_event_timestamps": torch.tensor([0.0, 0.0, 0.0, 0.0]),
-                "tgt_event_mask": torch.tensor([0.0, 1.0, 1.0, 1.0]),
-                "tgt_event_src_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
-                "tgt_event_dst_mask": torch.tensor([0.0, 0.0, 0.0, 1.0]),
-                "groundtruth_event_mask": torch.tensor([1.0, 1.0, 1.0, 0.0]),
-                "groundtruth_event_src_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
-                "groundtruth_event_dst_mask": torch.tensor([0.0, 0.0, 1.0, 0.0]),
-                "tgt_event_label_ids": torch.tensor([0, 1, 7, 101]),
-                "groundtruth_event_label_ids": torch.tensor([1, 7, 101, 0]),
+                "tgt_event_type_ids": torch.tensor([[1, 3, 3, 5]]),
+                "groundtruth_event_type_ids": torch.tensor([[3, 3, 5, 2]]),
+                "tgt_event_timestamps": torch.tensor([[0.0, 0.0, 0.0, 0.0]]),
+                "tgt_event_mask": torch.tensor([[0.0, 1.0, 1.0, 1.0]]),
+                "tgt_event_src_mask": torch.tensor([[0.0, 0.0, 0.0, 1.0]]),
+                "tgt_event_dst_mask": torch.tensor([[0.0, 0.0, 0.0, 1.0]]),
+                "groundtruth_event_mask": torch.tensor([[1.0, 1.0, 1.0, 0.0]]),
+                "groundtruth_event_src_mask": torch.tensor([[0.0, 0.0, 1.0, 0.0]]),
+                "groundtruth_event_dst_mask": torch.tensor([[0.0, 0.0, 1.0, 0.0]]),
+                "tgt_event_label_ids": torch.tensor([[0, 1, 7, 101]]),
+                "groundtruth_event_label_ids": torch.tensor([[1, 7, 101, 0]]),
             },
         ),
         (
@@ -180,7 +185,7 @@ def test_tw_cmd_gen_collator_collate_textual_inputs(
                             "timestamp": 0,
                             "label": "is",
                         },
-                    ],
+                    ]
                 },
                 {
                     "event_seq": [
@@ -214,47 +219,72 @@ def test_tw_cmd_gen_collator_collate_textual_inputs(
                             "timestamp": 5,
                             "label": "is",
                         },
-                    ],
+                    ]
                 },
             ],
             {
-                "tgt_event_type_ids": torch.tensor([1, 3, 3, 5, 3, 3, 5, 4, 4, 6]),
+                "tgt_event_type_ids": torch.tensor(
+                    [[1, 3, 3, 5, 0, 0, 0], [1, 3, 3, 5, 4, 4, 6]]
+                ),
                 "groundtruth_event_type_ids": torch.tensor(
-                    [3, 3, 5, 3, 3, 5, 4, 4, 6, 2]
+                    [[3, 3, 5, 2, 0, 0, 0], [3, 3, 5, 4, 4, 6, 2]]
                 ),
                 "tgt_event_timestamps": torch.tensor(
-                    [0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 4.0, 5.0]
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 2.0, 3.0, 3.0, 4.0, 5.0],
+                    ]
                 ),
                 "tgt_event_mask": torch.tensor(
-                    [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                    [
+                        [0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                    ]
                 ),
                 "tgt_event_src_mask": torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
+                    [
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                    ]
                 ),
                 "tgt_event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+                    [
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+                    ]
                 ),
                 "groundtruth_event_mask": torch.tensor(
-                    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
+                    [
+                        [1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+                    ]
                 ),
                 "groundtruth_event_src_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0]
+                    [
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+                    ]
                 ),
                 "groundtruth_event_dst_mask": torch.tensor(
-                    [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]
+                    [
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+                    ]
                 ),
                 "tgt_event_label_ids": torch.tensor(
-                    [0, 1, 7, 101, 1, 7, 101, 1, 7, 101]
+                    [[0, 1, 7, 101, 0, 0, 0], [0, 1, 7, 101, 1, 7, 101]]
                 ),
                 "groundtruth_event_label_ids": torch.tensor(
-                    [1, 7, 101, 1, 7, 101, 1, 7, 101, 0]
+                    [[1, 7, 101, 0, 0, 0, 0], [1, 7, 101, 1, 7, 101, 0]]
                 ),
             },
         ),
     ],
 )
-def test_collate_non_graphical_inputs(tw_cmd_gen_datamodule, batch, expected):
-    results = tw_cmd_gen_datamodule.collate_non_graphical_inputs(batch)
+def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
+    tw_cmd_gen_collator, batch_step, expected
+):
+    results = tw_cmd_gen_collator.collate_non_graphical_inputs(batch_step)
     for k in [
         "tgt_event_type_ids",
         "groundtruth_event_type_ids",
@@ -718,6 +748,7 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
         max_node_id,
         max_edge_id,
         SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt"),
+        {},
     )
     assert not collator.worker_id_space_initialized
     with pytest.raises(AttributeError):
