@@ -779,20 +779,20 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
             num_workers=1,
         )
 
-    @staticmethod
-    def read_label_vocab_files(
-        node_vocab_file: str, relation_vocab_file: str
-    ) -> Dict[str, int]:
-        id_map: Dict[str, int] = {"": 0}
-        with open(node_vocab_file) as f:
-            for i, line in enumerate(f):
-                stripped = line.strip()
-                if stripped != "":
-                    id_map[stripped] = i + 1
-        num_node_label = len(id_map)
-        with open(relation_vocab_file) as f:
-            for i, line in enumerate(f):
-                stripped = line.strip()
-                if stripped != "":
-                    id_map[stripped] = i + num_node_label
-        return id_map
+
+def read_label_vocab_files(
+    node_vocab_file: str, relation_vocab_file: str
+) -> Dict[str, int]:
+    id_map: Dict[str, int] = {"": 0}
+    with open(node_vocab_file) as f:
+        for i, line in enumerate(f):
+            stripped = line.strip()
+            if stripped != "":
+                id_map[stripped] = i + 1
+    num_node_label = len(id_map)
+    with open(relation_vocab_file) as f:
+        for i, line in enumerate(f):
+            stripped = line.strip()
+            if stripped != "":
+                id_map[stripped] = i + num_node_label
+    return id_map

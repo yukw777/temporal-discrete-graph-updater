@@ -12,6 +12,7 @@ from dgu.data import (
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
     TWCmdGenTemporalDataCollator,
+    read_label_vocab_files,
 )
 from dgu.preprocessor import SpacyPreprocessor
 
@@ -523,7 +524,7 @@ def test_collate_graphical_inputs(tw_cmd_gen_datamodule, prev_batch, batch, expe
 
 
 def test_read_label_vocab_files():
-    label_id_map = TWCmdGenTemporalDataModule.read_label_vocab_files(
+    label_id_map = read_label_vocab_files(
         "tests/data/test_node_vocab.txt", "tests/data/test_relation_vocab.txt"
     )
     assert label_id_map == {
