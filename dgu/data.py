@@ -181,6 +181,49 @@ class TWCmdGenTemporalDataset(Dataset):
         return self.data == o.data
 
 
+class TWCmdGenTemporalDataCollator:
+    def __init__(
+        self, node_id_range: Tuple[int, int], edge_id_range: Tuple[int, int]
+    ) -> None:
+        self.node_id_range = node_id_range
+        self.edge_id_range = edge_id_range
+        self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
+            self.create_node_id_set
+        )
+        self.global_edges: Dict[
+            Tuple[str, int], Dict[int, Tuple[int, int]]
+        ] = defaultdict(self.create_edges_dict)
+
+    @staticmethod
+    def create_node_id_set() -> Set[int]:
+        # always include the placeholder node 0
+        return {0}
+
+    @staticmethod
+    def create_edges_dict() -> Dict[int, Tuple[int, int]]:
+        # always include the placeholder, self-loop edge 0
+        return {0: (0, 0)}
+
+    def update_subgraph(
+        self, game: str, walkthrough_step: int, event: Dict[str, Any]
+    ) -> None:
+        """
+        Update subgraphs for games based on the given event.
+        Basically keeps track of all the added nodes and edges.
+        """
+        event_type = event["type"]
+        if event_type == "node-add":
+            self.global_node_ids[(game, walkthrough_step)].add(event["node_id"])
+        elif event_type == "edge-add":
+            self.global_edges[(game, walkthrough_step)][event["edge_id"]] = (
+                event["src_id"],
+                event["dst_id"],
+            )
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        pass
+
+
 class TWCmdGenTemporalDataModule(pl.LightningDataModule):
     def __init__(
         self,

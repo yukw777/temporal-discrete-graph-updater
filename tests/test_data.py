@@ -11,6 +11,7 @@ from dgu.data import (
     TemporalDataBatchSampler,
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
+    TWCmdGenTemporalDataCollator,
 )
 
 
@@ -31,6 +32,11 @@ def tw_cmd_gen_datamodule(tmpdir):
         10,
         10,
     )
+
+
+@pytest.fixture
+def tw_cmd_gen_collator():
+    return TWCmdGenTemporalDataCollator(10, 10)
 
 
 @pytest.mark.parametrize(
@@ -625,7 +631,7 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
     [
         (
             [("g0", 0, {"type": "node-add", "node_id": 1})],
-            {("g0", 0): {1}},
+            {("g0", 0): {0, 1}},
             {},
         ),
         (
@@ -633,7 +639,7 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
                 ("g0", 0, {"type": "node-add", "node_id": 1}),
                 ("g0", 0, {"type": "node-delete", "node_id": 1}),
             ],
-            {("g0", 0): {1}},
+            {("g0", 0): {0, 1}},
             {},
         ),
         (
@@ -646,7 +652,7 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
                 ("g0", 1, {"type": "node-delete", "node_id": 1}),
                 ("g1", 0, {"type": "node-delete", "node_id": 3}),
             ],
-            {("g0", 0): {2}, ("g0", 1): {1, 4}, ("g1", 0): {3, 5}},
+            {("g0", 0): {0, 2}, ("g0", 1): {0, 1, 4}, ("g1", 0): {0, 3, 5}},
             {},
         ),
         (
@@ -661,8 +667,8 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
                 ("g0", 1, {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 4}),
                 ("g1", 0, {"type": "edge-add", "edge_id": 2, "src_id": 5, "dst_id": 3}),
             ],
-            {("g0", 0): {2}, ("g0", 1): {1, 4}, ("g1", 0): {3, 5}},
-            {("g0", 1): {1: (1, 4)}, ("g1", 0): {2: (5, 3)}},
+            {("g0", 0): {0, 2}, ("g0", 1): {0, 1, 4}, ("g1", 0): {0, 3, 5}},
+            {("g0", 1): {0: (0, 0), 1: (1, 4)}, ("g1", 0): {0: (0, 0), 2: (5, 3)}},
         ),
         (
             [
@@ -681,15 +687,15 @@ def test_tw_cmd_gen_datamodule_calc_subgraph_maps(tw_cmd_gen_datamodule):
                     {"type": "edge-delete", "edge_id": 2, "src_id": 5, "dst_id": 3},
                 ),
             ],
-            {("g0", 0): {2}, ("g0", 1): {1, 4}, ("g1", 0): {3, 5}},
-            {("g0", 1): {1: (1, 4)}, ("g1", 0): {2: (5, 3)}},
+            {("g0", 0): {0, 2}, ("g0", 1): {0, 1, 4}, ("g1", 0): {0, 3, 5}},
+            {("g0", 1): {0: (0, 0), 1: (1, 4)}, ("g1", 0): {0: (0, 0), 2: (5, 3)}},
         ),
     ],
 )
-def test_tw_cmd_gen_datamodule_update_subgraph(
-    tw_cmd_gen_datamodule, events, expected_local_node_ids, expected_local_edges
+def test_tw_cmd_gen_collator_update_subgraph(
+    tw_cmd_gen_collator, events, expected_local_node_ids, expected_local_edges
 ):
     for game, walkthrough_step, event in events:
-        tw_cmd_gen_datamodule.update_subgraph(game, walkthrough_step, event)
-    assert tw_cmd_gen_datamodule.global_node_ids == expected_local_node_ids
-    assert tw_cmd_gen_datamodule.global_edges == expected_local_edges
+        tw_cmd_gen_collator.update_subgraph(game, walkthrough_step, event)
+    assert tw_cmd_gen_collator.global_node_ids == expected_local_node_ids
+    assert tw_cmd_gen_collator.global_edges == expected_local_edges
