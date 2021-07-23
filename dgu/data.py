@@ -12,6 +12,7 @@ from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from functools import partial
 from pathlib import Path
+from torch.nn.utils.rnn import pad_sequence
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
@@ -369,6 +370,8 @@ class TWCmdGenTemporalDataCollator:
         # event types
         batch_event_type_ids = [
             [EVENT_TYPE_ID_MAP[event["type"]] for event in step["event_seq"]]
+            if step != {}
+            else []
             for step in batch_step
         ]
         # prepend a start event
@@ -404,7 +407,8 @@ class TWCmdGenTemporalDataCollator:
 
         # event timestamps
         batch_event_timestamps = [
-            [event["timestamp"] for event in step["event_seq"]] for step in batch_step
+            [event["timestamp"] for event in step["event_seq"]] if step != {} else []
+            for step in batch_step
         ]
         tgt_event_timestamps = pad_sequence(
             [
@@ -418,6 +422,8 @@ class TWCmdGenTemporalDataCollator:
         # labels
         batch_event_label_ids = [
             [self.label_id_map[event["label"]] for event in step["event_seq"]]
+            if step != {}
+            else []
             for step in batch_step
         ]
         tgt_event_label_ids = pad_sequence(
