@@ -484,23 +484,25 @@ class TWCmdGenTemporalDataCollator:
         event_seq_edge_ids: Dict[int, List[List[int]]] = defaultdict(list)
         event_seq_edge_index: Dict[int, List[List[Tuple[int, int]]]] = defaultdict(list)
         event_seq_edge_timestamps: Dict[int, List[List[float]]] = defaultdict(list)
-        max_event_seq_len = max(len(step["event_seq"]) for step in batch_step)
+        max_event_seq_len = max(
+            len(step["event_seq"]) if step != {} else 0 for step in batch_step
+        )
         for step in batch_step:
             event_src_ids: List[int] = []
             event_dst_ids: List[int] = []
             event_src_pos: List[int] = []
             event_dst_pos: List[int] = []
             event_edge_ids: List[int] = []
-            game = step["game"]
-            waklthrough_step = step["walkthrough_step"]
             for i in range(max_event_seq_len):
-                if i >= len(step["event_seq"]):
+                if step == {} or i >= len(step["event_seq"]):
                     # we've passed the last event, so just add padded lists and move on
                     event_seq_node_ids[i].append([0])
                     event_seq_edge_ids[i].append([0])
                     event_seq_edge_index[i].append([(0, 0)])
                     event_seq_edge_timestamps[i].append([0.0])
                     continue
+                game = step["game"]
+                waklthrough_step = step["walkthrough_step"]
                 event = step["event_seq"][i]
                 # update the graph with the graph events in the batch
                 self.update_subgraph(game, waklthrough_step, event)
