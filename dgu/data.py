@@ -8,7 +8,7 @@ import pickle
 from tqdm import tqdm
 from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict, deque
-from torch.utils.data import Sampler, Dataset, DataLoader
+from torch.utils.data import Sampler, Dataset, DataLoader, get_worker_info
 from hydra.utils import to_absolute_path
 from functools import partial
 from pathlib import Path
@@ -639,6 +639,133 @@ class TWCmdGenTemporalDataCollator:
             "groundtruth_event_src_ids": groundtruth_event_src_ids,
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
         }
+
+    def __call__(
+        self, batch: List[List[Dict[str, Any]]]
+    ) -> List[Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]]:
+        """
+        Each element in the collated batch is a batched step. Each step
+        has a dictionary of textual inputs and another dictionary
+        of graph event inputs.
+        [
+            (
+                {
+                    "obs_word_ids": (batch, obs_len),
+                    "obs_mask": (batch, obs_len),
+                    "prev_action_word_ids": (batch, prev_action_len),
+                    "prev_action_mask": (batch, prev_action_len),
+                },
+                [
+                    {
+                        "node_ids": (batch, num_nodes),
+                        "edge_ids": (batch, num_edges),
+                        "edge_index": (batch, 2, num_edges),
+                        "edge_timestamps": (batch, num_edges),
+                        "tgt_event_timestamps": (batch, 1),
+                        "tgt_event_mask": (batch, 1),
+                        "tgt_event_type_ids": (batch, 1),
+                        "tgt_event_src_ids": (batch, 1),
+                        "tgt_event_src_mask": (batch, 1),
+                        "tgt_event_dst_ids": (batch, 1),
+                        "tgt_event_dst_mask": (batch, 1),
+                        "tgt_event_edge_ids": (batch, 1),
+                        "tgt_event_label_ids": (batch, 1),
+                        "groundtruth_event_type_ids": (batch, 1),
+                        "groundtruth_event_src_ids": (batch, 1),
+                        "groundtruth_event_src_mask": (batch, 1),
+                        "groundtruth_event_dst_ids": (batch, 1),
+                        "groundtruth_event_dst_mask": (batch, 1),
+                        "groundtruth_event_label_ids": (batch, 1),
+                        "groundtruth_event_mask": (batch, 1),
+                    },
+                    ...
+                ]
+            ),
+            ...
+        ]
+        """
+        # we initialize the worker ID space for every batch
+        worker_info = get_worker_info()
+        self.init_worker_id_space(
+            (worker_info.id, worker_info.num_workers)
+            if worker_info is not None
+            else None
+        )
+
+        # start collating
+        max_episode_len = max(len(episode) for episode in batch)
+        collated_batch: List[
+            Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]
+        ] = []
+        for i in range(max_episode_len):
+            batch_ith_step = [
+                episode[i] if i < len(episode) else {} for episode in batch
+            ]
+            textual = self.collate_textual_inputs(
+                [step.get("observation", "") for step in batch_ith_step],
+                [step.get("previous_action", "") for step in batch_ith_step],
+            )
+
+            graph_events: List[Dict[str, torch.Tensor]] = []
+            non_graphical = self.collate_non_graphical_inputs(batch_ith_step)
+            graphical = self.collate_graphical_inputs(batch_ith_step)
+            for j in range(non_graphical["tgt_event_type_ids"].size(1)):
+                graph_events.append(
+                    {
+                        "node_ids": graphical["node_ids"][j],
+                        "edge_ids": graphical["edge_ids"][j],
+                        "edge_index": graphical["edge_index"][j],
+                        "edge_timestamps": graphical["edge_timestamps"][j],
+                        "tgt_event_timestamps": non_graphical["tgt_event_timestamps"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_mask": non_graphical["tgt_event_mask"][:, j : j + 1],
+                        "tgt_event_type_ids": non_graphical["tgt_event_type_ids"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_src_ids": graphical["tgt_event_src_ids"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_src_mask": non_graphical["tgt_event_src_mask"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_dst_ids": graphical["tgt_event_dst_ids"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_dst_mask": non_graphical["tgt_event_dst_mask"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_edge_ids": graphical["tgt_event_edge_ids"][
+                            :, j : j + 1
+                        ],
+                        "tgt_event_label_ids": non_graphical["tgt_event_label_ids"][
+                            :, j : j + 1
+                        ],
+                        "groundtruth_event_type_ids": non_graphical[
+                            "groundtruth_event_type_ids"
+                        ][:, j : j + 1],
+                        "groundtruth_event_src_ids": graphical[
+                            "groundtruth_event_src_ids"
+                        ][:, j : j + 1],
+                        "groundtruth_event_src_mask": non_graphical[
+                            "groundtruth_event_src_mask"
+                        ][:, j : j + 1],
+                        "groundtruth_event_dst_ids": graphical[
+                            "groundtruth_event_dst_ids"
+                        ][:, j : j + 1],
+                        "groundtruth_event_dst_mask": non_graphical[
+                            "groundtruth_event_dst_mask"
+                        ][:, j : j + 1],
+                        "groundtruth_event_label_ids": non_graphical[
+                            "groundtruth_event_label_ids"
+                        ][:, j : j + 1],
+                        "groundtruth_event_mask": non_graphical[
+                            "groundtruth_event_mask"
+                        ][:, j : j + 1],
+                    }
+                )
+            collated_batch.append((textual, graph_events))
+        return collated_batch
 
 
 class TWCmdGenTemporalDataModule(pl.LightningDataModule):
