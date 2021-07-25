@@ -547,7 +547,12 @@ class TWCmdGenTemporalDataCollator:
                 # collect event worker node/edge IDs
                 if event["type"] in {"node-add", "node-delete"}:
                     event_src_ids.append(node_id_map[event["node_id"]])
-                    event_src_pos.append(node_id_pos_map[event["node_id"]])
+                    # 0 if node-add as the node hasn't been added and does not have
+                    # the correct position. Ultimately it's going to be masked.
+                    if event["type"] == "node-add":
+                        event_src_pos.append(0)
+                    else:
+                        event_src_pos.append(node_id_pos_map[event["node_id"]])
                     # used the placeholder node and edge
                     event_dst_ids.append(0)
                     event_dst_pos.append(0)
