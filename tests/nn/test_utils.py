@@ -70,7 +70,7 @@ def test_masked_softmax():
                     ]
                 ]
             ),
-            torch.zeros(1, 3),
+            torch.tensor([[1.0, 1.0, 0.0]]),
             torch.zeros(1, 3),
             torch.zeros(1, 3),
         ),
@@ -112,7 +112,7 @@ def test_masked_softmax():
                     ]
                 ]
             ),
-            torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0]]),
+            torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]),
         ),
@@ -135,7 +135,7 @@ def test_masked_softmax():
                     ],
                 ]
             ),
-            torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 0.0]]),
+            torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 1.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0, 0.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0], [0.0, 1.0, 1.0, 0.0, 0.0]]),
         ),
