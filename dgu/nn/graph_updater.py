@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
@@ -11,13 +11,11 @@ from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
 from dgu.nn.utils import masked_mean, load_fasttext
 from dgu.nn.graph_event_decoder import (
-    StaticLabelGraphEventEncoder,
     StaticLabelGraphEventDecoder,
-    RNNGraphEventSeq2Seq,
+    RNNGraphEventDecoder,
 )
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
-from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -33,6 +31,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         max_num_nodes: int = 100,
         max_num_edges: int = 200,
         word_emb_dim: int = 300,
+        tgn_event_type_emb_dim: int = 8,
+        tgn_memory_dim: int = 8,
+        tgn_time_enc_dim: int = 8,
         text_encoder_num_blocks: int = 1,
         text_encoder_num_conv_layers: int = 3,
         text_encoder_kernel_size: int = 5,
@@ -51,6 +52,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "max_num_nodes",
             "max_num_edges",
             "word_emb_dim",
+            "tgn_event_type_emb_dim",
+            "tgn_memory_dim",
+            "tgn_time_enc_dim",
             "text_encoder_num_blocks",
             "text_encoder_num_conv_layers",
             "text_encoder_kernel_size",
@@ -129,53 +133,35 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # temporal graph network
         self.tgn = TemporalGraphNetwork(
-            max_num_nodes, max_num_edges, hidden_dim, node_label_embeddings.size(1)
+            max_num_nodes,
+            max_num_edges,
+            tgn_event_type_emb_dim,
+            tgn_memory_dim,
+            tgn_time_enc_dim,
+            word_emb_dim,
+            hidden_dim,
         )
 
         # representation aggregator
         self.repr_aggr = ReprAggregator(hidden_dim)
 
         # graph event seq2seq
-        self.seq2seq = RNNGraphEventSeq2Seq(
+        event_decoder = StaticLabelGraphEventDecoder(
             hidden_dim,
-            max_decode_len,
-            node_label_embeddings.size(1),
-            StaticLabelGraphEventEncoder(),
-            StaticLabelGraphEventDecoder(
-                hidden_dim,
-                graph_event_decoder_key_query_dim,
-                node_label_embeddings,
-                edge_label_embeddings,
-            ),
+            hidden_dim,
+            hidden_dim,
+            graph_event_decoder_key_query_dim,
+            node_label_embeddings,
+            edge_label_embeddings,
         )
-
-        # raw message storage for training
-        # initialize with an empty subgraph and [start, end] graph events.
-        self.raw_msg = {
-            "node_ids": torch.zeros(0, dtype=torch.long),
-            "edge_ids": torch.zeros(0, dtype=torch.long),
-            "edge_index": torch.zeros(2, 0, dtype=torch.long),
-            "edge_timestamps": torch.zeros(0),
-            "tgt_event_timestamps": torch.zeros(2),
-            "tgt_event_mask": torch.zeros(2),
-            "tgt_event_type_ids": torch.tensor(
-                [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["end"]]
-            ),
-            "tgt_event_src_ids": torch.zeros(2, dtype=torch.long),
-            "tgt_event_src_mask": torch.zeros(2),
-            "tgt_event_dst_ids": torch.zeros(2, dtype=torch.long),
-            "tgt_event_dst_mask": torch.zeros(2),
-            "tgt_event_edge_ids": torch.zeros(2, dtype=torch.long),
-            "tgt_event_label_ids": torch.zeros(2, dtype=torch.long),
-        }
+        self.decoder = RNNGraphEventDecoder(4 * hidden_dim, hidden_dim, event_decoder)
+        self.label_embeddings = event_decoder.event_label_head.label_embeddings
 
         self.criterion = nn.CrossEntropyLoss(reduction="none")
 
     def forward(  # type: ignore
         self,
-        obs_word_ids: torch.Tensor,
         obs_mask: torch.Tensor,
-        prev_action_word_ids: torch.Tensor,
         prev_action_mask: torch.Tensor,
         prev_event_type_ids: torch.Tensor,
         prev_event_src_ids: torch.Tensor,
@@ -190,76 +176,62 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_edge_ids: torch.Tensor,
         prev_edge_index: torch.Tensor,
         prev_edge_timestamps: torch.Tensor,
-        node_ids: Optional[torch.Tensor] = None,
-        tgt_event_type_ids: Optional[torch.Tensor] = None,
-        tgt_event_src_ids: Optional[torch.Tensor] = None,
-        tgt_event_src_mask: Optional[torch.Tensor] = None,
-        tgt_event_dst_ids: Optional[torch.Tensor] = None,
-        tgt_event_dst_mask: Optional[torch.Tensor] = None,
-        tgt_event_label_ids: Optional[torch.Tensor] = None,
-        tgt_event_mask: Optional[torch.Tensor] = None,
+        decoder_hidden: Optional[torch.Tensor] = None,
+        obs_word_ids: Optional[torch.Tensor] = None,
+        prev_action_word_ids: Optional[torch.Tensor] = None,
+        encoded_obs: Optional[torch.Tensor] = None,
+        encoded_prev_action: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         input:
-            obs_word_ids: (batch, obs_len)
             obs_mask: (batch, obs_len)
-            prev_action_word_ids: (batch, prev_action_len)
             prev_action_mask: (batch, prev_action_len)
-            prev_event_type_ids: (prev_event_seq_len)
-            prev_event_src_ids: (prev_event_seq_len)
-            prev_event_src_mask: (prev_event_seq_len)
-            prev_event_dst_ids: (prev_event_seq_len)
-            prev_event_dst_mask: (prev_event_seq_len)
-            prev_event_edge_ids: (prev_event_seq_len)
-            prev_event_label_ids: (prev_event_seq_len)
-            prev_event_mask: (prev_event_seq_len)
-            prev_event_timestamps: (prev_event_seq_len)
-            prev_node_ids: (prev_num_node)
-            prev_edge_ids: (prev_num_edge)
-            prev_edge_index: (2, prev_num_edge)
-            prev_edge_timestamps: (prev_num_edge)
-            node_ids: (num_node)
-            tgt_event_type_ids: (batch, graph_event_seq_len)
-                Used for teacher forcing.
-            tgt_event_src_ids: (graph_event_seq_len)
-                Used for teacher forcing.
-            tgt_event_src_mask: (graph_event_seq_len)
-                Used for teacher forcing.
-            tgt_event_dst_ids: (graph_event_seq_len)
-                Used for teacher forcing.
-            tgt_event_dst_mask: (graph_event_seq_len)
-                Used for teacher forcing.
-            tgt_event_label_ids: (graph_event_seq_len)
-                Used for teacher forcing.
-            tgt_event_mask: (graph_event_seq_len)
-                Used for teacher forcing.
+            prev_event_type_ids: (batch, prev_event_seq_len)
+            prev_event_src_ids: (batch, prev_event_seq_len)
+            prev_event_src_mask: (batch, prev_event_seq_len)
+            prev_event_dst_ids: (batch, prev_event_seq_len)
+            prev_event_dst_mask: (batch, prev_event_seq_len)
+            prev_event_edge_ids: (batch, prev_event_seq_len)
+            prev_event_label_ids: (batch, prev_event_seq_len)
+            prev_event_mask: (batch, prev_event_seq_len)
+            prev_event_timestamps: (batch, prev_event_seq_len)
+            prev_node_ids: (batch, prev_num_node)
+            prev_edge_ids: (batch, prev_num_edge)
+            prev_edge_index: (batch, 2, prev_num_edge)
+            prev_edge_timestamps: (batch, prev_num_edge)
+            decoder_hidden: (batch, hidden_dim)
+
+            If encoded_obs and encoded_prev_action are given, they're used
+            Otherwise, they are calculated from obs_word_ids, obs_mask,
+            prev_action_word_ids and prev_action_mask.
+
+            obs_word_ids: (batch, obs_len)
+            prev_action_word_ids: (batch, prev_action_len)
+            encoded_obs: (batch, obs_len, hidden_dim)
+            encoded_prev_action: (batch, prev_action_len, hidden_dim)
 
         output:
-        if training:
-            {
-                event_type_logits: (graph_event_seq_len, num_event_type)
-                src_logits: (graph_event_seq_len, num_node)
-                dst_logits: (graph_event_seq_len, num_node)
-                label_logits: (graph_event_seq_len, num_label)
-            }
-        else:
-            {
-                decoded_event_type_ids: (decoded_len),
-                decoded_src_ids: (decoded_len),
-                decoded_dst_ids: (decoded_len),
-                decoded_label_ids: (decoded_len),
-            }
+        {
+            event_type_logits: (batch, num_event_type)
+            src_logits: (batch, num_node)
+            dst_logits: (batch, num_node)
+            label_logits: (batch, num_label)
+            new_hidden: (batch, hidden_dim)
+            encoded_obs: (batch, obs_len, hidden_dim)
+            encoded_prev_action: (batch, prev_action_len, hidden_dim)
+        }
         """
-        encoded_obs = self.encode_text(obs_word_ids, obs_mask)
-        # (batch, obs_len, hidden_dim)
-        encoded_prev_action = self.encode_text(prev_action_word_ids, prev_action_mask)
-        # (batch, prev_action_len, hidden_dim)
-
-        label_embeddings = (
-            self.seq2seq.graph_event_decoder.event_label_head.label_embeddings
-        )
-        prev_label_embeds = label_embeddings[prev_event_label_ids]  # type: ignore
-        # (prev_event_seq_len, label_embedding_dim)
+        if encoded_obs is None and encoded_prev_action is None:
+            assert obs_word_ids is not None
+            assert prev_action_word_ids is not None
+            encoded_obs = self.encode_text(obs_word_ids, obs_mask)
+            # (batch, obs_len, hidden_dim)
+            encoded_prev_action = self.encode_text(
+                prev_action_word_ids, prev_action_mask
+            )
+            # (batch, prev_action_len, hidden_dim)
+        assert encoded_obs is not None
+        assert encoded_prev_action is not None
 
         prev_node_embeddings = self.tgn(
             prev_event_type_ids,
@@ -268,7 +240,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_event_dst_ids,
             prev_event_dst_mask,
             prev_event_edge_ids,
-            prev_label_embeds,
+            self.label_embeddings[prev_event_label_ids],  # type: ignore
             prev_event_mask,
             prev_event_timestamps,
             prev_node_ids,
@@ -276,7 +248,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_edge_index,
             prev_edge_timestamps,
         )
-        # (prev_num_node, hidden_dim)
+        # (batch, prev_num_node, hidden_dim)
 
         delta_g = self.f_delta(
             prev_node_embeddings,
@@ -287,37 +259,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         # (batch, 4 * hidden_dim)
 
-        # treat batches of delta_g as one sequence and pass it to the seq2seq model
-        # this works b/c every batch is sequential (no shuffling).
-        results = self.seq2seq(
-            delta_g.unsqueeze(0),
-            self.tgn.memory,  # type: ignore
-            node_ids=node_ids,
-            tgt_event_mask=None
-            if tgt_event_mask is None
-            else tgt_event_mask.unsqueeze(0),
-            tgt_event_type_ids=None
-            if tgt_event_type_ids is None
-            else tgt_event_type_ids.unsqueeze(0),
-            tgt_event_src_ids=None
-            if tgt_event_src_ids is None
-            else tgt_event_src_ids.unsqueeze(0),
-            tgt_event_src_mask=None
-            if tgt_event_src_mask is None
-            else tgt_event_src_mask.unsqueeze(0),
-            tgt_event_dst_ids=None
-            if tgt_event_dst_ids is None
-            else tgt_event_dst_ids.unsqueeze(0),
-            tgt_event_dst_mask=None
-            if tgt_event_dst_mask is None
-            else tgt_event_dst_mask.unsqueeze(0),
-            tgt_event_label_ids=None
-            if tgt_event_label_ids is None
-            else tgt_event_label_ids.unsqueeze(0),
-        )
+        results = self.decoder(delta_g, prev_node_embeddings, hidden=decoder_hidden)
+        results["encoded_obs"] = encoded_obs
+        results["encoded_prev_action"] = encoded_prev_action
 
-        # squeeze the batch dimension and return
-        return {k: t.squeeze(0) for k, t in results.items()}
+        return results
 
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -332,14 +278,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def f_delta(
         self,
-        prev_node_embeddings: torch.Tensor,
+        node_embeddings: torch.Tensor,
         obs_embeddings: torch.Tensor,
         obs_mask: torch.Tensor,
         prev_action_embeddings: torch.Tensor,
         prev_action_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
-        prev_node_embeddings: (prev_num_node, hidden_dim)
+        node_embeddings: (batch, prev_num_node, hidden_dim)
         obs_embeddings: (batch, obs_len, hidden_dim)
         obs_mask: (batch, obs_len)
         prev_action_embeddings: (batch, prev_action_len, hidden_dim)
@@ -347,17 +293,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         output: (batch, 4 * hidden_dim)
         """
-        batch_size = obs_embeddings.size(0)
-        expanded_prev_node_embeddings = prev_node_embeddings.expand(batch_size, -1, -1)
-
         # no masks necessary for prev_node_embeddings, so just create a fake one
+        batch_size = obs_embeddings.size(0)
         prev_node_mask = torch.ones(
-            batch_size, prev_node_embeddings.size(0), device=prev_node_embeddings.device
+            batch_size, node_embeddings.size(1), device=node_embeddings.device
         )
 
         h_og, h_go = self.repr_aggr(
             obs_embeddings,
-            expanded_prev_node_embeddings,
+            node_embeddings,
             obs_mask,
             prev_node_mask,
         )
@@ -365,7 +309,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # h_go: (batch, prev_num_node, hidden_dim)
         h_ag, h_ga = self.repr_aggr(
             prev_action_embeddings,
-            expanded_prev_node_embeddings,
+            node_embeddings,
             prev_action_mask,
             prev_node_mask,
         )
@@ -393,76 +337,89 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
     def training_step(  # type: ignore
-        self, batch: Dict[str, torch.Tensor], batch_idx: int
+        self,
+        batch: List[Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]],
+        batch_idx: int,
     ) -> torch.Tensor:
-        results = self(
-            batch["obs_word_ids"],
-            batch["obs_mask"],
-            batch["prev_action_word_ids"],
-            batch["prev_action_mask"],
-            self.raw_msg["tgt_event_type_ids"].to(self.device),
-            self.raw_msg["tgt_event_src_ids"].to(self.device),
-            self.raw_msg["tgt_event_src_mask"].to(self.device),
-            self.raw_msg["tgt_event_dst_ids"].to(self.device),
-            self.raw_msg["tgt_event_dst_mask"].to(self.device),
-            self.raw_msg["tgt_event_edge_ids"].to(self.device),
-            self.raw_msg["tgt_event_label_ids"].to(self.device),
-            self.raw_msg["tgt_event_mask"].to(self.device),
-            self.raw_msg["tgt_event_timestamps"].to(self.device),
-            self.raw_msg["node_ids"].to(self.device),
-            self.raw_msg["edge_ids"].to(self.device),
-            self.raw_msg["edge_index"].to(self.device),
-            self.raw_msg["edge_timestamps"].to(self.device),
-            batch["node_ids"],
-            tgt_event_type_ids=batch["tgt_event_type_ids"],
-            tgt_event_src_ids=batch["tgt_event_src_ids"],
-            tgt_event_src_mask=batch["tgt_event_src_mask"],
-            tgt_event_dst_ids=batch["tgt_event_dst_ids"],
-            tgt_event_dst_mask=batch["tgt_event_dst_mask"],
-            tgt_event_label_ids=batch["tgt_event_label_ids"],
-            tgt_event_mask=batch["tgt_event_mask"],
-        )
+        losses: List[torch.Tensor] = []
+        for textual_inputs, graph_event_inputs in batch:
+            encoded_obs: Optional[torch.Tensor] = None
+            encoded_prev_action: Optional[torch.Tensor] = None
+            for graph_event in graph_event_inputs:
+                hiddens: Optional[torch.Tensor] = None
+                results = self(
+                    textual_inputs["obs_mask"],
+                    textual_inputs["prev_action_mask"],
+                    graph_event["tgt_event_type_ids"],
+                    graph_event["tgt_event_src_ids"],
+                    graph_event["tgt_event_src_mask"],
+                    graph_event["tgt_event_dst_ids"],
+                    graph_event["tgt_event_dst_mask"],
+                    graph_event["tgt_event_edge_ids"],
+                    graph_event["tgt_event_label_ids"],
+                    graph_event["tgt_event_mask"],
+                    graph_event["tgt_event_timestamps"],
+                    graph_event["node_ids"],
+                    graph_event["edge_ids"],
+                    graph_event["edge_index"],
+                    graph_event["edge_timestamps"],
+                    decoder_hidden=hiddens,
+                    obs_word_ids=textual_inputs["obs_word_ids"],
+                    prev_action_word_ids=textual_inputs["prev_action_word_ids"],
+                    encoded_obs=encoded_obs,
+                    encoded_prev_action=encoded_prev_action,
+                )
 
-        # update the raw message
-        self.raw_msg["tgt_event_type_ids"] = batch["tgt_event_type_ids"]
-        self.raw_msg["tgt_event_src_ids"] = batch["tgt_event_src_ids"]
-        self.raw_msg["tgt_event_src_mask"] = batch["tgt_event_src_mask"]
-        self.raw_msg["tgt_event_dst_ids"] = batch["tgt_event_dst_ids"]
-        self.raw_msg["tgt_event_dst_mask"] = batch["tgt_event_dst_mask"]
-        self.raw_msg["tgt_event_edge_ids"] = batch["tgt_event_edge_ids"]
-        self.raw_msg["tgt_event_label_ids"] = batch["tgt_event_label_ids"]
-        self.raw_msg["tgt_event_mask"] = batch["tgt_event_mask"]
-        self.raw_msg["tgt_event_timestamps"] = batch["tgt_event_timestamps"]
-        self.raw_msg["node_ids"] = batch["node_ids"]
-        self.raw_msg["edge_ids"] = batch["edge_ids"]
-        self.raw_msg["edge_index"] = batch["edge_index"]
-        self.raw_msg["edge_timestamps"] = batch["edge_timestamps"]
+                # calculate losses
+                event_type_loss = torch.mean(
+                    self.criterion(
+                        results["event_type_logits"],
+                        graph_event["groundtruth_event_type_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_mask"]
+                )
+                src_loss = torch.mean(
+                    self.criterion(
+                        results["src_logits"],
+                        graph_event["groundtruth_event_src_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_src_mask"]
+                )
+                dst_loss = torch.mean(
+                    self.criterion(
+                        results["dst_logits"],
+                        graph_event["groundtruth_event_dst_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_dst_mask"]
+                )
+                label_loss = torch.mean(
+                    self.criterion(
+                        results["label_logits"],
+                        graph_event["groundtruth_event_label_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_mask"]
+                )
+                losses.append(event_type_loss + src_loss + dst_loss + label_loss)
 
-        # calculate losses
-        event_type_loss = self.criterion(
-            results["event_type_logits"], batch["groundtruth_event_type_ids"]
-        ).mean()
-        src_loss = torch.mean(
-            self.criterion(results["src_logits"], batch["groundtruth_event_src_ids"])
-            * batch["groundtruth_event_src_mask"]
-        )
-        dst_loss = torch.mean(
-            self.criterion(results["dst_logits"], batch["groundtruth_event_dst_ids"])
-            * batch["groundtruth_event_dst_mask"]
-        )
-        label_loss = torch.mean(
-            self.criterion(
-                results["label_logits"], batch["groundtruth_event_label_ids"]
-            )
-            * batch["groundtruth_event_mask"]
-        )
-        return event_type_loss + src_loss + dst_loss + label_loss
+                # update hiddens
+                hiddens = results["new_hidden"].detach()
+
+                # update encoded_obs and encoded_prev_action
+                if encoded_obs is None:
+                    encoded_obs = results["encoded_obs"].detach()
+                if encoded_prev_action is None:
+                    encoded_prev_action = results["encoded_prev_action"].detach()
+
+                # detach memory
+                self.tgn.memory.detach_()  # type: ignore
+
+        loss = torch.stack(losses).mean()
+        self.log("train_loss", loss, prog_bar=True)
+        assert hiddens is not None
+        return loss
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
-
-    def on_train_batch_end(self, *unused) -> None:
-        self.tgn.memory.detach_()  # type: ignore
 
     def on_epoch_start(self) -> None:
         self.tgn.reset()

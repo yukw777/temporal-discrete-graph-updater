@@ -23,12 +23,12 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 
 
 @pytest.mark.parametrize(
-    "prev_num_node,batch,obs_len,prev_action_len",
-    [(0, 1, 10, 5), (0, 8, 20, 10), (10, 8, 20, 10)],
+    "batch,num_node,obs_len,prev_action_len",
+    [(1, 0, 10, 5), (8, 0, 20, 10), (8, 10, 20, 10)],
 )
-def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
+def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
     delta_g = sldgu.f_delta(
-        torch.rand(prev_num_node, sldgu.hparams.hidden_dim),
+        torch.rand(batch, num_node, sldgu.hparams.hidden_dim),
         torch.rand(batch, obs_len, sldgu.hparams.hidden_dim),
         torch.randint(2, (batch, obs_len)).float(),
         torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim),
@@ -39,135 +39,101 @@ def test_sldgu_f_delta(sldgu, prev_num_node, batch, obs_len, prev_action_len):
 
 
 @pytest.mark.parametrize(
-    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len,"
-    "num_node",
+    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,"
+    "prev_graph_event_seq_len",
     [
-        (1, 10, 5, 0, 0, 7, 20),
-        (4, 12, 8, 6, 12, 10, 25),
-    ],
-)
-def test_sldgu_forward_training(
-    sldgu,
-    batch,
-    obs_len,
-    prev_action_len,
-    prev_num_node,
-    prev_num_edge,
-    graph_event_seq_len,
-    num_node,
-):
-    sldgu.train()
-    num_label = (
-        sldgu.seq2seq.graph_event_decoder.event_label_head.num_node_label
-        + sldgu.seq2seq.graph_event_decoder.event_label_head.num_edge_label
-    )
-    results = sldgu(
-        torch.randint(13, (batch, obs_len)),
-        torch.randint(2, (batch, obs_len)).float(),
-        torch.randint(13, (batch, prev_action_len)),
-        torch.randint(2, (batch, prev_action_len)).float(),
-        torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
-        torch.randint(prev_num_node, (graph_event_seq_len,))
-        if prev_num_node > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        torch.randint(2, (graph_event_seq_len,)).float(),
-        torch.randint(prev_num_node, (graph_event_seq_len,))
-        if prev_num_node > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        torch.randint(2, (graph_event_seq_len,)).float(),
-        torch.randint(prev_num_edge, (graph_event_seq_len,))
-        if prev_num_edge > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        torch.randint(num_label, (graph_event_seq_len,)),
-        torch.randint(2, (graph_event_seq_len,)).float(),
-        torch.randint(10, (graph_event_seq_len,)).float(),
-        torch.randint(prev_num_node, (prev_num_node,))
-        if prev_num_node > 0
-        else torch.zeros((prev_num_node,)).long(),
-        torch.randint(prev_num_edge, (prev_num_edge,))
-        if prev_num_edge > 0
-        else torch.zeros((prev_num_edge,)).long(),
-        torch.randint(prev_num_node, (2, prev_num_edge))
-        if prev_num_node > 0
-        else torch.zeros((prev_num_edge,)).long(),
-        torch.randint(10, (prev_num_edge,)),
-        node_ids=torch.randint(num_node, (num_node,)),
-        tgt_event_type_ids=torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
-        tgt_event_src_ids=torch.randint(prev_num_node, (graph_event_seq_len,))
-        if prev_num_node > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        tgt_event_src_mask=torch.randint(2, (graph_event_seq_len,)).float(),
-        tgt_event_dst_ids=torch.randint(prev_num_node, (graph_event_seq_len,))
-        if prev_num_node > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        tgt_event_dst_mask=torch.randint(2, (graph_event_seq_len,)).float(),
-        tgt_event_label_ids=torch.randint(num_label, (graph_event_seq_len,)),
-        tgt_event_mask=torch.randint(2, (graph_event_seq_len,)).float(),
-    )
-    assert results["event_type_logits"].size() == (
-        graph_event_seq_len,
-        len(EVENT_TYPES),
-    )
-    assert results["src_logits"].size() == (graph_event_seq_len, num_node)
-    assert results["dst_logits"].size() == (graph_event_seq_len, num_node)
-    assert results["label_logits"].size() == (graph_event_seq_len, num_label)
-
-
-@pytest.mark.parametrize(
-    "batch,obs_len,prev_action_len,prev_num_node,prev_num_edge,graph_event_seq_len",
-    [
-        (1, 10, 5, 0, 0, 7),
+        (1, 10, 5, 0, 0, 0),
+        (1, 10, 5, 7, 9, 1),
+        (1, 10, 5, 7, 9, 4),
+        (4, 12, 8, 6, 12, 1),
         (4, 12, 8, 6, 12, 10),
     ],
 )
-def test_sldgu_forward_eval(
+@pytest.mark.parametrize("encoded_textual_input", [True, False])
+@pytest.mark.parametrize("decoder_hidden", [True, False])
+def test_sldgu_forward(
     sldgu,
+    decoder_hidden,
+    encoded_textual_input,
     batch,
     obs_len,
     prev_action_len,
     prev_num_node,
     prev_num_edge,
-    graph_event_seq_len,
+    prev_graph_event_seq_len,
 ):
-    sldgu.eval()
     num_label = (
-        sldgu.seq2seq.graph_event_decoder.event_label_head.num_node_label
-        + sldgu.seq2seq.graph_event_decoder.event_label_head.num_edge_label
+        sldgu.decoder.graph_event_decoder.event_label_head.num_node_label
+        + sldgu.decoder.graph_event_decoder.event_label_head.num_edge_label
+    )
+    encoded_obs = (
+        torch.rand(batch, obs_len, sldgu.hparams.hidden_dim)
+        if encoded_textual_input
+        else None
+    )
+    encoded_prev_action = (
+        torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim)
+        if encoded_textual_input
+        else None
     )
     results = sldgu(
-        torch.randint(13, (batch, obs_len)),
         torch.randint(2, (batch, obs_len)).float(),
-        torch.randint(13, (batch, prev_action_len)),
         torch.randint(2, (batch, prev_action_len)).float(),
-        torch.randint(len(EVENT_TYPES), (graph_event_seq_len,)),
-        torch.randint(prev_num_node, (graph_event_seq_len,))
+        torch.randint(len(EVENT_TYPES), (batch, prev_graph_event_seq_len)),
+        torch.randint(prev_num_node, (batch, prev_graph_event_seq_len))
         if prev_num_node > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        torch.randint(2, (graph_event_seq_len,)).float(),
-        torch.randint(prev_num_node, (graph_event_seq_len,))
+        else torch.zeros(batch, 0).long(),
+        torch.randint(2, (batch, prev_graph_event_seq_len)).float(),
+        torch.randint(prev_num_node, (batch, prev_graph_event_seq_len))
         if prev_num_node > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        torch.randint(2, (graph_event_seq_len,)).float(),
-        torch.randint(prev_num_edge, (graph_event_seq_len,))
+        else torch.zeros(batch, 0).long(),
+        torch.randint(2, (batch, prev_graph_event_seq_len)).float(),
+        torch.randint(prev_num_edge, (batch, prev_graph_event_seq_len))
         if prev_num_edge > 0
-        else torch.zeros((graph_event_seq_len,)).long(),
-        torch.randint(num_label, (graph_event_seq_len,)),
-        torch.randint(2, (graph_event_seq_len,)).float(),
-        torch.randint(10, (graph_event_seq_len,)).float(),
-        torch.randint(prev_num_node, (prev_num_node,))
+        else torch.zeros(batch, 0).long(),
+        torch.randint(num_label, (batch, prev_graph_event_seq_len)),
+        torch.randint(2, (batch, prev_graph_event_seq_len)).float(),
+        torch.randint(10, (batch, prev_graph_event_seq_len)).float(),
+        torch.randint(prev_num_node, (batch, prev_num_node))
         if prev_num_node > 0
-        else torch.zeros((prev_num_node,)).long(),
-        torch.randint(prev_num_edge, (prev_num_edge,))
+        else torch.zeros(batch, 0).long(),
+        torch.randint(prev_num_edge, (batch, prev_num_edge))
         if prev_num_edge > 0
-        else torch.zeros((prev_num_edge,)).long(),
-        torch.randint(prev_num_node, (2, prev_num_edge))
+        else torch.zeros(batch, 0).long(),
+        torch.randint(prev_num_node, (batch, 2, prev_num_edge))
         if prev_num_node > 0
-        else torch.zeros((prev_num_edge,)).long(),
-        torch.randint(10, (prev_num_edge,)),
+        else torch.zeros(batch, 2, 0).long(),
+        torch.randint(10, (batch, prev_num_edge)),
+        decoder_hidden=torch.rand(batch, sldgu.hparams.hidden_dim)
+        if decoder_hidden
+        else None,
+        obs_word_ids=None
+        if encoded_textual_input
+        else torch.randint(len(sldgu.preprocessor.word_to_id_dict), (batch, obs_len)),
+        prev_action_word_ids=None
+        if encoded_textual_input
+        else torch.randint(
+            len(sldgu.preprocessor.word_to_id_dict), (batch, prev_action_len)
+        ),
+        encoded_obs=encoded_obs,
+        encoded_prev_action=encoded_prev_action,
     )
-    assert results["decoded_event_type_ids"].dtype == torch.long
-    (decoded_len,) = results["decoded_event_type_ids"].size()
-    assert decoded_len <= sldgu.hparams.max_decode_len + 1
-    assert results["decoded_src_ids"].size() == (decoded_len,)
-    assert results["decoded_dst_ids"].size() == (decoded_len,)
-    assert results["decoded_label_ids"].size() == (decoded_len,)
+    assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
+    assert results["src_logits"].size() == (batch, prev_num_node)
+    assert results["dst_logits"].size() == (batch, prev_num_node)
+    assert results["label_logits"].size() == (batch, num_label)
+    assert results["new_hidden"].size() == (batch, sldgu.hparams.hidden_dim)
+    if encoded_textual_input:
+        assert results["encoded_obs"].equal(encoded_obs)
+        assert results["encoded_prev_action"].equal(encoded_prev_action)
+    else:
+        assert results["encoded_obs"].size() == (
+            batch,
+            obs_len,
+            sldgu.hparams.hidden_dim,
+        )
+        assert results["encoded_prev_action"].size() == (
+            batch,
+            prev_action_len,
+            sldgu.hparams.hidden_dim,
+        )

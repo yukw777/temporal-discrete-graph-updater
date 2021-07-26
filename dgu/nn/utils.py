@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Any
 from tqdm import tqdm
 from pathlib import Path
+from torch.nn.utils.rnn import pad_sequence
 
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import SpacyPreprocessor
@@ -34,7 +35,7 @@ def compute_masks_from_event_type_ids(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute three masks from the given event type ids tensor.
-    1. event mask: masks out special events like start, end and pad
+    1. event mask: masks out pad event.
     2. source mask: masks out special events, as well as node-add
         as it is adding a new node.
     3. destination mask: masks out special events and node events
@@ -44,13 +45,8 @@ def compute_masks_from_event_type_ids(
 
     output: (event_mask, src_mask, dst_mask)
     """
-    is_special_event = torch.logical_or(
-        torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["pad"],
-            event_type_ids == EVENT_TYPE_ID_MAP["start"],
-        ),
-        event_type_ids == EVENT_TYPE_ID_MAP["end"],
-    )
+    # only mask out pad
+    is_pad_event = event_type_ids == EVENT_TYPE_ID_MAP["pad"]
     # (batch, event_seq_len)
     is_node_delete = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
     # (batch, event_seq_len)
@@ -60,7 +56,7 @@ def compute_masks_from_event_type_ids(
     )
     # (batch, event_seq_len)
 
-    event_mask = torch.logical_not(is_special_event).float()
+    event_mask = torch.logical_not(is_pad_event).float()
     # (batch, event_seq_len)
     src_mask = torch.logical_or(is_node_delete, is_edge_event).float()
     # (batch, event_seq_len)
@@ -105,3 +101,36 @@ def load_fasttext(
 
 def find_indices(haystack: torch.Tensor, needle: torch.Tensor) -> torch.Tensor:
     return (haystack.unsqueeze(-1) == needle).transpose(0, 1).nonzero(as_tuple=True)[1]
+
+
+def pad_batch_seq_of_seq(
+    batch_seq_of_seq: List[List[List[Any]]],
+    max_len_outer: int,
+    max_len_inner: int,
+    outer_padding_value: Any,
+    inner_padding_value: Any,
+) -> torch.Tensor:
+    """
+    batch_seq_of_seq: unpadded batch of sequence of sequences
+    max_len_outer: max length of the outer sequence
+    max_len_inner: max length of the inner sequence
+    outer_padding_value: value to pad the outer sequence
+    inner_padding_value: value to pad the inner sequence
+
+    output: padded batch of sequence of sequences
+    """
+    return torch.stack(
+        [
+            pad_sequence(
+                [
+                    torch.tensor(seq)
+                    for seq in seq_of_seq
+                    + [[outer_padding_value] * max_len_inner]
+                    * (max_len_outer - len(seq_of_seq))
+                ],
+                batch_first=True,
+                padding_value=inner_padding_value,
+            )
+            for seq_of_seq in batch_seq_of_seq
+        ]
+    )

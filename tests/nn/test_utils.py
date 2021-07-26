@@ -10,6 +10,7 @@ from dgu.nn.utils import (
     compute_masks_from_event_type_ids,
     load_fasttext,
     find_indices,
+    pad_batch_seq_of_seq,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -69,7 +70,7 @@ def test_masked_softmax():
                     ]
                 ]
             ),
-            torch.zeros(1, 3),
+            torch.tensor([[1.0, 1.0, 0.0]]),
             torch.zeros(1, 3),
             torch.zeros(1, 3),
         ),
@@ -111,7 +112,7 @@ def test_masked_softmax():
                     ]
                 ]
             ),
-            torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0]]),
+            torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]),
         ),
@@ -134,7 +135,7 @@ def test_masked_softmax():
                     ],
                 ]
             ),
-            torch.tensor([[0.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 0.0]]),
+            torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 1.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0, 0.0]]),
             torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0], [0.0, 1.0, 1.0, 0.0, 0.0]]),
         ),
@@ -202,3 +203,108 @@ def test_load_fasttext(tmpdir):
 )
 def test_find_indices(haystack, needle, expected):
     assert find_indices(haystack, needle).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "batch_seq_of_seq,max_len_outer,max_len_inner,outer_padding_value,"
+    "inner_padding_value,expected",
+    [
+        (
+            [[[0, 1], [1, 2]], [[3, 4, 5], [6, 7, 8, 9], [10, 11]]],
+            3,
+            4,
+            0,
+            0,
+            torch.tensor(
+                [
+                    [[0, 1, 0, 0], [1, 2, 0, 0], [0, 0, 0, 0]],
+                    [[3, 4, 5, 0], [6, 7, 8, 9], [10, 11, 0, 0]],
+                ]
+            ),
+        ),
+        (
+            [[[0, 1], [1, 2]], [[3, 4, 5], [6, 7, 8, 9], [10, 11]]],
+            3,
+            4,
+            -1,
+            -2,
+            torch.tensor(
+                [
+                    [[0, 1, -2, -2], [1, 2, -2, -2], [-1, -1, -1, -1]],
+                    [[3, 4, 5, -2], [6, 7, 8, 9], [10, 11, -2, -2]],
+                ]
+            ),
+        ),
+        (
+            [
+                [[(0, 1)], [(2, 3), (4, 5)]],
+                [
+                    [(6, 7), (8, 9)],
+                    [(10, 11), (12, 13), (13, 14)],
+                    [(15, 16), (0, 1), (0, 2), (0, 3)],
+                ],
+            ],
+            3,
+            4,
+            (0, 0),
+            0,
+            torch.tensor(
+                [
+                    [
+                        [[0, 1], [0, 0], [0, 0], [0, 0]],
+                        [[2, 3], [4, 5], [0, 0], [0, 0]],
+                        [[0, 0], [0, 0], [0, 0], [0, 0]],
+                    ],
+                    [
+                        [[6, 7], [8, 9], [0, 0], [0, 0]],
+                        [[10, 11], [12, 13], [13, 14], [0, 0]],
+                        [[15, 16], [0, 1], [0, 2], [0, 3]],
+                    ],
+                ]
+            ),
+        ),
+        (
+            [
+                [[(0, 1)], [(2, 3), (4, 5)]],
+                [
+                    [(6, 7), (8, 9)],
+                    [(10, 11), (12, 13), (13, 14)],
+                    [(15, 16), (0, 1), (0, 2), (0, 3)],
+                ],
+            ],
+            3,
+            4,
+            (-1, -1),
+            -2,
+            torch.tensor(
+                [
+                    [
+                        [[0, 1], [-2, -2], [-2, -2], [-2, -2]],
+                        [[2, 3], [4, 5], [-2, -2], [-2, -2]],
+                        [[-1, -1], [-1, -1], [-1, -1], [-1, -1]],
+                    ],
+                    [
+                        [[6, 7], [8, 9], [-2, -2], [-2, -2]],
+                        [[10, 11], [12, 13], [13, 14], [-2, -2]],
+                        [[15, 16], [0, 1], [0, 2], [0, 3]],
+                    ],
+                ]
+            ),
+        ),
+    ],
+)
+def test_pad_batch_seq_of_seq(
+    batch_seq_of_seq,
+    max_len_outer,
+    max_len_inner,
+    outer_padding_value,
+    inner_padding_value,
+    expected,
+):
+    assert pad_batch_seq_of_seq(
+        batch_seq_of_seq,
+        max_len_outer,
+        max_len_inner,
+        outer_padding_value,
+        inner_padding_value,
+    ).equal(expected)
