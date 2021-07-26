@@ -500,10 +500,49 @@ class TWCmdGenTemporalDataCollator:
                     event_seq_edge_ids[i].append([0])
                     event_seq_edge_index[i].append([(0, 0)])
                     event_seq_edge_timestamps[i].append([0.0])
+                    if i == 0:
+                        event_seq_node_ids[-1].append([0])
+                        event_seq_edge_ids[-1].append([0])
+                        event_seq_edge_index[-1].append([(0, 0)])
+                        event_seq_edge_timestamps[-1].append([0.0])
                     continue
                 game = step["game"]
                 walkthrough_step = step["walkthrough_step"]
                 event = step["event_seq"][i]
+                if i == 0:
+                    # add the previous subgraph node/edge IDs
+                    # this is to support the initial event generation.
+                    node_id_map, edge_id_map = self.allocated_global_worker_id_map[
+                        (game, walkthrough_step)
+                    ]
+                    event_seq_node_ids[-1].append(
+                        [
+                            node_id_map[nid]
+                            for nid in sorted(
+                                self.global_node_ids[(game, walkthrough_step)]
+                            )
+                        ]
+                    )
+                    edge_id_list: List[int] = []
+                    edge_index_list: List[Tuple[int, int]] = []
+                    for edge_id, edge_index in self.global_edges[
+                        (game, walkthrough_step)
+                    ].items():
+                        edge_id_list.append(edge_id)
+                        edge_index_list.append(edge_index)
+                    event_seq_edge_ids[-1].append(
+                        [edge_id_map[eid] for eid in edge_id_list]
+                    )
+                    event_seq_edge_index[-1].append(
+                        [
+                            (node_id_map[src], node_id_map[dst])
+                            for src, dst in edge_index_list
+                        ]
+                    )
+                    event_seq_edge_timestamps[-1].append(
+                        [float(event["timestamp"])] * len(edge_id_list)
+                    )
+
                 # update the graph with the graph events in the batch
                 self.update_subgraph(game, walkthrough_step, event)
 
@@ -526,8 +565,8 @@ class TWCmdGenTemporalDataCollator:
                     node_id: i for i, node_id in enumerate(event_node_ids)
                 }
 
-                edge_id_list: List[int] = []
-                edge_index_list: List[Tuple[int, int]] = []
+                edge_id_list = []
+                edge_index_list = []
                 for edge_id, edge_index in self.global_edges[
                     (game, walkthrough_step)
                 ].items():
@@ -589,39 +628,27 @@ class TWCmdGenTemporalDataCollator:
         )
 
         node_ids: List[torch.Tensor] = [
-            # padding for the start event
-            torch.zeros(len(batch_step), 1, dtype=torch.long)
-        ] + [
             pad_sequence(
                 [torch.tensor(step_nids) for step_nids in event_seq_node_ids[i]],
                 batch_first=True,
             )
-            for i in range(max_event_seq_len)
+            for i in range(-1, max_event_seq_len)
         ]
         edge_ids: List[torch.Tensor] = [
-            # padding for the start event
-            torch.zeros(len(batch_step), 1, dtype=torch.long)
-        ] + [
             pad_sequence(
                 [torch.tensor(step_eids) for step_eids in event_seq_edge_ids[i]],
                 batch_first=True,
             )
-            for i in range(max_event_seq_len)
+            for i in range(-1, max_event_seq_len)
         ]
         edge_index_tensor: List[torch.Tensor] = [
-            # padding for the start event
-            torch.zeros(len(batch_step), 2, 1, dtype=torch.long)
-        ] + [
             pad_sequence(
                 [torch.tensor(step_eindex) for step_eindex in event_seq_edge_index[i]],
                 batch_first=True,
             ).transpose(1, 2)
-            for i in range(max_event_seq_len)
+            for i in range(-1, max_event_seq_len)
         ]
         edge_timestamps: List[torch.Tensor] = [
-            # padding for the start event
-            torch.zeros(len(batch_step), 1)
-        ] + [
             pad_sequence(
                 [
                     torch.tensor(step_ets)
@@ -631,7 +658,7 @@ class TWCmdGenTemporalDataCollator:
                 ],
                 batch_first=True,
             )
-            for i in range(max_event_seq_len)
+            for i in range(-1, max_event_seq_len)
         ]
         return {
             "node_ids": node_ids,

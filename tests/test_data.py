@@ -379,7 +379,7 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     torch.tensor([[[0, 1], [0, 2]]]),
                 ],
                 "edge_timestamps": [
-                    torch.tensor([[0.0]]),
+                    torch.tensor([[2.0]]),
                     torch.tensor([[2.0]]),
                     torch.tensor([[2.0]]),
                     torch.tensor([[2.0, 2.0]]),
@@ -442,7 +442,7 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     torch.tensor([[[0, 6], [0, 7]]]),
                 ],
                 "edge_timestamps": [
-                    torch.tensor([[0.0]]),
+                    torch.tensor([[2.0]]),
                     torch.tensor([[2.0]]),
                     torch.tensor([[2.0]]),
                     torch.tensor([[2.0, 2.0]]),
@@ -499,6 +499,12 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                             "timestamp": 2,
                             "label": "n1",
                         },
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 1,
+                    "event_seq": [
                         {
                             "type": "edge-add",
                             "edge_id": 2,
@@ -533,82 +539,121 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
             ],
             {
                 "node_ids": [
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0, 1], [0, 3], [0, 0]]),
-                    torch.tensor([[0, 1, 2], [0, 3, 4], [0, 0, 0]]),
-                    torch.tensor([[0, 1, 2], [0, 3, 4], [0, 0, 0]]),
-                    torch.tensor([[0, 0, 0], [0, 3, 4], [0, 0, 0]]),
-                    torch.tensor([[0, 0, 0], [0, 3, 4], [0, 0, 0]]),
-                    torch.tensor([[0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 1, 0], [0, 3, 0], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 1, 2], [0, 3, 4], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 1, 2], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
                 ],
                 "edge_ids": [
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0, 1], [0, 2], [0, 0]]),
-                    torch.tensor([[0, 0], [0, 2], [0, 0]]),
-                    torch.tensor([[0, 0], [0, 2], [0, 0]]),
-                    torch.tensor([[0, 0], [0, 2], [0, 0]]),
+                    torch.tensor([[0], [0], [0], [0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 2], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 2], [0, 0]]),
+                    torch.tensor([[0, 1], [0, 0], [0, 2], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 2], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 2], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 2], [0, 0]]),
                 ],
                 "edge_index": [
-                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]]]),
-                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]]]),
-                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]]]),
+                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]], [[0], [0]]]),
                     torch.tensor(
-                        [[[0, 1], [0, 2]], [[0, 3], [0, 4]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 3], [0, 4]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                     torch.tensor(
-                        [[[0, 0], [0, 0]], [[0, 3], [0, 4]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 3], [0, 4]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                     torch.tensor(
-                        [[[0, 0], [0, 0]], [[0, 3], [0, 4]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 1], [0, 2]],
+                            [[0, 0], [0, 0]],
+                            [[0, 3], [0, 4]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                     torch.tensor(
-                        [[[0, 0], [0, 0]], [[0, 3], [0, 4]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 3], [0, 4]],
+                            [[0, 0], [0, 0]],
+                        ]
+                    ),
+                    torch.tensor(
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 3], [0, 4]],
+                            [[0, 0], [0, 0]],
+                        ]
+                    ),
+                    torch.tensor(
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 3], [0, 4]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                 ],
                 "edge_timestamps": [
-                    torch.tensor([[0.0], [0.0], [0.0]]),
-                    torch.tensor([[1.0], [2.0], [0.0]]),
-                    torch.tensor([[1.0], [2.0], [0.0]]),
-                    torch.tensor([[1.0, 1.0], [2.0, 2.0], [0.0, 0.0]]),
-                    torch.tensor([[0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
-                    torch.tensor([[0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
-                    torch.tensor([[0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[1.0], [2.0], [2.0], [0.0]]),
+                    torch.tensor([[1.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[1.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[1.0, 1.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[0.0, 0.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[0.0, 0.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[0.0, 0.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
                 ],
                 "tgt_event_src_ids": torch.tensor(
                     [
-                        [0, 1, 2, 1, 0, 0, 0],
-                        [0, 3, 4, 3, 3, 3, 4],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 1, 2, 1, 0],
+                        [0, 3, 4, 0, 0],
+                        [0, 3, 3, 3, 4],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "tgt_event_dst_ids": torch.tensor(
                     [
-                        [0, 0, 0, 2, 0, 0, 0],
-                        [0, 0, 0, 4, 4, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 2, 0],
+                        [0, 0, 0, 0, 0],
+                        [0, 4, 4, 0, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "tgt_event_edge_ids": torch.tensor(
                     [
-                        [0, 0, 0, 1, 0, 0, 0],
-                        [0, 0, 0, 2, 2, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 1, 0],
+                        [0, 0, 0, 0, 0],
+                        [0, 2, 2, 0, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "groundtruth_event_src_ids": torch.tensor(
                     [
-                        [0, 0, 1, 0, 0, 0, 0],
-                        [0, 0, 1, 1, 1, 2, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 1, 0, 0],
+                        [0, 0, 0, 0, 0],
+                        [1, 1, 1, 2, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "groundtruth_event_dst_ids": torch.tensor(
                     [
-                        [0, 0, 2, 0, 0, 0, 0],
-                        [0, 0, 2, 2, 0, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 2, 0, 0],
+                        [0, 0, 0, 0, 0],
+                        [2, 2, 0, 0, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
             },
@@ -658,6 +703,12 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                             "timestamp": 2,
                             "label": "n1",
                         },
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 1,
+                    "event_seq": [
                         {
                             "type": "edge-add",
                             "edge_id": 2,
@@ -692,82 +743,121 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
             ],
             {
                 "node_ids": [
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0, 6], [0, 8], [0, 0]]),
-                    torch.tensor([[0, 6, 7], [0, 8, 9], [0, 0, 0]]),
-                    torch.tensor([[0, 6, 7], [0, 8, 9], [0, 0, 0]]),
-                    torch.tensor([[0, 0, 0], [0, 8, 9], [0, 0, 0]]),
-                    torch.tensor([[0, 0, 0], [0, 8, 9], [0, 0, 0]]),
-                    torch.tensor([[0, 0, 0], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 6, 0], [0, 8, 0], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 6, 7], [0, 8, 9], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 6, 7], [0, 0, 0], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 8, 9], [0, 0, 0]]),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 8, 9], [0, 0, 0]]),
                 ],
                 "edge_ids": [
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0], [0], [0]]),
-                    torch.tensor([[0, 6], [0, 7], [0, 0]]),
-                    torch.tensor([[0, 0], [0, 7], [0, 0]]),
-                    torch.tensor([[0, 0], [0, 7], [0, 0]]),
-                    torch.tensor([[0, 0], [0, 7], [0, 0]]),
+                    torch.tensor([[0], [0], [0], [0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 7], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 7], [0, 0]]),
+                    torch.tensor([[0, 6], [0, 0], [0, 7], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 7], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 7], [0, 0]]),
+                    torch.tensor([[0, 0], [0, 0], [0, 7], [0, 0]]),
                 ],
                 "edge_index": [
-                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]]]),
-                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]]]),
-                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]]]),
+                    torch.tensor([[[0], [0]], [[0], [0]], [[0], [0]], [[0], [0]]]),
                     torch.tensor(
-                        [[[0, 6], [0, 7]], [[0, 8], [0, 9]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 8], [0, 9]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                     torch.tensor(
-                        [[[0, 0], [0, 0]], [[0, 8], [0, 9]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 8], [0, 9]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                     torch.tensor(
-                        [[[0, 0], [0, 0]], [[0, 8], [0, 9]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 6], [0, 7]],
+                            [[0, 0], [0, 0]],
+                            [[0, 8], [0, 9]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                     torch.tensor(
-                        [[[0, 0], [0, 0]], [[0, 8], [0, 9]], [[0, 0], [0, 0]]]
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 8], [0, 9]],
+                            [[0, 0], [0, 0]],
+                        ]
+                    ),
+                    torch.tensor(
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 8], [0, 9]],
+                            [[0, 0], [0, 0]],
+                        ]
+                    ),
+                    torch.tensor(
+                        [
+                            [[0, 0], [0, 0]],
+                            [[0, 0], [0, 0]],
+                            [[0, 8], [0, 9]],
+                            [[0, 0], [0, 0]],
+                        ]
                     ),
                 ],
                 "edge_timestamps": [
-                    torch.tensor([[0.0], [0.0], [0.0]]),
-                    torch.tensor([[1.0], [2.0], [0.0]]),
-                    torch.tensor([[1.0], [2.0], [0.0]]),
-                    torch.tensor([[1.0, 1.0], [2.0, 2.0], [0.0, 0.0]]),
-                    torch.tensor([[0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
-                    torch.tensor([[0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
-                    torch.tensor([[0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[1.0], [2.0], [2.0], [0.0]]),
+                    torch.tensor([[1.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[1.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[1.0, 1.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[0.0, 0.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[0.0, 0.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
+                    torch.tensor([[0.0, 0.0], [0.0, 0.0], [2.0, 2.0], [0.0, 0.0]]),
                 ],
                 "tgt_event_src_ids": torch.tensor(
                     [
-                        [0, 6, 7, 6, 0, 0, 0],
-                        [0, 8, 9, 8, 8, 8, 9],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 6, 7, 6, 0],
+                        [0, 8, 9, 0, 0],
+                        [0, 8, 8, 8, 9],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "tgt_event_dst_ids": torch.tensor(
                     [
-                        [0, 0, 0, 7, 0, 0, 0],
-                        [0, 0, 0, 9, 9, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 7, 0],
+                        [0, 0, 0, 0, 0],
+                        [0, 9, 9, 0, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "tgt_event_edge_ids": torch.tensor(
                     [
-                        [0, 0, 0, 6, 0, 0, 0],
-                        [0, 0, 0, 7, 7, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 6, 0],
+                        [0, 0, 0, 0, 0],
+                        [0, 7, 7, 0, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "groundtruth_event_src_ids": torch.tensor(
                     [
-                        [0, 0, 1, 0, 0, 0, 0],
-                        [0, 0, 1, 1, 1, 2, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 1, 0, 0],
+                        [0, 0, 0, 0, 0],
+                        [1, 1, 1, 2, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
                 "groundtruth_event_dst_ids": torch.tensor(
                     [
-                        [0, 0, 2, 0, 0, 0, 0],
-                        [0, 0, 2, 2, 0, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 2, 0, 0],
+                        [0, 0, 0, 0, 0],
+                        [2, 2, 0, 0, 0],
+                        [0, 0, 0, 0, 0],
                     ]
                 ),
             },
@@ -1215,7 +1305,7 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                             "node_ids": torch.tensor([[0]]),
                             "edge_ids": torch.tensor([[0]]),
                             "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[0.0]]),
+                            "edge_timestamps": torch.tensor([[2.0]]),
                             "tgt_event_timestamps": torch.tensor([[0.0]]),
                             "tgt_event_mask": torch.tensor([[1.0]]),
                             "tgt_event_type_ids": torch.tensor([[1]]),
@@ -1354,7 +1444,7 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                             "node_ids": torch.tensor([[0]]),
                             "edge_ids": torch.tensor([[0]]),
                             "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[0.0]]),
+                            "edge_timestamps": torch.tensor([[2.0]]),
                             "tgt_event_timestamps": torch.tensor([[0.0]]),
                             "tgt_event_mask": torch.tensor([[1.0]]),
                             "tgt_event_type_ids": torch.tensor([[1]]),
@@ -1557,7 +1647,7 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                             "node_ids": torch.tensor([[0], [0]]),
                             "edge_ids": torch.tensor([[0], [0]]),
                             "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[0.0], [0.0]]),
+                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
                             "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
                             "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
                             "tgt_event_type_ids": torch.tensor([[1], [1]]),
@@ -1668,10 +1758,12 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                     },
                     [
                         {
-                            "node_ids": torch.tensor([[0], [0]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[0.0], [0.0]]),
+                            "node_ids": torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                            "edge_ids": torch.tensor([[0, 1], [0, 0]]),
+                            "edge_index": torch.tensor(
+                                [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                            ),
+                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
                             "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
                             "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
                             "tgt_event_type_ids": torch.tensor([[1], [1]]),
@@ -1880,7 +1972,7 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                             "node_ids": torch.tensor([[0], [0]]),
                             "edge_ids": torch.tensor([[0], [0]]),
                             "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[0.0], [0.0]]),
+                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
                             "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
                             "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
                             "tgt_event_type_ids": torch.tensor([[1], [1]]),
@@ -1991,10 +2083,12 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                     },
                     [
                         {
-                            "node_ids": torch.tensor([[0], [0]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[0.0], [0.0]]),
+                            "node_ids": torch.tensor([[0, 6, 7], [0, 0, 0]]),
+                            "edge_ids": torch.tensor([[0, 6], [0, 0]]),
+                            "edge_index": torch.tensor(
+                                [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                            ),
+                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
                             "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
                             "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
                             "tgt_event_type_ids": torch.tensor([[1], [1]]),
