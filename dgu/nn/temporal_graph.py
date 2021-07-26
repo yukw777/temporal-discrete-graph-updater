@@ -119,7 +119,6 @@ class TemporalGraphNetwork(nn.Module):
             dst_ids,
             dst_mask,
             event_embeddings,
-            event_mask,
             event_edge_ids,
             event_timestamps,
         )
@@ -253,7 +252,6 @@ class TemporalGraphNetwork(nn.Module):
         dst_ids: torch.Tensor,
         dst_mask: torch.Tensor,
         event_embeddings: torch.Tensor,
-        event_mask: torch.Tensor,
         event_edge_ids: torch.Tensor,
         event_timestamps: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -270,7 +268,6 @@ class TemporalGraphNetwork(nn.Module):
         dst_ids: (batch, event_seq_len)
         dst_mask: (batch, event_seq_len)
         event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        event_mask: (batch, event_seq_len)
         event_edge_ids: (batch, event_seq_len)
         event_timestamps: (batch, event_seq_len)
 
@@ -308,15 +305,26 @@ class TemporalGraphNetwork(nn.Module):
         # only select node events from event_timestamps
         # and only select edge events from rel_edge_timestamps (use dst_mask)
         # then add them and pass it through the time encoder to get the embeddings
-        # finally, mask out timestamp embeddings for special events (use event_mask).
+        # finally, mask out timestamp embeddings for special events
         is_node_event = torch.logical_or(
             event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
             event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
         )
+        is_not_special_event = torch.logical_not(
+            torch.logical_or(
+                torch.logical_or(
+                    event_type_ids == EVENT_TYPE_ID_MAP["pad"],
+                    event_type_ids == EVENT_TYPE_ID_MAP["start"],
+                ),
+                event_type_ids == EVENT_TYPE_ID_MAP["end"],
+            )
+        )
         # (batch, event_seq_len)
         timestamp_emb = self.time_encoder(
             event_timestamps * is_node_event + rel_edge_timestamps * dst_mask
-        ).view(event_timestamps.size(0), -1, self.time_enc_dim) * event_mask.unsqueeze(
+        ).view(
+            event_timestamps.size(0), -1, self.time_enc_dim
+        ) * is_not_special_event.unsqueeze(
             -1
         )
         # (batch, event_seq_len, time_enc_dim)
@@ -333,7 +341,7 @@ class TemporalGraphNetwork(nn.Module):
                 ],
                 dim=-1,
             )
-            * event_mask.unsqueeze(-1)
+            * is_not_special_event.unsqueeze(-1)
         )
         # (
         #   batch,

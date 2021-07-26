@@ -233,7 +233,7 @@ def test_tgn_message(
         torch.tensor(list(range(len(EVENT_TYPES)))).unsqueeze(-1).expand(-1, 4).float()
     )
 
-    event_mask, src_mask, dst_mask = compute_masks_from_event_type_ids(event_type_ids)
+    _, src_mask, dst_mask = compute_masks_from_event_type_ids(event_type_ids)
     src_messages, dst_messages = tgn.message(
         event_type_ids,
         src_ids,
@@ -241,7 +241,6 @@ def test_tgn_message(
         dst_ids,
         dst_mask,
         event_embeddings,
-        event_mask,
         event_edge_ids,
         event_timestamps,
     )
