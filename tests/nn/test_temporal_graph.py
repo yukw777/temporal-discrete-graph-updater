@@ -616,3 +616,38 @@ def test_tgn_forward(
         ).size()
         == (batch, num_node, output_dim)
     )
+
+
+@pytest.mark.parametrize(
+    "edge_index,node_ids,expected",
+    [
+        (
+            torch.tensor([[[0], [0]]]),
+            torch.tensor([[0]]),
+            torch.tensor([[[0], [0]]]),
+        ),
+        (
+            torch.tensor([[[0, 1], [0, 2]]]),
+            torch.tensor([[0, 1, 2]]),
+            torch.tensor([[[0, 1], [0, 2]]]),
+        ),
+        (
+            torch.tensor([[[0, 1], [0, 2]]]),
+            torch.tensor([[0, 2, 1]]),
+            torch.tensor([[[0, 2], [0, 1]]]),
+        ),
+        (
+            torch.tensor(
+                [[[0, 5, 7, 5], [0, 9, 10, 4]], [[0, 8, 3, 8], [0, 6, 13, 12]]]
+            ),
+            torch.tensor([[0, 4, 5, 7, 9, 10], [0, 3, 6, 8, 12, 13]]),
+            torch.tensor(
+                [[[0, 2, 3, 2], [0, 4, 5, 1]], [[0, 9, 7, 9], [0, 8, 11, 10]]]
+            ),
+        ),
+    ],
+)
+def test_localize_edge_index(edge_index, node_ids, expected):
+    assert TemporalGraphNetwork.localize_edge_index(edge_index, node_ids).equal(
+        expected
+    )

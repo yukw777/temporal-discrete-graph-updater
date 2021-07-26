@@ -171,18 +171,20 @@ class TemporalGraphNetwork(nn.Module):
                 rel_t.size(0), -1, self.time_enc_dim
             )
             # (batch, num_edge, time_enc_dim)
-            flat_node_ids = node_ids.flatten()
-            # (batch * num_node)
             node_embeddings = self.gnn(
                 torch.cat(
                     [
-                        self.node_features[flat_node_ids],  # type: ignore
-                        self.memory[flat_node_ids],  # type: ignore
+                        self.node_features[node_ids],  # type: ignore
+                        # (batch, num_node)
+                        self.memory[node_ids],  # type: ignore
+                        # (batch, num_node)
                     ],
                     dim=-1,
-                ),
+                ).flatten(end_dim=1),
                 # (batch * num_node, event_embedding_dim + memory_dim)
-                edge_index.transpose(0, 1).flatten(start_dim=1),
+                self.localize_edge_index(edge_index, node_ids)
+                .transpose(0, 1)
+                .flatten(start_dim=1),
                 # (2, batch * num_node)
                 torch.cat(
                     [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
@@ -206,6 +208,42 @@ class TemporalGraphNetwork(nn.Module):
 
         return node_embeddings.view(node_ids.size(0), -1, self.output_dim)
         # (batch, num_node, output_dim)
+
+    @staticmethod
+    def localize_edge_index(
+        edge_index: torch.Tensor, node_ids: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Translate edge_index into indices based on the local node_ids.
+
+        edge_index: (batch, 2, num_edge)
+        node_ids: (batch, num_node)
+
+        output: (batch, 2, num_edge)
+        """
+        flat_node_ids = node_ids.flatten()
+        # (batch * num_node)
+        flat_edge_index = edge_index.flatten()
+        # (batch * 2 * num_edge)
+        matches = flat_node_ids.unsqueeze(-1) == flat_edge_index
+        # (batch * num_node, batch * 2 * num_edge)
+
+        # now find the index for the first True (or nonzero) element from (flat) matches
+        # by looking for an element that is nonzero and the cumulative sum of the
+        # matches is 1.
+        # this means that if there are overlaps in the elements in the batch
+        # (e.g. node 0 for padding), the index of the first occurrence would be used.
+        # this is OK as the only overlap should be the pdding node 0.
+        nonzero = matches > 0
+        # (batch * num_node, batch * 2 * num_edge)
+        nonzero_and_cumsum_zero = (nonzero.cumsum(0) == 1) & nonzero
+        # (batch * num_node, batch * 2 * num_edge)
+        # find indices of True by taking the max
+        _, indices = torch.max(nonzero_and_cumsum_zero, dim=0)
+        # (batch * 2 * num_edge)
+
+        return indices.view_as(edge_index)
+        # (batch, 2, num_edge)
 
     def message(
         self,
