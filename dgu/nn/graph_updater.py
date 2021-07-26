@@ -155,7 +155,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             edge_label_embeddings,
         )
         self.decoder = RNNGraphEventDecoder(4 * hidden_dim, hidden_dim, event_decoder)
-        self.label_embeddings = event_decoder.event_label_head.label_embeddings
 
         self.criterion = nn.CrossEntropyLoss(reduction="none")
 
@@ -233,6 +232,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         assert encoded_obs is not None
         assert encoded_prev_action is not None
 
+        label_embeddings = (
+            self.decoder.graph_event_decoder.event_label_head.label_embeddings
+        )
         prev_node_embeddings = self.tgn(
             prev_event_type_ids,
             prev_event_src_ids,
@@ -240,7 +242,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_event_dst_ids,
             prev_event_dst_mask,
             prev_event_edge_ids,
-            self.label_embeddings[prev_event_label_ids],  # type: ignore
+            label_embeddings[prev_event_label_ids],  # type: ignore
             prev_event_mask,
             prev_event_timestamps,
             prev_node_ids,
