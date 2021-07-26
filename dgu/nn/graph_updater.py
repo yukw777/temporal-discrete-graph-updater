@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
@@ -16,7 +16,6 @@ from dgu.nn.graph_event_decoder import (
 )
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
-from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -157,26 +156,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         self.decoder = RNNGraphEventDecoder(4 * hidden_dim, hidden_dim, event_decoder)
         self.label_embeddings = event_decoder.event_label_head.label_embeddings
-
-        # raw message storage for training
-        # initialize with an empty subgraph and [start, end] graph events.
-        self.raw_msg = {
-            "node_ids": torch.zeros(0, dtype=torch.long),
-            "edge_ids": torch.zeros(0, dtype=torch.long),
-            "edge_index": torch.zeros(2, 0, dtype=torch.long),
-            "edge_timestamps": torch.zeros(0),
-            "tgt_event_timestamps": torch.zeros(2),
-            "tgt_event_mask": torch.zeros(2),
-            "tgt_event_type_ids": torch.tensor(
-                [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["end"]]
-            ),
-            "tgt_event_src_ids": torch.zeros(2, dtype=torch.long),
-            "tgt_event_src_mask": torch.zeros(2),
-            "tgt_event_dst_ids": torch.zeros(2, dtype=torch.long),
-            "tgt_event_dst_mask": torch.zeros(2),
-            "tgt_event_edge_ids": torch.zeros(2, dtype=torch.long),
-            "tgt_event_label_ids": torch.zeros(2, dtype=torch.long),
-        }
 
         self.criterion = nn.CrossEntropyLoss(reduction="none")
 
@@ -358,76 +337,89 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
     def training_step(  # type: ignore
-        self, batch: Dict[str, torch.Tensor], batch_idx: int
+        self,
+        batch: List[Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]],
+        batch_idx: int,
     ) -> torch.Tensor:
-        results = self(
-            batch["obs_word_ids"],
-            batch["obs_mask"],
-            batch["prev_action_word_ids"],
-            batch["prev_action_mask"],
-            self.raw_msg["tgt_event_type_ids"].to(self.device),
-            self.raw_msg["tgt_event_src_ids"].to(self.device),
-            self.raw_msg["tgt_event_src_mask"].to(self.device),
-            self.raw_msg["tgt_event_dst_ids"].to(self.device),
-            self.raw_msg["tgt_event_dst_mask"].to(self.device),
-            self.raw_msg["tgt_event_edge_ids"].to(self.device),
-            self.raw_msg["tgt_event_label_ids"].to(self.device),
-            self.raw_msg["tgt_event_mask"].to(self.device),
-            self.raw_msg["tgt_event_timestamps"].to(self.device),
-            self.raw_msg["node_ids"].to(self.device),
-            self.raw_msg["edge_ids"].to(self.device),
-            self.raw_msg["edge_index"].to(self.device),
-            self.raw_msg["edge_timestamps"].to(self.device),
-            batch["node_ids"],
-            tgt_event_type_ids=batch["tgt_event_type_ids"],
-            tgt_event_src_ids=batch["tgt_event_src_ids"],
-            tgt_event_src_mask=batch["tgt_event_src_mask"],
-            tgt_event_dst_ids=batch["tgt_event_dst_ids"],
-            tgt_event_dst_mask=batch["tgt_event_dst_mask"],
-            tgt_event_label_ids=batch["tgt_event_label_ids"],
-            tgt_event_mask=batch["tgt_event_mask"],
-        )
+        losses: List[torch.Tensor] = []
+        for textual_inputs, graph_event_inputs in batch:
+            encoded_obs: Optional[torch.Tensor] = None
+            encoded_prev_action: Optional[torch.Tensor] = None
+            for graph_event in graph_event_inputs:
+                hiddens: Optional[torch.Tensor] = None
+                results = self(
+                    textual_inputs["obs_mask"],
+                    textual_inputs["prev_action_mask"],
+                    graph_event["tgt_event_type_ids"],
+                    graph_event["tgt_event_src_ids"],
+                    graph_event["tgt_event_src_mask"],
+                    graph_event["tgt_event_dst_ids"],
+                    graph_event["tgt_event_dst_mask"],
+                    graph_event["tgt_event_edge_ids"],
+                    graph_event["tgt_event_label_ids"],
+                    graph_event["tgt_event_mask"],
+                    graph_event["tgt_event_timestamps"],
+                    graph_event["node_ids"],
+                    graph_event["edge_ids"],
+                    graph_event["edge_index"],
+                    graph_event["edge_timestamps"],
+                    decoder_hidden=hiddens,
+                    obs_word_ids=textual_inputs["obs_word_ids"],
+                    prev_action_word_ids=textual_inputs["prev_action_word_ids"],
+                    encoded_obs=encoded_obs,
+                    encoded_prev_action=encoded_prev_action,
+                )
 
-        # update the raw message
-        self.raw_msg["tgt_event_type_ids"] = batch["tgt_event_type_ids"]
-        self.raw_msg["tgt_event_src_ids"] = batch["tgt_event_src_ids"]
-        self.raw_msg["tgt_event_src_mask"] = batch["tgt_event_src_mask"]
-        self.raw_msg["tgt_event_dst_ids"] = batch["tgt_event_dst_ids"]
-        self.raw_msg["tgt_event_dst_mask"] = batch["tgt_event_dst_mask"]
-        self.raw_msg["tgt_event_edge_ids"] = batch["tgt_event_edge_ids"]
-        self.raw_msg["tgt_event_label_ids"] = batch["tgt_event_label_ids"]
-        self.raw_msg["tgt_event_mask"] = batch["tgt_event_mask"]
-        self.raw_msg["tgt_event_timestamps"] = batch["tgt_event_timestamps"]
-        self.raw_msg["node_ids"] = batch["node_ids"]
-        self.raw_msg["edge_ids"] = batch["edge_ids"]
-        self.raw_msg["edge_index"] = batch["edge_index"]
-        self.raw_msg["edge_timestamps"] = batch["edge_timestamps"]
+                # calculate losses
+                event_type_loss = torch.mean(
+                    self.criterion(
+                        results["event_type_logits"],
+                        graph_event["groundtruth_event_type_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_mask"]
+                )
+                src_loss = torch.mean(
+                    self.criterion(
+                        results["src_logits"],
+                        graph_event["groundtruth_event_src_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_src_mask"]
+                )
+                dst_loss = torch.mean(
+                    self.criterion(
+                        results["dst_logits"],
+                        graph_event["groundtruth_event_dst_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_dst_mask"]
+                )
+                label_loss = torch.mean(
+                    self.criterion(
+                        results["label_logits"],
+                        graph_event["groundtruth_event_label_ids"].flatten(),
+                    )
+                    * graph_event["groundtruth_event_mask"]
+                )
+                losses.append(event_type_loss + src_loss + dst_loss + label_loss)
 
-        # calculate losses
-        event_type_loss = self.criterion(
-            results["event_type_logits"], batch["groundtruth_event_type_ids"]
-        ).mean()
-        src_loss = torch.mean(
-            self.criterion(results["src_logits"], batch["groundtruth_event_src_ids"])
-            * batch["groundtruth_event_src_mask"]
-        )
-        dst_loss = torch.mean(
-            self.criterion(results["dst_logits"], batch["groundtruth_event_dst_ids"])
-            * batch["groundtruth_event_dst_mask"]
-        )
-        label_loss = torch.mean(
-            self.criterion(
-                results["label_logits"], batch["groundtruth_event_label_ids"]
-            )
-            * batch["groundtruth_event_mask"]
-        )
-        return event_type_loss + src_loss + dst_loss + label_loss
+                # update hiddens
+                hiddens = results["new_hidden"].detach()
+
+                # update encoded_obs and encoded_prev_action
+                if encoded_obs is None:
+                    encoded_obs = results["encoded_obs"].detach()
+                if encoded_prev_action is None:
+                    encoded_prev_action = results["encoded_prev_action"].detach()
+
+                # detach memory
+                self.tgn.memory.detach_()  # type: ignore
+
+        loss = torch.stack(losses).mean()
+        self.log("train_loss", loss, prog_bar=True)
+        assert hiddens is not None
+        return loss
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
-
-    def on_train_batch_end(self, *unused) -> None:
-        self.tgn.memory.detach_()  # type: ignore
 
     def on_epoch_start(self) -> None:
         self.tgn.reset()

@@ -14,10 +14,13 @@ def test_main(tmp_path):
             overrides=[
                 f"data.train_path={tmp_path}/test_data.json",
                 "data.train_batch_size=2",
+                "data.train_num_worker=0",
                 f"data.val_path={tmp_path}/test_data.json",
                 "data.val_batch_size=2",
+                "data.val_num_worker=0",
                 f"data.test_path={tmp_path}/test_data.json",
                 "data.test_batch_size=2",
+                "data.test_num_worker=0",
                 "model.hidden_dim=8",
                 "model.max_num_nodes=80",
                 "model.max_num_edges=100",
