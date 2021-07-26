@@ -707,8 +707,10 @@ class TWCmdGenTemporalDataCollator:
                 episode[i] if i < len(episode) else {} for episode in batch
             ]
             textual = self.collate_textual_inputs(
-                [step.get("observation", "") for step in batch_ith_step],
-                [step.get("previous_action", "") for step in batch_ith_step],
+                # use "<bos> <eos>" for empty observations and previous actions
+                # to prevent nan's when encoding.
+                [step.get("observation", "<bos> <eos>") for step in batch_ith_step],
+                [step.get("previous_action", "<bos> <eos>") for step in batch_ith_step],
             )
 
             graph_events: List[Dict[str, torch.Tensor]] = []
