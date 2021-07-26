@@ -502,19 +502,19 @@ class TWCmdGenTemporalDataCollator:
                     event_seq_edge_timestamps[i].append([0.0])
                     continue
                 game = step["game"]
-                waklthrough_step = step["walkthrough_step"]
+                walkthrough_step = step["walkthrough_step"]
                 event = step["event_seq"][i]
                 # update the graph with the graph events in the batch
-                self.update_subgraph(game, waklthrough_step, event)
+                self.update_subgraph(game, walkthrough_step, event)
 
                 # get the worker node/edge ID maps based on the updated graph
-                self.allocate_worker_ids(game, waklthrough_step)
+                self.allocate_worker_ids(game, walkthrough_step)
                 node_id_map, edge_id_map = self.allocated_global_worker_id_map[
-                    (game, waklthrough_step)
+                    (game, walkthrough_step)
                 ]
 
                 # collect all the allocated worker node IDs
-                event_node_ids = sorted(self.global_node_ids[(game, waklthrough_step)])
+                event_node_ids = sorted(self.global_node_ids[(game, walkthrough_step)])
                 event_seq_node_ids[i].append(
                     [node_id_map[nid] for nid in event_node_ids]
                 )
@@ -529,7 +529,7 @@ class TWCmdGenTemporalDataCollator:
                 edge_id_list: List[int] = []
                 edge_index_list: List[Tuple[int, int]] = []
                 for edge_id, edge_index in self.global_edges[
-                    (game, waklthrough_step)
+                    (game, walkthrough_step)
                 ].items():
                     edge_id_list.append(edge_id)
                     edge_index_list.append(edge_index)
