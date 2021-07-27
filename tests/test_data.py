@@ -3,6 +3,7 @@ import json
 import torch
 import pickle
 import shutil
+import os
 
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -2625,6 +2626,9 @@ def test_tw_cmd_gen_temporal_batch_split(batch, split_size, expected):
         ),
     ],
 )
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="pin_memory() doesn't work on Github Actions"
+)
 def test_tw_cmd_gen_temporal_textual_input_pin_memory(textual):
     # just check that we're creating a correct copy
     pinned = textual.pin_memory()
@@ -2661,6 +2665,9 @@ def test_tw_cmd_gen_temporal_textual_input_pin_memory(textual):
             groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
         )
     ],
+)
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="pin_memory() doesn't work on Github Actions"
 )
 def test_tw_cmd_gen_temporal_graphical_input_pin_memory(graphical):
     # just check that we're creating a correct copy
@@ -2782,6 +2789,9 @@ def test_tw_cmd_gen_temporal_graphical_input_pin_memory(graphical):
             )
         )
     ],
+)
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="pin_memory() doesn't work on Github Actions"
 )
 def test_tw_cmd_gen_temporal_batch_pin_memory(batch):
     # just check that we're creating a correct copy
