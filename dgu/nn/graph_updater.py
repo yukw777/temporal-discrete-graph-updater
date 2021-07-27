@@ -340,14 +340,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
     def training_step(  # type: ignore
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int
-    ) -> torch.Tensor:
+        self,
+        batch: TWCmdGenTemporalBatch,
+        batch_idx: int,
+        hiddens: Optional[torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
         losses: List[torch.Tensor] = []
         for textual_inputs, graph_event_inputs in batch.data:
             encoded_obs: Optional[torch.Tensor] = None
             encoded_prev_action: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
-                hiddens: Optional[torch.Tensor] = None
                 results = self(
                     textual_inputs.obs_mask,
                     textual_inputs.prev_action_mask,
@@ -417,10 +419,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         loss = torch.stack(losses).mean()
         self.log("train_loss", loss, prog_bar=True)
         assert hiddens is not None
-        return loss
+        return {"loss": loss, "hiddens": hiddens}
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
     def on_epoch_start(self) -> None:
         self.tgn.reset()
+
+    def tbptt_split_batch(  # type: ignore
+        self, batch: TWCmdGenTemporalBatch, split_size: int
+    ) -> List[TWCmdGenTemporalBatch]:
+        return batch.split(split_size)

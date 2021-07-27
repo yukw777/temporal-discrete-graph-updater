@@ -320,6 +320,14 @@ class TWCmdGenTemporalBatch:
             )
         )
 
+    def split(self, split_size: int) -> List["TWCmdGenTemporalBatch"]:
+        return [
+            TWCmdGenTemporalBatch(
+                data=self.data[ndx : min(ndx + split_size, len(self))]
+            )
+            for ndx in range(0, len(self), split_size)
+        ]
+
 
 class TWCmdGenTemporalDataCollator:
     def __init__(
