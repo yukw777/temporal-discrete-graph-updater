@@ -2295,3 +2295,157 @@ def test_tw_cmd_gen_collator_call(
         monkeypatch.setattr("dgu.data.get_worker_info", lambda: mock_worker_info)
     tw_cmd_gen_collator.init_worker_id_space(worker_info)
     assert tw_cmd_gen_collator(batch) == expected
+
+
+@pytest.mark.parametrize(
+    "textual",
+    [
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (1, 15)),
+            obs_mask=torch.randint(2, (1, 15)).float(),
+            prev_action_word_ids=torch.randint(10, (1, 3)),
+            prev_action_mask=torch.randint(2, (1, 3)).float(),
+        ),
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (3, 10)),
+            obs_mask=torch.randint(2, (3, 10)).float(),
+            prev_action_word_ids=torch.randint(10, (3, 5)),
+            prev_action_mask=torch.randint(2, (3, 5)).float(),
+        ),
+    ],
+)
+def test_tw_cmd_gen_temporal_textual_input_to(textual):
+    # just check that we're creating a correct copy
+    assert textual.to("cpu") == textual
+
+
+@pytest.mark.parametrize(
+    "graphical",
+    [
+        TWCmdGenTemporalGraphicalInput(
+            node_ids=torch.randint(10, (3, 10)),
+            edge_ids=torch.randint(15, (3, 15)),
+            edge_index=torch.randint(15, (3, 2, 15)),
+            edge_timestamps=torch.rand(3, 15),
+            tgt_event_timestamps=torch.rand(3, 6),
+            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_type_ids=torch.randint(7, (3, 6)),
+            tgt_event_src_ids=torch.randint(10, (3, 6)),
+            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+            tgt_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+        )
+    ],
+)
+def test_tw_cmd_gen_temporal_graphical_input_to(graphical):
+    # just check that we're creating a correct copy
+    assert graphical.to("cpu") == graphical
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [
+        TWCmdGenTemporalBatch(
+            data=(
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (1, 15)),
+                        obs_mask=torch.randint(2, (1, 15)).float(),
+                        prev_action_word_ids=torch.randint(10, (1, 3)),
+                        prev_action_mask=torch.randint(2, (1, 3)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (3, 10)),
+                        obs_mask=torch.randint(2, (3, 10)).float(),
+                        prev_action_word_ids=torch.randint(10, (3, 5)),
+                        prev_action_mask=torch.randint(2, (3, 5)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+            )
+        )
+    ],
+)
+def test_tw_cmd_gen_temporal_batch_to(batch):
+    # just check that we're creating a correct copy
+    assert batch.to("cpu") == batch

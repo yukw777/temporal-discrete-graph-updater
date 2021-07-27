@@ -204,6 +204,14 @@ class TWCmdGenTemporalTextualInput:
             and self.prev_action_mask.equal(o.prev_action_mask)
         )
 
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalTextualInput":
+        return TWCmdGenTemporalTextualInput(
+            obs_word_ids=self.obs_word_ids.to(*args, **kwargs),
+            obs_mask=self.obs_mask.to(*args, **kwargs),
+            prev_action_word_ids=self.prev_action_word_ids.to(*args, **kwargs),
+            prev_action_mask=self.prev_action_mask.to(*args, **kwargs),
+        )
+
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalGraphicalInput:
@@ -254,6 +262,42 @@ class TWCmdGenTemporalGraphicalInput:
             and self.groundtruth_event_mask.equal(o.groundtruth_event_mask)
         )
 
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
+        return TWCmdGenTemporalGraphicalInput(
+            node_ids=self.node_ids.to(*args, **kwargs),
+            edge_ids=self.edge_ids.to(*args, **kwargs),
+            edge_index=self.edge_index.to(*args, **kwargs),
+            edge_timestamps=self.edge_timestamps.to(*args, **kwargs),
+            tgt_event_timestamps=self.tgt_event_timestamps.to(*args, **kwargs),
+            tgt_event_mask=self.tgt_event_mask.to(*args, **kwargs),
+            tgt_event_type_ids=self.tgt_event_type_ids.to(*args, **kwargs),
+            tgt_event_src_ids=self.tgt_event_src_ids.to(*args, **kwargs),
+            tgt_event_src_mask=self.tgt_event_src_mask.to(*args, **kwargs),
+            tgt_event_dst_ids=self.tgt_event_dst_ids.to(*args, **kwargs),
+            tgt_event_dst_mask=self.tgt_event_dst_mask.to(*args, **kwargs),
+            tgt_event_edge_ids=self.tgt_event_edge_ids.to(*args, **kwargs),
+            tgt_event_label_ids=self.tgt_event_label_ids.to(*args, **kwargs),
+            groundtruth_event_type_ids=self.groundtruth_event_type_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_src_ids=self.groundtruth_event_src_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_src_mask=self.groundtruth_event_src_mask.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_dst_ids=self.groundtruth_event_dst_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_dst_mask=self.groundtruth_event_dst_mask.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_label_ids=self.groundtruth_event_label_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_mask=self.groundtruth_event_mask.to(*args, **kwargs),
+        )
+
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalBatch:
@@ -264,6 +308,17 @@ class TWCmdGenTemporalBatch:
 
     def __len__(self) -> int:
         return len(self.data)
+
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
+        return TWCmdGenTemporalBatch(
+            data=tuple(
+                (
+                    textual.to(*args, **kwargs),
+                    tuple(graphical.to(*args, **kwargs) for graphical in graphicals),
+                )
+                for textual, graphicals in self.data
+            )
+        )
 
 
 class TWCmdGenTemporalDataCollator:
