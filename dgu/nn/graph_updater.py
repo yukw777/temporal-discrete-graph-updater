@@ -412,9 +412,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
                 # update encoded_obs and encoded_prev_action
                 if encoded_obs is None:
-                    encoded_obs = results["encoded_obs"].detach()
+                    encoded_obs = results["encoded_obs"]
                 if encoded_prev_action is None:
-                    encoded_prev_action = results["encoded_prev_action"].detach()
+                    encoded_prev_action = results["encoded_prev_action"]
 
                 # detach memory
                 self.tgn.memory.detach_()  # type: ignore
