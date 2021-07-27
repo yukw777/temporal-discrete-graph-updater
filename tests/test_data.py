@@ -2606,3 +2606,210 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
 )
 def test_tw_cmd_gen_temporal_batch_split(batch, split_size, expected):
     assert batch.split(split_size) == expected
+
+
+@pytest.mark.parametrize(
+    "textual",
+    [
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (1, 15)),
+            obs_mask=torch.randint(2, (1, 15)).float(),
+            prev_action_word_ids=torch.randint(10, (1, 3)),
+            prev_action_mask=torch.randint(2, (1, 3)).float(),
+        ),
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (3, 10)),
+            obs_mask=torch.randint(2, (3, 10)).float(),
+            prev_action_word_ids=torch.randint(10, (3, 5)),
+            prev_action_mask=torch.randint(2, (3, 5)).float(),
+        ),
+    ],
+)
+def test_tw_cmd_gen_temporal_textual_input_pin_memory(textual):
+    # just check that we're creating a correct copy
+    pinned = textual.pin_memory()
+    assert pinned == textual
+    assert pinned.obs_word_ids.is_pinned()
+    assert pinned.obs_mask.is_pinned()
+    assert pinned.prev_action_word_ids.is_pinned()
+    assert pinned.prev_action_mask.is_pinned()
+
+
+@pytest.mark.parametrize(
+    "graphical",
+    [
+        TWCmdGenTemporalGraphicalInput(
+            node_ids=torch.randint(10, (3, 10)),
+            edge_ids=torch.randint(15, (3, 15)),
+            edge_index=torch.randint(15, (3, 2, 15)),
+            edge_timestamps=torch.rand(3, 15),
+            tgt_event_timestamps=torch.rand(3, 6),
+            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_type_ids=torch.randint(7, (3, 6)),
+            tgt_event_src_ids=torch.randint(10, (3, 6)),
+            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+            tgt_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+        )
+    ],
+)
+def test_tw_cmd_gen_temporal_graphical_input_pin_memory(graphical):
+    # just check that we're creating a correct copy
+    pinned = graphical.pin_memory()
+    assert pinned == graphical
+    assert pinned.node_ids.is_pinned()
+    assert pinned.edge_ids.is_pinned()
+    assert pinned.edge_index.is_pinned()
+    assert pinned.edge_timestamps.is_pinned()
+    assert pinned.tgt_event_timestamps.is_pinned()
+    assert pinned.tgt_event_mask.is_pinned()
+    assert pinned.tgt_event_type_ids.is_pinned()
+    assert pinned.tgt_event_src_ids.is_pinned()
+    assert pinned.tgt_event_src_mask.is_pinned()
+    assert pinned.tgt_event_dst_ids.is_pinned()
+    assert pinned.tgt_event_dst_mask.is_pinned()
+    assert pinned.tgt_event_edge_ids.is_pinned()
+    assert pinned.tgt_event_label_ids.is_pinned()
+    assert pinned.groundtruth_event_type_ids.is_pinned()
+    assert pinned.groundtruth_event_src_ids.is_pinned()
+    assert pinned.groundtruth_event_src_mask.is_pinned()
+    assert pinned.groundtruth_event_dst_ids.is_pinned()
+    assert pinned.groundtruth_event_dst_mask.is_pinned()
+    assert pinned.groundtruth_event_label_ids.is_pinned()
+    assert pinned.groundtruth_event_mask.is_pinned()
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [
+        TWCmdGenTemporalBatch(
+            data=(
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (1, 15)),
+                        obs_mask=torch.randint(2, (1, 15)).float(),
+                        prev_action_word_ids=torch.randint(10, (1, 3)),
+                        prev_action_mask=torch.randint(2, (1, 3)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (3, 10)),
+                        obs_mask=torch.randint(2, (3, 10)).float(),
+                        prev_action_word_ids=torch.randint(10, (3, 5)),
+                        prev_action_mask=torch.randint(2, (3, 5)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+            )
+        )
+    ],
+)
+def test_tw_cmd_gen_temporal_batch_pin_memory(batch):
+    # just check that we're creating a correct copy
+    pinned = batch.pin_memory()
+    assert pinned == batch
+    for textual, graphicals in pinned.data:
+        assert textual.obs_word_ids.is_pinned()
+        assert textual.obs_mask.is_pinned()
+        assert textual.prev_action_word_ids.is_pinned()
+        assert textual.prev_action_mask.is_pinned()
+        for graphical in graphicals:
+            assert graphical.node_ids.is_pinned()
+            assert graphical.edge_ids.is_pinned()
+            assert graphical.edge_index.is_pinned()
+            assert graphical.edge_timestamps.is_pinned()
+            assert graphical.tgt_event_timestamps.is_pinned()
+            assert graphical.tgt_event_mask.is_pinned()
+            assert graphical.tgt_event_type_ids.is_pinned()
+            assert graphical.tgt_event_src_ids.is_pinned()
+            assert graphical.tgt_event_src_mask.is_pinned()
+            assert graphical.tgt_event_dst_ids.is_pinned()
+            assert graphical.tgt_event_dst_mask.is_pinned()
+            assert graphical.tgt_event_edge_ids.is_pinned()
+            assert graphical.tgt_event_label_ids.is_pinned()
+            assert graphical.groundtruth_event_type_ids.is_pinned()
+            assert graphical.groundtruth_event_src_ids.is_pinned()
+            assert graphical.groundtruth_event_src_mask.is_pinned()
+            assert graphical.groundtruth_event_dst_ids.is_pinned()
+            assert graphical.groundtruth_event_dst_mask.is_pinned()
+            assert graphical.groundtruth_event_label_ids.is_pinned()
+            assert graphical.groundtruth_event_mask.is_pinned()

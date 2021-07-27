@@ -212,6 +212,14 @@ class TWCmdGenTemporalTextualInput:
             prev_action_mask=self.prev_action_mask.to(*args, **kwargs),
         )
 
+    def pin_memory(self) -> "TWCmdGenTemporalTextualInput":
+        return TWCmdGenTemporalTextualInput(
+            obs_word_ids=self.obs_word_ids.pin_memory(),
+            obs_mask=self.obs_mask.pin_memory(),
+            prev_action_word_ids=self.prev_action_word_ids.pin_memory(),
+            prev_action_mask=self.prev_action_mask.pin_memory(),
+        )
+
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalGraphicalInput:
@@ -298,6 +306,30 @@ class TWCmdGenTemporalGraphicalInput:
             groundtruth_event_mask=self.groundtruth_event_mask.to(*args, **kwargs),
         )
 
+    def pin_memory(self) -> "TWCmdGenTemporalGraphicalInput":
+        return TWCmdGenTemporalGraphicalInput(
+            node_ids=self.node_ids.pin_memory(),
+            edge_ids=self.edge_ids.pin_memory(),
+            edge_index=self.edge_index.pin_memory(),
+            edge_timestamps=self.edge_timestamps.pin_memory(),
+            tgt_event_timestamps=self.tgt_event_timestamps.pin_memory(),
+            tgt_event_mask=self.tgt_event_mask.pin_memory(),
+            tgt_event_type_ids=self.tgt_event_type_ids.pin_memory(),
+            tgt_event_src_ids=self.tgt_event_src_ids.pin_memory(),
+            tgt_event_src_mask=self.tgt_event_src_mask.pin_memory(),
+            tgt_event_dst_ids=self.tgt_event_dst_ids.pin_memory(),
+            tgt_event_dst_mask=self.tgt_event_dst_mask.pin_memory(),
+            tgt_event_edge_ids=self.tgt_event_edge_ids.pin_memory(),
+            tgt_event_label_ids=self.tgt_event_label_ids.pin_memory(),
+            groundtruth_event_type_ids=self.groundtruth_event_type_ids.pin_memory(),
+            groundtruth_event_src_ids=self.groundtruth_event_src_ids.pin_memory(),
+            groundtruth_event_src_mask=self.groundtruth_event_src_mask.pin_memory(),
+            groundtruth_event_dst_ids=self.groundtruth_event_dst_ids.pin_memory(),
+            groundtruth_event_dst_mask=self.groundtruth_event_dst_mask.pin_memory(),
+            groundtruth_event_label_ids=self.groundtruth_event_label_ids.pin_memory(),
+            groundtruth_event_mask=self.groundtruth_event_mask.pin_memory(),
+        )
+
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalBatch:
@@ -315,6 +347,17 @@ class TWCmdGenTemporalBatch:
                 (
                     textual.to(*args, **kwargs),
                     tuple(graphical.to(*args, **kwargs) for graphical in graphicals),
+                )
+                for textual, graphicals in self.data
+            )
+        )
+
+    def pin_memory(self) -> "TWCmdGenTemporalBatch":
+        return TWCmdGenTemporalBatch(
+            data=tuple(
+                (
+                    textual.pin_memory(),
+                    tuple(graphical.pin_memory() for graphical in graphicals),
                 )
                 for textual, graphicals in self.data
             )
