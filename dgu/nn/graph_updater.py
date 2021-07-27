@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
@@ -16,6 +16,7 @@ from dgu.nn.graph_event_decoder import (
 )
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
+from dgu.data import TWCmdGenTemporalBatch
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -339,35 +340,33 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
     def training_step(  # type: ignore
-        self,
-        batch: List[Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]],
-        batch_idx: int,
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int
     ) -> torch.Tensor:
         losses: List[torch.Tensor] = []
-        for textual_inputs, graph_event_inputs in batch:
+        for textual_inputs, graph_event_inputs in batch.data:
             encoded_obs: Optional[torch.Tensor] = None
             encoded_prev_action: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
                 hiddens: Optional[torch.Tensor] = None
                 results = self(
-                    textual_inputs["obs_mask"],
-                    textual_inputs["prev_action_mask"],
-                    graph_event["tgt_event_type_ids"],
-                    graph_event["tgt_event_src_ids"],
-                    graph_event["tgt_event_src_mask"],
-                    graph_event["tgt_event_dst_ids"],
-                    graph_event["tgt_event_dst_mask"],
-                    graph_event["tgt_event_edge_ids"],
-                    graph_event["tgt_event_label_ids"],
-                    graph_event["tgt_event_mask"],
-                    graph_event["tgt_event_timestamps"],
-                    graph_event["node_ids"],
-                    graph_event["edge_ids"],
-                    graph_event["edge_index"],
-                    graph_event["edge_timestamps"],
+                    textual_inputs.obs_mask,
+                    textual_inputs.prev_action_mask,
+                    graph_event.tgt_event_type_ids,
+                    graph_event.tgt_event_src_ids,
+                    graph_event.tgt_event_src_mask,
+                    graph_event.tgt_event_dst_ids,
+                    graph_event.tgt_event_dst_mask,
+                    graph_event.tgt_event_edge_ids,
+                    graph_event.tgt_event_label_ids,
+                    graph_event.tgt_event_mask,
+                    graph_event.tgt_event_timestamps,
+                    graph_event.node_ids,
+                    graph_event.edge_ids,
+                    graph_event.edge_index,
+                    graph_event.edge_timestamps,
                     decoder_hidden=hiddens,
-                    obs_word_ids=textual_inputs["obs_word_ids"],
-                    prev_action_word_ids=textual_inputs["prev_action_word_ids"],
+                    obs_word_ids=textual_inputs.obs_word_ids,
+                    prev_action_word_ids=textual_inputs.prev_action_word_ids,
                     encoded_obs=encoded_obs,
                     encoded_prev_action=encoded_prev_action,
                 )
@@ -376,30 +375,30 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 event_type_loss = torch.mean(
                     self.criterion(
                         results["event_type_logits"],
-                        graph_event["groundtruth_event_type_ids"].flatten(),
+                        graph_event.groundtruth_event_type_ids.flatten(),
                     )
-                    * graph_event["groundtruth_event_mask"]
+                    * graph_event.groundtruth_event_mask
                 )
                 src_loss = torch.mean(
                     self.criterion(
                         results["src_logits"],
-                        graph_event["groundtruth_event_src_ids"].flatten(),
+                        graph_event.groundtruth_event_src_ids.flatten(),
                     )
-                    * graph_event["groundtruth_event_src_mask"]
+                    * graph_event.groundtruth_event_src_mask
                 )
                 dst_loss = torch.mean(
                     self.criterion(
                         results["dst_logits"],
-                        graph_event["groundtruth_event_dst_ids"].flatten(),
+                        graph_event.groundtruth_event_dst_ids.flatten(),
                     )
-                    * graph_event["groundtruth_event_dst_mask"]
+                    * graph_event.groundtruth_event_dst_mask
                 )
                 label_loss = torch.mean(
                     self.criterion(
                         results["label_logits"],
-                        graph_event["groundtruth_event_label_ids"].flatten(),
+                        graph_event.groundtruth_event_label_ids.flatten(),
                     )
-                    * graph_event["groundtruth_event_mask"]
+                    * graph_event.groundtruth_event_mask
                 )
                 losses.append(event_type_loss + src_loss + dst_loss + label_loss)
 
