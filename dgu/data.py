@@ -1076,6 +1076,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
                 self.preprocessor,
                 self.label_id_map,
             ),
+            shuffle=True,
             pin_memory=True,
             num_workers=self.train_num_worker,
         )
