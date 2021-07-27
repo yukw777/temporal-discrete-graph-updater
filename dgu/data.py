@@ -492,6 +492,12 @@ class TWCmdGenTemporalDataCollator:
             event_src_pos: List[int] = []
             event_dst_pos: List[int] = []
             event_edge_ids: List[int] = []
+            if max_event_seq_len == 0:
+                # no event sequence in this batch_step
+                event_seq_node_ids[-1].append([0])
+                event_seq_edge_ids[-1].append([0])
+                event_seq_edge_index[-1].append([(0, 0)])
+                event_seq_edge_timestamps[-1].append([0.0])
             for i in range(max_event_seq_len):
                 if step == {} or i >= len(step["event_seq"]):
                     # we've passed the last event, so just add padded lists and move on
