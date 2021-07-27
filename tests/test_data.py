@@ -3,6 +3,7 @@ import json
 import torch
 import pickle
 import shutil
+import os
 
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -13,6 +14,9 @@ from dgu.data import (
     TWCmdGenTemporalDataModule,
     TWCmdGenTemporalDataCollator,
     read_label_vocab_files,
+    TWCmdGenTemporalTextualInput,
+    TWCmdGenTemporalBatch,
+    TWCmdGenTemporalGraphicalInput,
 )
 from dgu.preprocessor import SpacyPreprocessor
 
@@ -81,14 +85,14 @@ def test_tw_cmd_gen_dataset_init():
         (
             ["you are hungry ! let 's cook a delicious meal ."],
             ["drop knife"],
-            {
-                "obs_word_ids": torch.tensor(
+            TWCmdGenTemporalTextualInput(
+                obs_word_ids=torch.tensor(
                     [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                 ),
-                "obs_mask": torch.ones(1, 11),
-                "prev_action_word_ids": torch.tensor([[257, 404]]),
-                "prev_action_mask": torch.ones(1, 2),
-            },
+                obs_mask=torch.ones(1, 11),
+                prev_action_word_ids=torch.tensor([[257, 404]]),
+                prev_action_mask=torch.ones(1, 2),
+            ),
         ),
         (
             [
@@ -96,35 +100,33 @@ def test_tw_cmd_gen_dataset_init():
                 "you take the knife from the table .",
             ],
             ["drop knife", "take knife from table"],
-            {
-                "obs_word_ids": torch.tensor(
+            TWCmdGenTemporalTextualInput(
+                obs_word_ids=torch.tensor(
                     [
                         [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
                         [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
                     ]
                 ),
-                "obs_mask": torch.tensor(
+                obs_mask=torch.tensor(
                     [
                         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
                         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
                     ]
                 ),
-                "prev_action_word_ids": torch.tensor(
+                prev_action_word_ids=torch.tensor(
                     [[257, 404, 0, 0], [663, 404, 315, 661]]
                 ),
-                "prev_action_mask": torch.tensor(
+                prev_action_mask=torch.tensor(
                     [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
                 ),
-            },
+            ),
         ),
     ],
 )
 def test_tw_cmd_gen_collator_collate_textual_inputs(
     tw_cmd_gen_collator, obs, prev_actions, expected
 ):
-    results = tw_cmd_gen_collator.collate_textual_inputs(obs, prev_actions)
-    for k in ["obs_word_ids", "obs_mask", "prev_action_word_ids", "prev_action_mask"]:
-        assert results[k].equal(expected[k])
+    assert tw_cmd_gen_collator.collate_textual_inputs(obs, prev_actions) == expected
 
 
 @pytest.mark.parametrize(
@@ -1296,7 +1298,7 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
 
 
 @pytest.mark.parametrize(
-    "worker_info,batch,expected_results",
+    "worker_info,batch,expected",
     [
         (
             None,
@@ -1334,108 +1336,110 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                     }
                 ]
             ],
-            [
-                (
-                    {
-                        "obs_word_ids": torch.tensor(
-                            [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+            TWCmdGenTemporalBatch(
+                data=(
+                    (
+                        TWCmdGenTemporalTextualInput(
+                            obs_word_ids=torch.tensor(
+                                [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                            ),
+                            obs_mask=torch.ones(1, 11),
+                            prev_action_word_ids=torch.tensor([[257, 404]]),
+                            prev_action_mask=torch.ones(1, 2),
                         ),
-                        "obs_mask": torch.ones(1, 11),
-                        "prev_action_word_ids": torch.tensor([[257, 404]]),
-                        "prev_action_mask": torch.ones(1, 2),
-                    },
-                    [
-                        {
-                            "node_ids": torch.tensor([[0]]),
-                            "edge_ids": torch.tensor([[0]]),
-                            "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[1]]),
-                            "tgt_event_src_ids": torch.tensor([[0]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0]]),
-                            "tgt_event_label_ids": torch.tensor([[0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[1]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1]]),
-                            "edge_ids": torch.tensor([[0]]),
-                            "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3]]),
-                            "tgt_event_src_ids": torch.tensor([[1]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0]]),
-                            "tgt_event_label_ids": torch.tensor([[1]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[14]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2]]),
-                            "edge_ids": torch.tensor([[0]]),
-                            "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3]]),
-                            "tgt_event_src_ids": torch.tensor([[2]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0]]),
-                            "tgt_event_label_ids": torch.tensor([[14]]),
-                            "groundtruth_event_type_ids": torch.tensor([[5]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[2]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[1.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[100]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2]]),
-                            "edge_ids": torch.tensor([[0, 1]]),
-                            "edge_index": torch.tensor([[[0, 1], [0, 2]]]),
-                            "edge_timestamps": torch.tensor([[2.0, 2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[5]]),
-                            "tgt_event_src_ids": torch.tensor([[1]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[2]]),
-                            "tgt_event_dst_mask": torch.tensor([[1.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[1]]),
-                            "tgt_event_label_ids": torch.tensor([[100]]),
-                            "groundtruth_event_type_ids": torch.tensor([[2]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                    ],
-                ),
-            ],
+                        (
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0]]),
+                                edge_ids=torch.tensor([[0]]),
+                                edge_index=torch.tensor([[[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_timestamps=torch.tensor([[0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[1]]),
+                                tgt_event_src_ids=torch.tensor([[0]]),
+                                tgt_event_src_mask=torch.tensor([[0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0]]),
+                                tgt_event_label_ids=torch.tensor([[0]]),
+                                groundtruth_event_type_ids=torch.tensor([[3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[1]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1]]),
+                                edge_ids=torch.tensor([[0]]),
+                                edge_index=torch.tensor([[[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3]]),
+                                tgt_event_src_ids=torch.tensor([[1]]),
+                                tgt_event_src_mask=torch.tensor([[0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0]]),
+                                tgt_event_label_ids=torch.tensor([[1]]),
+                                groundtruth_event_type_ids=torch.tensor([[3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[14]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2]]),
+                                edge_ids=torch.tensor([[0]]),
+                                edge_index=torch.tensor([[[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3]]),
+                                tgt_event_src_ids=torch.tensor([[2]]),
+                                tgt_event_src_mask=torch.tensor([[0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0]]),
+                                tgt_event_label_ids=torch.tensor([[14]]),
+                                groundtruth_event_type_ids=torch.tensor([[5]]),
+                                groundtruth_event_src_ids=torch.tensor([[1]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[2]]),
+                                groundtruth_event_dst_mask=torch.tensor([[1.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[100]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2]]),
+                                edge_ids=torch.tensor([[0, 1]]),
+                                edge_index=torch.tensor([[[0, 1], [0, 2]]]),
+                                edge_timestamps=torch.tensor([[2.0, 2.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[5]]),
+                                tgt_event_src_ids=torch.tensor([[1]]),
+                                tgt_event_src_mask=torch.tensor([[1.0]]),
+                                tgt_event_dst_ids=torch.tensor([[2]]),
+                                tgt_event_dst_mask=torch.tensor([[1.0]]),
+                                tgt_event_edge_ids=torch.tensor([[1]]),
+                                tgt_event_label_ids=torch.tensor([[100]]),
+                                groundtruth_event_type_ids=torch.tensor([[2]]),
+                                groundtruth_event_src_ids=torch.tensor([[0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                        ),
+                    ),
+                )
+            ),
         ),
         (
             (1, 2),
@@ -1473,108 +1477,110 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                     }
                 ]
             ],
-            [
-                (
-                    {
-                        "obs_word_ids": torch.tensor(
-                            [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+            TWCmdGenTemporalBatch(
+                data=(
+                    (
+                        TWCmdGenTemporalTextualInput(
+                            obs_word_ids=torch.tensor(
+                                [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                            ),
+                            obs_mask=torch.ones(1, 11),
+                            prev_action_word_ids=torch.tensor([[257, 404]]),
+                            prev_action_mask=torch.ones(1, 2),
                         ),
-                        "obs_mask": torch.ones(1, 11),
-                        "prev_action_word_ids": torch.tensor([[257, 404]]),
-                        "prev_action_mask": torch.ones(1, 2),
-                    },
-                    [
-                        {
-                            "node_ids": torch.tensor([[0]]),
-                            "edge_ids": torch.tensor([[0]]),
-                            "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[1]]),
-                            "tgt_event_src_ids": torch.tensor([[0]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0]]),
-                            "tgt_event_label_ids": torch.tensor([[0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[1]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6]]),
-                            "edge_ids": torch.tensor([[0]]),
-                            "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3]]),
-                            "tgt_event_src_ids": torch.tensor([[6]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0]]),
-                            "tgt_event_label_ids": torch.tensor([[1]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[14]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7]]),
-                            "edge_ids": torch.tensor([[0]]),
-                            "edge_index": torch.tensor([[[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3]]),
-                            "tgt_event_src_ids": torch.tensor([[7]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0]]),
-                            "tgt_event_label_ids": torch.tensor([[14]]),
-                            "groundtruth_event_type_ids": torch.tensor([[5]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[2]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[1.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[100]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7]]),
-                            "edge_ids": torch.tensor([[0, 6]]),
-                            "edge_index": torch.tensor([[[0, 6], [0, 7]]]),
-                            "edge_timestamps": torch.tensor([[2.0, 2.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[5]]),
-                            "tgt_event_src_ids": torch.tensor([[6]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[7]]),
-                            "tgt_event_dst_mask": torch.tensor([[1.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[6]]),
-                            "tgt_event_label_ids": torch.tensor([[100]]),
-                            "groundtruth_event_type_ids": torch.tensor([[2]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0]]),
-                        },
-                    ],
+                        (
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0]]),
+                                edge_ids=torch.tensor([[0]]),
+                                edge_index=torch.tensor([[[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_timestamps=torch.tensor([[0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[1]]),
+                                tgt_event_src_ids=torch.tensor([[0]]),
+                                tgt_event_src_mask=torch.tensor([[0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0]]),
+                                tgt_event_label_ids=torch.tensor([[0]]),
+                                groundtruth_event_type_ids=torch.tensor([[3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[1]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6]]),
+                                edge_ids=torch.tensor([[0]]),
+                                edge_index=torch.tensor([[[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3]]),
+                                tgt_event_src_ids=torch.tensor([[6]]),
+                                tgt_event_src_mask=torch.tensor([[0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0]]),
+                                tgt_event_label_ids=torch.tensor([[1]]),
+                                groundtruth_event_type_ids=torch.tensor([[3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[14]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7]]),
+                                edge_ids=torch.tensor([[0]]),
+                                edge_index=torch.tensor([[[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3]]),
+                                tgt_event_src_ids=torch.tensor([[7]]),
+                                tgt_event_src_mask=torch.tensor([[0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0]]),
+                                tgt_event_label_ids=torch.tensor([[14]]),
+                                groundtruth_event_type_ids=torch.tensor([[5]]),
+                                groundtruth_event_src_ids=torch.tensor([[1]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[2]]),
+                                groundtruth_event_dst_mask=torch.tensor([[1.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[100]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7]]),
+                                edge_ids=torch.tensor([[0, 6]]),
+                                edge_index=torch.tensor([[[0, 6], [0, 7]]]),
+                                edge_timestamps=torch.tensor([[2.0, 2.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0]]),
+                                tgt_event_mask=torch.tensor([[1.0]]),
+                                tgt_event_type_ids=torch.tensor([[5]]),
+                                tgt_event_src_ids=torch.tensor([[6]]),
+                                tgt_event_src_mask=torch.tensor([[1.0]]),
+                                tgt_event_dst_ids=torch.tensor([[7]]),
+                                tgt_event_dst_mask=torch.tensor([[1.0]]),
+                                tgt_event_edge_ids=torch.tensor([[6]]),
+                                tgt_event_label_ids=torch.tensor([[100]]),
+                                groundtruth_event_type_ids=torch.tensor([[2]]),
+                                groundtruth_event_src_ids=torch.tensor([[0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0]]),
+                            ),
+                        ),
+                    ),
                 ),
-            ],
+            ),
         ),
         (
             None,
@@ -1664,242 +1670,268 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                     },
                 ],
             ],
-            [
+            TWCmdGenTemporalBatch(
                 (
-                    {
-                        "obs_word_ids": torch.tensor(
-                            [
-                                [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                                [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
-                            ]
-                        ),
-                        "obs_mask": torch.tensor(
-                            [
-                                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
-                            ]
-                        ),
-                        "prev_action_word_ids": torch.tensor(
-                            [[257, 404, 0, 0], [663, 404, 315, 661]]
-                        ),
-                        "prev_action_mask": torch.tensor(
-                            [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
-                        ),
-                    },
-                    [
-                        {
-                            "node_ids": torch.tensor([[0], [0]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[1], [1]]),
-                            "tgt_event_src_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3], [3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[1], [1]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1], [0, 3]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3], [3]]),
-                            "tgt_event_src_ids": torch.tensor([[1], [3]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[1], [1]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3], [3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[14], [14]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2], [0, 3, 4]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3], [3]]),
-                            "tgt_event_src_ids": torch.tensor([[2], [4]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[14], [14]]),
-                            "groundtruth_event_type_ids": torch.tensor([[5], [2]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 1], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                    (
+                        TWCmdGenTemporalTextualInput(
+                            obs_word_ids=torch.tensor(
+                                [
+                                    [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
+                                    [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
+                                ]
                             ),
-                            "edge_timestamps": torch.tensor([[2.0, 2.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[5], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[1], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[2], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[1], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                    ],
-                ),
-                (
-                    {
-                        "obs_word_ids": torch.tensor(
-                            [
-                                [769, 663, 676, 404, 315, 676, 661, 21],
-                                [2, 3, 0, 0, 0, 0, 0, 0],
-                            ]
-                        ),
-                        "obs_mask": torch.tensor(
-                            [
-                                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                                [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                            ]
-                        ),
-                        "prev_action_word_ids": torch.tensor(
-                            [[663, 404, 315, 661], [2, 3, 0, 0]]
-                        ),
-                        "prev_action_mask": torch.tensor(
-                            [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 0.0]]
-                        ),
-                    },
-                    [
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 1], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                            obs_mask=torch.tensor(
+                                [
+                                    [
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                    ],
+                                    [
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                    ],
+                                ]
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[1], [1]]),
-                            "tgt_event_src_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[6], [2]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 1], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                            prev_action_word_ids=torch.tensor(
+                                [[257, 404, 0, 0], [663, 404, 315, 661]]
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[3.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[1], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[2], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[1], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[4], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 1], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                            prev_action_mask=torch.tensor(
+                                [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[3.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[4], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[1], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[4], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[14], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 1, 2], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 1], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                        ),
+                        (
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0], [0]]),
+                                edge_ids=torch.tensor([[0], [0]]),
+                                edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_timestamps=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[1], [1]]),
+                                tgt_event_src_ids=torch.tensor([[0], [0]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[3], [3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[1], [1]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[3.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[4], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[2], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[14], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                    ],
-                ),
-            ],
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1], [0, 3]]),
+                                edge_ids=torch.tensor([[0], [0]]),
+                                edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3], [3]]),
+                                tgt_event_src_ids=torch.tensor([[1], [3]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[1], [1]]),
+                                groundtruth_event_type_ids=torch.tensor([[3], [3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[14], [14]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2], [0, 3, 4]]),
+                                edge_ids=torch.tensor([[0], [0]]),
+                                edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3], [3]]),
+                                tgt_event_src_ids=torch.tensor([[2], [4]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[14], [14]]),
+                                groundtruth_event_type_ids=torch.tensor([[5], [2]]),
+                                groundtruth_event_src_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 1], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[2.0, 2.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[5], [0]]),
+                                tgt_event_src_ids=torch.tensor([[1], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[2], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[1], [0]]),
+                                tgt_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                        ),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(
+                            obs_word_ids=torch.tensor(
+                                [
+                                    [769, 663, 676, 404, 315, 676, 661, 21],
+                                    [2, 3, 0, 0, 0, 0, 0, 0],
+                                ]
+                            ),
+                            obs_mask=torch.tensor(
+                                [
+                                    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                                    [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                                ]
+                            ),
+                            prev_action_word_ids=torch.tensor(
+                                [[663, 404, 315, 661], [2, 3, 0, 0]]
+                            ),
+                            prev_action_mask=torch.tensor(
+                                [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 0.0]]
+                            ),
+                        ),
+                        (
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 1], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[1], [1]]),
+                                tgt_event_src_ids=torch.tensor([[0], [0]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[6], [2]]),
+                                groundtruth_event_src_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 1], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[3.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[6], [0]]),
+                                tgt_event_src_ids=torch.tensor([[1], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[2], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[1], [0]]),
+                                tgt_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[4], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 1], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[3.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[4], [0]]),
+                                tgt_event_src_ids=torch.tensor([[1], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[4], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[14], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 1], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[3.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[4], [0]]),
+                                tgt_event_src_ids=torch.tensor([[2], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[14], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                        ),
+                    ),
+                )
+            ),
         ),
         (
             (1, 2),
@@ -1989,247 +2021,273 @@ def test_tw_cmd_gen_collator_init_worker_id_space(
                     },
                 ],
             ],
-            [
-                (
-                    {
-                        "obs_word_ids": torch.tensor(
-                            [
-                                [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                                [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
-                            ]
-                        ),
-                        "obs_mask": torch.tensor(
-                            [
-                                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
-                            ]
-                        ),
-                        "prev_action_word_ids": torch.tensor(
-                            [[257, 404, 0, 0], [663, 404, 315, 661]]
-                        ),
-                        "prev_action_mask": torch.tensor(
-                            [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
-                        ),
-                    },
-                    [
-                        {
-                            "node_ids": torch.tensor([[0], [0]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[1], [1]]),
-                            "tgt_event_src_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3], [3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[1], [1]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6], [0, 8]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3], [3]]),
-                            "tgt_event_src_ids": torch.tensor([[6], [8]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[1], [1]]),
-                            "groundtruth_event_type_ids": torch.tensor([[3], [3]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[14], [14]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7], [0, 8, 9]]),
-                            "edge_ids": torch.tensor([[0], [0]]),
-                            "edge_index": torch.tensor([[[0], [0]], [[0], [0]]]),
-                            "edge_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0], [1.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[3], [3]]),
-                            "tgt_event_src_ids": torch.tensor([[7], [9]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[14], [14]]),
-                            "groundtruth_event_type_ids": torch.tensor([[5], [2]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 6], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+            TWCmdGenTemporalBatch(
+                data=(
+                    (
+                        TWCmdGenTemporalTextualInput(
+                            obs_word_ids=torch.tensor(
+                                [
+                                    [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
+                                    [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
+                                ]
                             ),
-                            "edge_timestamps": torch.tensor([[2.0, 2.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[2.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[5], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[7], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                    ],
-                ),
-                (
-                    {
-                        "obs_word_ids": torch.tensor(
-                            [
-                                [769, 663, 676, 404, 315, 676, 661, 21],
-                                [2, 3, 0, 0, 0, 0, 0, 0],
-                            ]
-                        ),
-                        "obs_mask": torch.tensor(
-                            [
-                                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                                [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                            ]
-                        ),
-                        "prev_action_word_ids": torch.tensor(
-                            [[663, 404, 315, 661], [2, 3, 0, 0]]
-                        ),
-                        "prev_action_mask": torch.tensor(
-                            [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 0.0]]
-                        ),
-                    },
-                    [
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 6], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                            obs_mask=torch.tensor(
+                                [
+                                    [
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                    ],
+                                    [
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                    ],
+                                ]
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [1.0]]),
-                            "tgt_event_type_ids": torch.tensor([[1], [1]]),
-                            "tgt_event_src_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[6], [2]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [1.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 6], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                            prev_action_word_ids=torch.tensor(
+                                [[257, 404, 0, 0], [663, 404, 315, 661]]
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[3.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[7], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[100], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[4], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 6], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                            prev_action_mask=torch.tensor(
+                                [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[3.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[4], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[6], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[1], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[4], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[14], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                        {
-                            "node_ids": torch.tensor([[0, 6, 7], [0, 0, 0]]),
-                            "edge_ids": torch.tensor([[0, 6], [0, 0]]),
-                            "edge_index": torch.tensor(
-                                [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                        ),
+                        (
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0], [0]]),
+                                edge_ids=torch.tensor([[0], [0]]),
+                                edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_timestamps=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[1], [1]]),
+                                tgt_event_src_ids=torch.tensor([[0], [0]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[3], [3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[1], [1]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
                             ),
-                            "edge_timestamps": torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
-                            "tgt_event_timestamps": torch.tensor([[3.0], [0.0]]),
-                            "tgt_event_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_type_ids": torch.tensor([[4], [0]]),
-                            "tgt_event_src_ids": torch.tensor([[7], [0]]),
-                            "tgt_event_src_mask": torch.tensor([[1.0], [0.0]]),
-                            "tgt_event_dst_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "tgt_event_edge_ids": torch.tensor([[0], [0]]),
-                            "tgt_event_label_ids": torch.tensor([[14], [0]]),
-                            "groundtruth_event_type_ids": torch.tensor([[2], [0]]),
-                            "groundtruth_event_src_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_src_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_dst_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_dst_mask": torch.tensor([[0.0], [0.0]]),
-                            "groundtruth_event_label_ids": torch.tensor([[0], [0]]),
-                            "groundtruth_event_mask": torch.tensor([[1.0], [0.0]]),
-                        },
-                    ],
-                ),
-            ],
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6], [0, 8]]),
+                                edge_ids=torch.tensor([[0], [0]]),
+                                edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3], [3]]),
+                                tgt_event_src_ids=torch.tensor([[6], [8]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[1], [1]]),
+                                groundtruth_event_type_ids=torch.tensor([[3], [3]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[14], [14]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7], [0, 8, 9]]),
+                                edge_ids=torch.tensor([[0], [0]]),
+                                edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
+                                edge_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0], [1.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[3], [3]]),
+                                tgt_event_src_ids=torch.tensor([[7], [9]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[14], [14]]),
+                                groundtruth_event_type_ids=torch.tensor([[5], [2]]),
+                                groundtruth_event_src_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 6], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[2.0, 2.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[2.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[5], [0]]),
+                                tgt_event_src_ids=torch.tensor([[6], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[7], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[6], [0]]),
+                                tgt_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                        ),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(
+                            obs_word_ids=torch.tensor(
+                                [
+                                    [769, 663, 676, 404, 315, 676, 661, 21],
+                                    [2, 3, 0, 0, 0, 0, 0, 0],
+                                ]
+                            ),
+                            obs_mask=torch.tensor(
+                                [
+                                    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                                    [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                                ]
+                            ),
+                            prev_action_word_ids=torch.tensor(
+                                [[663, 404, 315, 661], [2, 3, 0, 0]]
+                            ),
+                            prev_action_mask=torch.tensor(
+                                [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 0.0]]
+                            ),
+                        ),
+                        (
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 6], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [1.0]]),
+                                tgt_event_type_ids=torch.tensor([[1], [1]]),
+                                tgt_event_src_ids=torch.tensor([[0], [0]]),
+                                tgt_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[6], [2]]),
+                                groundtruth_event_src_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [1.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 6], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[3.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[6], [0]]),
+                                tgt_event_src_ids=torch.tensor([[6], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[7], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[6], [0]]),
+                                tgt_event_label_ids=torch.tensor([[100], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[4], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 6], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[3.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[4], [0]]),
+                                tgt_event_src_ids=torch.tensor([[6], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[1], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[4], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[14], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                            TWCmdGenTemporalGraphicalInput(
+                                node_ids=torch.tensor([[0, 6, 7], [0, 0, 0]]),
+                                edge_ids=torch.tensor([[0, 6], [0, 0]]),
+                                edge_index=torch.tensor(
+                                    [[[0, 6], [0, 7]], [[0, 0], [0, 0]]]
+                                ),
+                                edge_timestamps=torch.tensor([[3.0, 3.0], [0.0, 0.0]]),
+                                tgt_event_timestamps=torch.tensor([[3.0], [0.0]]),
+                                tgt_event_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_type_ids=torch.tensor([[4], [0]]),
+                                tgt_event_src_ids=torch.tensor([[7], [0]]),
+                                tgt_event_src_mask=torch.tensor([[1.0], [0.0]]),
+                                tgt_event_dst_ids=torch.tensor([[0], [0]]),
+                                tgt_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                tgt_event_edge_ids=torch.tensor([[0], [0]]),
+                                tgt_event_label_ids=torch.tensor([[14], [0]]),
+                                groundtruth_event_type_ids=torch.tensor([[2], [0]]),
+                                groundtruth_event_src_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_src_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_dst_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_dst_mask=torch.tensor([[0.0], [0.0]]),
+                                groundtruth_event_label_ids=torch.tensor([[0], [0]]),
+                                groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
+                            ),
+                        ),
+                    ),
+                )
+            ),
         ),
     ],
 )
 def test_tw_cmd_gen_collator_call(
-    monkeypatch, tw_cmd_gen_collator, worker_info, batch, expected_results
+    monkeypatch, tw_cmd_gen_collator, worker_info, batch, expected
 ):
     if worker_info is not None:
         mock_worker_info = MagicMock()
@@ -2237,42 +2295,531 @@ def test_tw_cmd_gen_collator_call(
         mock_worker_info.num_workers = worker_info[1]
         monkeypatch.setattr("dgu.data.get_worker_info", lambda: mock_worker_info)
     tw_cmd_gen_collator.init_worker_id_space(worker_info)
-    results = tw_cmd_gen_collator(batch)
-    assert len(results) == len(expected_results)
-    for result, expected in zip(results, expected_results):
-        textual, graphical_list = result
-        expected_textual, expected_graphical_list = expected
-        for k in [
-            "obs_word_ids",
-            "obs_mask",
-            "prev_action_word_ids",
-            "prev_action_mask",
-        ]:
-            assert textual[k].equal(expected_textual[k])
-        assert len(graphical_list) == len(expected_graphical_list)
-        for graphical, expected_graphical in zip(
-            graphical_list, expected_graphical_list
-        ):
-            for k in [
-                "node_ids",
-                "edge_ids",
-                "edge_index",
-                "edge_timestamps",
-                "tgt_event_timestamps",
-                "tgt_event_mask",
-                "tgt_event_type_ids",
-                "tgt_event_src_ids",
-                "tgt_event_src_mask",
-                "tgt_event_dst_ids",
-                "tgt_event_dst_mask",
-                "tgt_event_edge_ids",
-                "tgt_event_label_ids",
-                "groundtruth_event_type_ids",
-                "groundtruth_event_src_ids",
-                "groundtruth_event_src_mask",
-                "groundtruth_event_dst_ids",
-                "groundtruth_event_dst_mask",
-                "groundtruth_event_label_ids",
-                "groundtruth_event_mask",
-            ]:
-                assert graphical[k].equal(expected_graphical[k])
+    assert tw_cmd_gen_collator(batch) == expected
+
+
+@pytest.mark.parametrize(
+    "textual",
+    [
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (1, 15)),
+            obs_mask=torch.randint(2, (1, 15)).float(),
+            prev_action_word_ids=torch.randint(10, (1, 3)),
+            prev_action_mask=torch.randint(2, (1, 3)).float(),
+        ),
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (3, 10)),
+            obs_mask=torch.randint(2, (3, 10)).float(),
+            prev_action_word_ids=torch.randint(10, (3, 5)),
+            prev_action_mask=torch.randint(2, (3, 5)).float(),
+        ),
+    ],
+)
+def test_tw_cmd_gen_temporal_textual_input_to(textual):
+    # just check that we're creating a correct copy
+    assert textual.to("cpu") == textual
+
+
+@pytest.mark.parametrize(
+    "graphical",
+    [
+        TWCmdGenTemporalGraphicalInput(
+            node_ids=torch.randint(10, (3, 10)),
+            edge_ids=torch.randint(15, (3, 15)),
+            edge_index=torch.randint(15, (3, 2, 15)),
+            edge_timestamps=torch.rand(3, 15),
+            tgt_event_timestamps=torch.rand(3, 6),
+            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_type_ids=torch.randint(7, (3, 6)),
+            tgt_event_src_ids=torch.randint(10, (3, 6)),
+            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+            tgt_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+        )
+    ],
+)
+def test_tw_cmd_gen_temporal_graphical_input_to(graphical):
+    # just check that we're creating a correct copy
+    assert graphical.to("cpu") == graphical
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [
+        TWCmdGenTemporalBatch(
+            data=(
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (1, 15)),
+                        obs_mask=torch.randint(2, (1, 15)).float(),
+                        prev_action_word_ids=torch.randint(10, (1, 3)),
+                        prev_action_mask=torch.randint(2, (1, 3)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (3, 10)),
+                        obs_mask=torch.randint(2, (3, 10)).float(),
+                        prev_action_word_ids=torch.randint(10, (3, 5)),
+                        prev_action_mask=torch.randint(2, (3, 5)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+            )
+        )
+    ],
+)
+def test_tw_cmd_gen_temporal_batch_to(batch):
+    # just check that we're creating a correct copy
+    assert batch.to("cpu") == batch
+
+
+@pytest.mark.parametrize(
+    "batch,split_size,expected",
+    [
+        (
+            TWCmdGenTemporalBatch(
+                data=(
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                        ),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (TWCmdGenTemporalGraphicalInput(),),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                        ),
+                    ),
+                )
+            ),
+            2,
+            [
+                TWCmdGenTemporalBatch(
+                    data=(
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                            ),
+                        ),
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (TWCmdGenTemporalGraphicalInput(),),
+                        ),
+                    )
+                ),
+                TWCmdGenTemporalBatch(
+                    data=(
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                            ),
+                        ),
+                    ),
+                ),
+            ],
+        ),
+        (
+            TWCmdGenTemporalBatch(
+                data=(
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                        ),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (TWCmdGenTemporalGraphicalInput(),),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                        ),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                        ),
+                    ),
+                    (
+                        TWCmdGenTemporalTextualInput(),
+                        (
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                            TWCmdGenTemporalGraphicalInput(),
+                        ),
+                    ),
+                )
+            ),
+            3,
+            [
+                TWCmdGenTemporalBatch(
+                    data=(
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                            ),
+                        ),
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (TWCmdGenTemporalGraphicalInput(),),
+                        ),
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                            ),
+                        ),
+                    )
+                ),
+                TWCmdGenTemporalBatch(
+                    data=(
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                            ),
+                        ),
+                        (
+                            TWCmdGenTemporalTextualInput(),
+                            (
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                                TWCmdGenTemporalGraphicalInput(),
+                            ),
+                        ),
+                    ),
+                ),
+            ],
+        ),
+    ],
+)
+def test_tw_cmd_gen_temporal_batch_split(batch, split_size, expected):
+    assert batch.split(split_size) == expected
+
+
+@pytest.mark.parametrize(
+    "textual",
+    [
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (1, 15)),
+            obs_mask=torch.randint(2, (1, 15)).float(),
+            prev_action_word_ids=torch.randint(10, (1, 3)),
+            prev_action_mask=torch.randint(2, (1, 3)).float(),
+        ),
+        TWCmdGenTemporalTextualInput(
+            obs_word_ids=torch.randint(10, (3, 10)),
+            obs_mask=torch.randint(2, (3, 10)).float(),
+            prev_action_word_ids=torch.randint(10, (3, 5)),
+            prev_action_mask=torch.randint(2, (3, 5)).float(),
+        ),
+    ],
+)
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="pin_memory() doesn't work on Github Actions"
+)
+def test_tw_cmd_gen_temporal_textual_input_pin_memory(textual):
+    # just check that we're creating a correct copy
+    pinned = textual.pin_memory()
+    assert pinned == textual
+    assert pinned.obs_word_ids.is_pinned()
+    assert pinned.obs_mask.is_pinned()
+    assert pinned.prev_action_word_ids.is_pinned()
+    assert pinned.prev_action_mask.is_pinned()
+
+
+@pytest.mark.parametrize(
+    "graphical",
+    [
+        TWCmdGenTemporalGraphicalInput(
+            node_ids=torch.randint(10, (3, 10)),
+            edge_ids=torch.randint(15, (3, 15)),
+            edge_index=torch.randint(15, (3, 2, 15)),
+            edge_timestamps=torch.rand(3, 15),
+            tgt_event_timestamps=torch.rand(3, 6),
+            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_type_ids=torch.randint(7, (3, 6)),
+            tgt_event_src_ids=torch.randint(10, (3, 6)),
+            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+            tgt_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+        )
+    ],
+)
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="pin_memory() doesn't work on Github Actions"
+)
+def test_tw_cmd_gen_temporal_graphical_input_pin_memory(graphical):
+    # just check that we're creating a correct copy
+    pinned = graphical.pin_memory()
+    assert pinned == graphical
+    assert pinned.node_ids.is_pinned()
+    assert pinned.edge_ids.is_pinned()
+    assert pinned.edge_index.is_pinned()
+    assert pinned.edge_timestamps.is_pinned()
+    assert pinned.tgt_event_timestamps.is_pinned()
+    assert pinned.tgt_event_mask.is_pinned()
+    assert pinned.tgt_event_type_ids.is_pinned()
+    assert pinned.tgt_event_src_ids.is_pinned()
+    assert pinned.tgt_event_src_mask.is_pinned()
+    assert pinned.tgt_event_dst_ids.is_pinned()
+    assert pinned.tgt_event_dst_mask.is_pinned()
+    assert pinned.tgt_event_edge_ids.is_pinned()
+    assert pinned.tgt_event_label_ids.is_pinned()
+    assert pinned.groundtruth_event_type_ids.is_pinned()
+    assert pinned.groundtruth_event_src_ids.is_pinned()
+    assert pinned.groundtruth_event_src_mask.is_pinned()
+    assert pinned.groundtruth_event_dst_ids.is_pinned()
+    assert pinned.groundtruth_event_dst_mask.is_pinned()
+    assert pinned.groundtruth_event_label_ids.is_pinned()
+    assert pinned.groundtruth_event_mask.is_pinned()
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [
+        TWCmdGenTemporalBatch(
+            data=(
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (1, 15)),
+                        obs_mask=torch.randint(2, (1, 15)).float(),
+                        prev_action_word_ids=torch.randint(10, (1, 3)),
+                        prev_action_mask=torch.randint(2, (1, 3)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+                (
+                    TWCmdGenTemporalTextualInput(
+                        obs_word_ids=torch.randint(10, (3, 10)),
+                        obs_mask=torch.randint(2, (3, 10)).float(),
+                        prev_action_word_ids=torch.randint(10, (3, 5)),
+                        prev_action_mask=torch.randint(2, (3, 5)).float(),
+                    ),
+                    (
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                        TWCmdGenTemporalGraphicalInput(
+                            node_ids=torch.randint(10, (3, 10)),
+                            edge_ids=torch.randint(15, (3, 15)),
+                            edge_index=torch.randint(15, (3, 2, 15)),
+                            edge_timestamps=torch.rand(3, 15),
+                            tgt_event_timestamps=torch.rand(3, 6),
+                            tgt_event_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_type_ids=torch.randint(7, (3, 6)),
+                            tgt_event_src_ids=torch.randint(10, (3, 6)),
+                            tgt_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_dst_ids=torch.randint(10, (3, 6)),
+                            tgt_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            tgt_event_edge_ids=torch.randint(15, (3, 6)),
+                            tgt_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_type_ids=torch.randint(7, (3, 6)),
+                            groundtruth_event_src_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_src_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_dst_ids=torch.randint(10, (3, 6)),
+                            groundtruth_event_dst_mask=torch.randint(2, (3, 6)).float(),
+                            groundtruth_event_label_ids=torch.randint(20, (3, 6)),
+                            groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
+                        ),
+                    ),
+                ),
+            )
+        )
+    ],
+)
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="pin_memory() doesn't work on Github Actions"
+)
+def test_tw_cmd_gen_temporal_batch_pin_memory(batch):
+    # just check that we're creating a correct copy
+    pinned = batch.pin_memory()
+    assert pinned == batch
+    for textual, graphicals in pinned.data:
+        assert textual.obs_word_ids.is_pinned()
+        assert textual.obs_mask.is_pinned()
+        assert textual.prev_action_word_ids.is_pinned()
+        assert textual.prev_action_mask.is_pinned()
+        for graphical in graphicals:
+            assert graphical.node_ids.is_pinned()
+            assert graphical.edge_ids.is_pinned()
+            assert graphical.edge_index.is_pinned()
+            assert graphical.edge_timestamps.is_pinned()
+            assert graphical.tgt_event_timestamps.is_pinned()
+            assert graphical.tgt_event_mask.is_pinned()
+            assert graphical.tgt_event_type_ids.is_pinned()
+            assert graphical.tgt_event_src_ids.is_pinned()
+            assert graphical.tgt_event_src_mask.is_pinned()
+            assert graphical.tgt_event_dst_ids.is_pinned()
+            assert graphical.tgt_event_dst_mask.is_pinned()
+            assert graphical.tgt_event_edge_ids.is_pinned()
+            assert graphical.tgt_event_label_ids.is_pinned()
+            assert graphical.groundtruth_event_type_ids.is_pinned()
+            assert graphical.groundtruth_event_src_ids.is_pinned()
+            assert graphical.groundtruth_event_src_mask.is_pinned()
+            assert graphical.groundtruth_event_dst_ids.is_pinned()
+            assert graphical.groundtruth_event_dst_mask.is_pinned()
+            assert graphical.groundtruth_event_label_ids.is_pinned()
+            assert graphical.groundtruth_event_mask.is_pinned()

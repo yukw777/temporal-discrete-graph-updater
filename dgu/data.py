@@ -12,6 +12,7 @@ from torch.utils.data import Sampler, Dataset, DataLoader, get_worker_info
 from hydra.utils import to_absolute_path
 from pathlib import Path
 from torch.nn.utils.rnn import pad_sequence
+from dataclasses import dataclass, field
 
 from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
@@ -182,6 +183,195 @@ class TWCmdGenTemporalDataset(Dataset):
         return self.data == o.data
 
 
+def empty_tensor() -> torch.Tensor:
+    return torch.empty(0)
+
+
+@dataclass(frozen=True)
+class TWCmdGenTemporalTextualInput:
+    obs_word_ids: torch.Tensor = field(default_factory=empty_tensor)
+    obs_mask: torch.Tensor = field(default_factory=empty_tensor)
+    prev_action_word_ids: torch.Tensor = field(default_factory=empty_tensor)
+    prev_action_mask: torch.Tensor = field(default_factory=empty_tensor)
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenTemporalTextualInput):
+            return False
+        return (
+            self.obs_word_ids.equal(o.obs_word_ids)
+            and self.obs_mask.equal(o.obs_mask)
+            and self.prev_action_word_ids.equal(o.prev_action_word_ids)
+            and self.prev_action_mask.equal(o.prev_action_mask)
+        )
+
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalTextualInput":
+        return TWCmdGenTemporalTextualInput(
+            obs_word_ids=self.obs_word_ids.to(*args, **kwargs),
+            obs_mask=self.obs_mask.to(*args, **kwargs),
+            prev_action_word_ids=self.prev_action_word_ids.to(*args, **kwargs),
+            prev_action_mask=self.prev_action_mask.to(*args, **kwargs),
+        )
+
+    def pin_memory(self) -> "TWCmdGenTemporalTextualInput":
+        return TWCmdGenTemporalTextualInput(
+            obs_word_ids=self.obs_word_ids.pin_memory(),
+            obs_mask=self.obs_mask.pin_memory(),
+            prev_action_word_ids=self.prev_action_word_ids.pin_memory(),
+            prev_action_mask=self.prev_action_mask.pin_memory(),
+        )
+
+
+@dataclass(frozen=True)
+class TWCmdGenTemporalGraphicalInput:
+    node_ids: torch.Tensor = field(default_factory=empty_tensor)
+    edge_ids: torch.Tensor = field(default_factory=empty_tensor)
+    edge_index: torch.Tensor = field(default_factory=empty_tensor)
+    edge_timestamps: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_mask: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_dst_mask: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_edge_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_dst_mask: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_mask: torch.Tensor = field(default_factory=empty_tensor)
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenTemporalGraphicalInput):
+            return False
+        return (
+            self.node_ids.equal(o.node_ids)
+            and self.edge_ids.equal(o.edge_ids)
+            and self.edge_index.equal(o.edge_index)
+            and self.edge_timestamps.equal(o.edge_timestamps)
+            and self.tgt_event_timestamps.equal(o.tgt_event_timestamps)
+            and self.tgt_event_mask.equal(o.tgt_event_mask)
+            and self.tgt_event_type_ids.equal(o.tgt_event_type_ids)
+            and self.tgt_event_src_ids.equal(o.tgt_event_src_ids)
+            and self.tgt_event_src_mask.equal(o.tgt_event_src_mask)
+            and self.tgt_event_dst_ids.equal(o.tgt_event_dst_ids)
+            and self.tgt_event_dst_mask.equal(o.tgt_event_dst_mask)
+            and self.tgt_event_edge_ids.equal(o.tgt_event_edge_ids)
+            and self.tgt_event_label_ids.equal(o.tgt_event_label_ids)
+            and self.groundtruth_event_type_ids.equal(o.groundtruth_event_type_ids)
+            and self.groundtruth_event_src_ids.equal(o.groundtruth_event_src_ids)
+            and self.groundtruth_event_src_mask.equal(o.groundtruth_event_src_mask)
+            and self.groundtruth_event_dst_ids.equal(o.groundtruth_event_dst_ids)
+            and self.groundtruth_event_dst_mask.equal(o.groundtruth_event_dst_mask)
+            and self.groundtruth_event_label_ids.equal(o.groundtruth_event_label_ids)
+            and self.groundtruth_event_mask.equal(o.groundtruth_event_mask)
+        )
+
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
+        return TWCmdGenTemporalGraphicalInput(
+            node_ids=self.node_ids.to(*args, **kwargs),
+            edge_ids=self.edge_ids.to(*args, **kwargs),
+            edge_index=self.edge_index.to(*args, **kwargs),
+            edge_timestamps=self.edge_timestamps.to(*args, **kwargs),
+            tgt_event_timestamps=self.tgt_event_timestamps.to(*args, **kwargs),
+            tgt_event_mask=self.tgt_event_mask.to(*args, **kwargs),
+            tgt_event_type_ids=self.tgt_event_type_ids.to(*args, **kwargs),
+            tgt_event_src_ids=self.tgt_event_src_ids.to(*args, **kwargs),
+            tgt_event_src_mask=self.tgt_event_src_mask.to(*args, **kwargs),
+            tgt_event_dst_ids=self.tgt_event_dst_ids.to(*args, **kwargs),
+            tgt_event_dst_mask=self.tgt_event_dst_mask.to(*args, **kwargs),
+            tgt_event_edge_ids=self.tgt_event_edge_ids.to(*args, **kwargs),
+            tgt_event_label_ids=self.tgt_event_label_ids.to(*args, **kwargs),
+            groundtruth_event_type_ids=self.groundtruth_event_type_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_src_ids=self.groundtruth_event_src_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_src_mask=self.groundtruth_event_src_mask.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_dst_ids=self.groundtruth_event_dst_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_dst_mask=self.groundtruth_event_dst_mask.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_label_ids=self.groundtruth_event_label_ids.to(
+                *args, **kwargs
+            ),
+            groundtruth_event_mask=self.groundtruth_event_mask.to(*args, **kwargs),
+        )
+
+    def pin_memory(self) -> "TWCmdGenTemporalGraphicalInput":
+        return TWCmdGenTemporalGraphicalInput(
+            node_ids=self.node_ids.pin_memory(),
+            edge_ids=self.edge_ids.pin_memory(),
+            edge_index=self.edge_index.pin_memory(),
+            edge_timestamps=self.edge_timestamps.pin_memory(),
+            tgt_event_timestamps=self.tgt_event_timestamps.pin_memory(),
+            tgt_event_mask=self.tgt_event_mask.pin_memory(),
+            tgt_event_type_ids=self.tgt_event_type_ids.pin_memory(),
+            tgt_event_src_ids=self.tgt_event_src_ids.pin_memory(),
+            tgt_event_src_mask=self.tgt_event_src_mask.pin_memory(),
+            tgt_event_dst_ids=self.tgt_event_dst_ids.pin_memory(),
+            tgt_event_dst_mask=self.tgt_event_dst_mask.pin_memory(),
+            tgt_event_edge_ids=self.tgt_event_edge_ids.pin_memory(),
+            tgt_event_label_ids=self.tgt_event_label_ids.pin_memory(),
+            groundtruth_event_type_ids=self.groundtruth_event_type_ids.pin_memory(),
+            groundtruth_event_src_ids=self.groundtruth_event_src_ids.pin_memory(),
+            groundtruth_event_src_mask=self.groundtruth_event_src_mask.pin_memory(),
+            groundtruth_event_dst_ids=self.groundtruth_event_dst_ids.pin_memory(),
+            groundtruth_event_dst_mask=self.groundtruth_event_dst_mask.pin_memory(),
+            groundtruth_event_label_ids=self.groundtruth_event_label_ids.pin_memory(),
+            groundtruth_event_mask=self.groundtruth_event_mask.pin_memory(),
+        )
+
+
+@dataclass(frozen=True)
+class TWCmdGenTemporalBatch:
+    data: Tuple[
+        Tuple[TWCmdGenTemporalTextualInput, Tuple[TWCmdGenTemporalGraphicalInput, ...]],
+        ...,
+    ] = field(default_factory=tuple)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
+        return TWCmdGenTemporalBatch(
+            data=tuple(
+                (
+                    textual.to(*args, **kwargs),
+                    tuple(graphical.to(*args, **kwargs) for graphical in graphicals),
+                )
+                for textual, graphicals in self.data
+            )
+        )
+
+    def pin_memory(self) -> "TWCmdGenTemporalBatch":
+        return TWCmdGenTemporalBatch(
+            data=tuple(
+                (
+                    textual.pin_memory(),
+                    tuple(graphical.pin_memory() for graphical in graphicals),
+                )
+                for textual, graphicals in self.data
+            )
+        )
+
+    def split(self, split_size: int) -> List["TWCmdGenTemporalBatch"]:
+        return [
+            TWCmdGenTemporalBatch(
+                data=self.data[ndx : min(ndx + split_size, len(self))]
+            )
+            for ndx in range(0, len(self), split_size)
+        ]
+
+
 class TWCmdGenTemporalDataCollator:
     def __init__(
         self,
@@ -319,16 +509,16 @@ class TWCmdGenTemporalDataCollator:
 
     def collate_textual_inputs(
         self, obs: List[str], prev_actions: List[str]
-    ) -> Dict[str, torch.Tensor]:
+    ) -> TWCmdGenTemporalTextualInput:
         """
         Collate observations and previous actions.
 
-        output: {
-            "obs_word_ids": (batch, obs_len),
-            "obs_mask": (batch, obs_len),
-            "prev_action_word_ids": (batch, prev_action_len),
-            "prev_action_mask": (batch, prev_action_len),
-        }
+        output: TWCmdGenTemporalTextualInput(
+            obs_word_ids: (batch, obs_len),
+            obs_mask: (batch, obs_len),
+            prev_action_word_ids: (batch, prev_action_len),
+            prev_action_mask: (batch, prev_action_len),
+        )
         """
         # textual observation
         obs_word_ids, obs_mask = self.preprocessor.preprocess_tokenized(
@@ -339,12 +529,12 @@ class TWCmdGenTemporalDataCollator:
         prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
             [prev_action.split() for prev_action in prev_actions]
         )
-        return {
-            "obs_word_ids": obs_word_ids,
-            "obs_mask": obs_mask,
-            "prev_action_word_ids": prev_action_word_ids,
-            "prev_action_mask": prev_action_mask,
-        }
+        return TWCmdGenTemporalTextualInput(
+            obs_word_ids=obs_word_ids,
+            obs_mask=obs_mask,
+            prev_action_word_ids=prev_action_word_ids,
+            prev_action_mask=prev_action_mask,
+        )
 
     def collate_non_graphical_inputs(
         self, batch_step: List[Dict[str, Any]]
@@ -677,49 +867,47 @@ class TWCmdGenTemporalDataCollator:
             "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
         }
 
-    def __call__(
-        self, batch: List[List[Dict[str, Any]]]
-    ) -> List[Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]]:
+    def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
         """
         Each element in the collated batch is a batched step. Each step
         has a dictionary of textual inputs and another dictionary
         of graph event inputs.
-        [
+        (
             (
-                {
-                    "obs_word_ids": (batch, obs_len),
-                    "obs_mask": (batch, obs_len),
-                    "prev_action_word_ids": (batch, prev_action_len),
-                    "prev_action_mask": (batch, prev_action_len),
-                },
-                [
-                    {
-                        "node_ids": (batch, num_nodes),
-                        "edge_ids": (batch, num_edges),
-                        "edge_index": (batch, 2, num_edges),
-                        "edge_timestamps": (batch, num_edges),
-                        "tgt_event_timestamps": (batch, 1),
-                        "tgt_event_mask": (batch, 1),
-                        "tgt_event_type_ids": (batch, 1),
-                        "tgt_event_src_ids": (batch, 1),
-                        "tgt_event_src_mask": (batch, 1),
-                        "tgt_event_dst_ids": (batch, 1),
-                        "tgt_event_dst_mask": (batch, 1),
-                        "tgt_event_edge_ids": (batch, 1),
-                        "tgt_event_label_ids": (batch, 1),
-                        "groundtruth_event_type_ids": (batch, 1),
-                        "groundtruth_event_src_ids": (batch, 1),
-                        "groundtruth_event_src_mask": (batch, 1),
-                        "groundtruth_event_dst_ids": (batch, 1),
-                        "groundtruth_event_dst_mask": (batch, 1),
-                        "groundtruth_event_label_ids": (batch, 1),
-                        "groundtruth_event_mask": (batch, 1),
-                    },
+                TWCmdGenTemporalTextualInput(
+                    obs_word_ids: (batch, obs_len),
+                    obs_mask: (batch, obs_len),
+                    prev_action_word_ids: (batch, prev_action_len),
+                    prev_action_mask: (batch, prev_action_len),
+                ),
+                (
+                    TWCmdGenTemporalGraphicalInput(
+                        node_ids: (batch, num_nodes),
+                        edge_ids: (batch, num_edges),
+                        edge_index: (batch, 2, num_edges),
+                        edge_timestamps: (batch, num_edges),
+                        tgt_event_timestamps: (batch, 1),
+                        tgt_event_mask: (batch, 1),
+                        tgt_event_type_ids: (batch, 1),
+                        tgt_event_src_ids: (batch, 1),
+                        tgt_event_src_mask: (batch, 1),
+                        tgt_event_dst_ids: (batch, 1),
+                        tgt_event_dst_mask: (batch, 1),
+                        tgt_event_edge_ids: (batch, 1),
+                        tgt_event_label_ids: (batch, 1),
+                        groundtruth_event_type_ids: (batch, 1),
+                        groundtruth_event_src_ids: (batch, 1),
+                        groundtruth_event_src_mask: (batch, 1),
+                        groundtruth_event_dst_ids: (batch, 1),
+                        groundtruth_event_dst_mask: (batch, 1),
+                        groundtruth_event_label_ids: (batch, 1),
+                        groundtruth_event_mask: (batch, 1),
+                    ),
                     ...
-                ]
+                )
             ),
             ...
-        ]
+        )
         """
         # we initialize the worker ID space for every batch
         worker_info = get_worker_info()
@@ -732,7 +920,7 @@ class TWCmdGenTemporalDataCollator:
         # start collating
         max_episode_len = max(len(episode) for episode in batch)
         collated_batch: List[
-            Tuple[Dict[str, torch.Tensor], List[Dict[str, torch.Tensor]]]
+            Tuple[TWCmdGenTemporalTextualInput, List[TWCmdGenTemporalGraphicalInput]]
         ] = []
         for i in range(max_episode_len):
             batch_ith_step = [
@@ -745,66 +933,67 @@ class TWCmdGenTemporalDataCollator:
                 [step.get("previous_action", "<bos> <eos>") for step in batch_ith_step],
             )
 
-            graph_events: List[Dict[str, torch.Tensor]] = []
+            graph_events: List[TWCmdGenTemporalGraphicalInput] = []
             non_graphical = self.collate_non_graphical_inputs(batch_ith_step)
             graphical = self.collate_graphical_inputs(batch_ith_step)
             for j in range(non_graphical["tgt_event_type_ids"].size(1)):
                 graph_events.append(
-                    {
-                        "node_ids": graphical["node_ids"][j],
-                        "edge_ids": graphical["edge_ids"][j],
-                        "edge_index": graphical["edge_index"][j],
-                        "edge_timestamps": graphical["edge_timestamps"][j],
-                        "tgt_event_timestamps": non_graphical["tgt_event_timestamps"][
+                    TWCmdGenTemporalGraphicalInput(
+                        node_ids=graphical["node_ids"][j],
+                        edge_ids=graphical["edge_ids"][j],
+                        edge_index=graphical["edge_index"][j],
+                        edge_timestamps=graphical["edge_timestamps"][j],
+                        tgt_event_timestamps=non_graphical["tgt_event_timestamps"][
                             :, j : j + 1
                         ],
-                        "tgt_event_mask": non_graphical["tgt_event_mask"][:, j : j + 1],
-                        "tgt_event_type_ids": non_graphical["tgt_event_type_ids"][
+                        tgt_event_mask=non_graphical["tgt_event_mask"][:, j : j + 1],
+                        tgt_event_type_ids=non_graphical["tgt_event_type_ids"][
                             :, j : j + 1
                         ],
-                        "tgt_event_src_ids": graphical["tgt_event_src_ids"][
+                        tgt_event_src_ids=graphical["tgt_event_src_ids"][:, j : j + 1],
+                        tgt_event_src_mask=non_graphical["tgt_event_src_mask"][
                             :, j : j + 1
                         ],
-                        "tgt_event_src_mask": non_graphical["tgt_event_src_mask"][
+                        tgt_event_dst_ids=graphical["tgt_event_dst_ids"][:, j : j + 1],
+                        tgt_event_dst_mask=non_graphical["tgt_event_dst_mask"][
                             :, j : j + 1
                         ],
-                        "tgt_event_dst_ids": graphical["tgt_event_dst_ids"][
+                        tgt_event_edge_ids=graphical["tgt_event_edge_ids"][
                             :, j : j + 1
                         ],
-                        "tgt_event_dst_mask": non_graphical["tgt_event_dst_mask"][
+                        tgt_event_label_ids=non_graphical["tgt_event_label_ids"][
                             :, j : j + 1
                         ],
-                        "tgt_event_edge_ids": graphical["tgt_event_edge_ids"][
-                            :, j : j + 1
-                        ],
-                        "tgt_event_label_ids": non_graphical["tgt_event_label_ids"][
-                            :, j : j + 1
-                        ],
-                        "groundtruth_event_type_ids": non_graphical[
+                        groundtruth_event_type_ids=non_graphical[
                             "groundtruth_event_type_ids"
                         ][:, j : j + 1],
-                        "groundtruth_event_src_ids": graphical[
+                        groundtruth_event_src_ids=graphical[
                             "groundtruth_event_src_ids"
                         ][:, j : j + 1],
-                        "groundtruth_event_src_mask": non_graphical[
+                        groundtruth_event_src_mask=non_graphical[
                             "groundtruth_event_src_mask"
                         ][:, j : j + 1],
-                        "groundtruth_event_dst_ids": graphical[
+                        groundtruth_event_dst_ids=graphical[
                             "groundtruth_event_dst_ids"
                         ][:, j : j + 1],
-                        "groundtruth_event_dst_mask": non_graphical[
+                        groundtruth_event_dst_mask=non_graphical[
                             "groundtruth_event_dst_mask"
                         ][:, j : j + 1],
-                        "groundtruth_event_label_ids": non_graphical[
+                        groundtruth_event_label_ids=non_graphical[
                             "groundtruth_event_label_ids"
                         ][:, j : j + 1],
-                        "groundtruth_event_mask": non_graphical[
-                            "groundtruth_event_mask"
-                        ][:, j : j + 1],
-                    }
+                        groundtruth_event_mask=non_graphical["groundtruth_event_mask"][
+                            :, j : j + 1
+                        ],
+                    )
                 )
             collated_batch.append((textual, graph_events))
-        return collated_batch
+        return TWCmdGenTemporalBatch(
+            data=tuple(
+                (textual, tuple(graph_events))
+                for textual, graph_events in collated_batch
+            )
+        )
 
 
 class TWCmdGenTemporalDataModule(pl.LightningDataModule):
