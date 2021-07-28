@@ -173,7 +173,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_event_dst_mask: torch.Tensor,
         prev_event_edge_ids: torch.Tensor,
         prev_event_label_ids: torch.Tensor,
-        prev_event_mask: torch.Tensor,
         prev_event_timestamps: torch.Tensor,
         prev_node_ids: torch.Tensor,
         prev_edge_ids: torch.Tensor,
@@ -247,7 +246,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_event_dst_mask,
             prev_event_edge_ids,
             label_embeddings[prev_event_label_ids],  # type: ignore
-            prev_event_mask,
             prev_event_timestamps,
             prev_node_ids,
             prev_edge_ids,
@@ -361,7 +359,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graph_event.tgt_event_dst_mask,
                     graph_event.tgt_event_edge_ids,
                     graph_event.tgt_event_label_ids,
-                    graph_event.tgt_event_mask,
                     graph_event.tgt_event_timestamps,
                     graph_event.node_ids,
                     graph_event.edge_ids,

@@ -228,7 +228,6 @@ class TWCmdGenTemporalGraphicalInput:
     edge_index: torch.Tensor = field(default_factory=empty_tensor)
     edge_timestamps: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_mask: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
@@ -253,7 +252,6 @@ class TWCmdGenTemporalGraphicalInput:
             and self.edge_index.equal(o.edge_index)
             and self.edge_timestamps.equal(o.edge_timestamps)
             and self.tgt_event_timestamps.equal(o.tgt_event_timestamps)
-            and self.tgt_event_mask.equal(o.tgt_event_mask)
             and self.tgt_event_type_ids.equal(o.tgt_event_type_ids)
             and self.tgt_event_src_ids.equal(o.tgt_event_src_ids)
             and self.tgt_event_src_mask.equal(o.tgt_event_src_mask)
@@ -277,7 +275,6 @@ class TWCmdGenTemporalGraphicalInput:
             edge_index=self.edge_index.to(*args, **kwargs),
             edge_timestamps=self.edge_timestamps.to(*args, **kwargs),
             tgt_event_timestamps=self.tgt_event_timestamps.to(*args, **kwargs),
-            tgt_event_mask=self.tgt_event_mask.to(*args, **kwargs),
             tgt_event_type_ids=self.tgt_event_type_ids.to(*args, **kwargs),
             tgt_event_src_ids=self.tgt_event_src_ids.to(*args, **kwargs),
             tgt_event_src_mask=self.tgt_event_src_mask.to(*args, **kwargs),
@@ -313,7 +310,6 @@ class TWCmdGenTemporalGraphicalInput:
             edge_index=self.edge_index.pin_memory(),
             edge_timestamps=self.edge_timestamps.pin_memory(),
             tgt_event_timestamps=self.tgt_event_timestamps.pin_memory(),
-            tgt_event_mask=self.tgt_event_mask.pin_memory(),
             tgt_event_type_ids=self.tgt_event_type_ids.pin_memory(),
             tgt_event_src_ids=self.tgt_event_src_ids.pin_memory(),
             tgt_event_src_mask=self.tgt_event_src_mask.pin_memory(),
@@ -545,7 +541,6 @@ class TWCmdGenTemporalDataCollator:
         output: {
             "tgt_event_type_ids": (batch, event_seq_len),
             "tgt_event_timestamps": (batch, event_seq_len),
-            "tgt_event_mask": (batch, event_seq_len),
             "tgt_event_src_mask": (batch, event_seq_len),
             "tgt_event_dst_mask": (batch, event_seq_len),
             "tgt_event_label_ids": (batch, event_seq_len),
@@ -583,7 +578,7 @@ class TWCmdGenTemporalDataCollator:
         )
 
         (
-            tgt_event_mask,
+            _,
             tgt_event_src_mask,
             tgt_event_dst_mask,
         ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
@@ -635,7 +630,6 @@ class TWCmdGenTemporalDataCollator:
         return {
             "tgt_event_type_ids": tgt_event_type_ids,
             "tgt_event_timestamps": tgt_event_timestamps,
-            "tgt_event_mask": tgt_event_mask,
             "tgt_event_src_mask": tgt_event_src_mask,
             "tgt_event_dst_mask": tgt_event_dst_mask,
             "tgt_event_label_ids": tgt_event_label_ids,
@@ -887,7 +881,6 @@ class TWCmdGenTemporalDataCollator:
                         edge_index: (batch, 2, num_edges),
                         edge_timestamps: (batch, num_edges),
                         tgt_event_timestamps: (batch, 1),
-                        tgt_event_mask: (batch, 1),
                         tgt_event_type_ids: (batch, 1),
                         tgt_event_src_ids: (batch, 1),
                         tgt_event_src_mask: (batch, 1),
@@ -946,7 +939,6 @@ class TWCmdGenTemporalDataCollator:
                         tgt_event_timestamps=non_graphical["tgt_event_timestamps"][
                             :, j : j + 1
                         ],
-                        tgt_event_mask=non_graphical["tgt_event_mask"][:, j : j + 1],
                         tgt_event_type_ids=non_graphical["tgt_event_type_ids"][
                             :, j : j + 1
                         ],

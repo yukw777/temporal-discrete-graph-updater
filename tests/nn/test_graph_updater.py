@@ -92,7 +92,6 @@ def test_sldgu_forward(
         if prev_num_edge > 0
         else torch.zeros(batch, 0).long(),
         torch.randint(num_label, (batch, prev_graph_event_seq_len)),
-        torch.randint(2, (batch, prev_graph_event_seq_len)).float(),
         torch.randint(10, (batch, prev_graph_event_seq_len)).float(),
         torch.randint(prev_num_node, (batch, prev_num_node))
         if prev_num_node > 0

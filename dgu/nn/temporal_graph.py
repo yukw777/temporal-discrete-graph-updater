@@ -84,7 +84,6 @@ class TemporalGraphNetwork(nn.Module):
         dst_mask: torch.Tensor,
         event_edge_ids: torch.Tensor,
         event_embeddings: torch.Tensor,
-        event_mask: torch.Tensor,
         event_timestamps: torch.Tensor,
         node_ids: torch.Tensor,
         edge_ids: torch.Tensor,

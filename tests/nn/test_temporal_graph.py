@@ -600,7 +600,6 @@ def test_tgn_forward(
             if num_edge > 0
             else torch.zeros(batch, event_seq_len).long(),
             torch.rand(batch, event_seq_len, event_embedding_dim),
-            torch.randint(2, (batch, event_seq_len)).float(),
             torch.randint(10, (batch, event_seq_len)).float(),
             torch.randint(num_node, (batch, num_node))
             if num_node > 0
