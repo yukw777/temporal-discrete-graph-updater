@@ -417,7 +417,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
-    def on_epoch_start(self) -> None:
+    def on_train_batch_start(
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
+    ) -> None:
+        # reset tgn
         self.tgn.reset()
 
     def tbptt_split_batch(  # type: ignore
