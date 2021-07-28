@@ -350,8 +350,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     ) -> Dict[str, torch.Tensor]:
         losses: List[torch.Tensor] = []
         for textual_inputs, graph_event_inputs in batch.data:
-            encoded_obs: Optional[torch.Tensor] = None
-            encoded_prev_action: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -372,8 +370,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     decoder_hidden=hiddens,
                     obs_word_ids=textual_inputs.obs_word_ids,
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
-                    encoded_obs=encoded_obs,
-                    encoded_prev_action=encoded_prev_action,
                 )
 
                 # calculate losses
@@ -409,12 +405,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
                 # update hiddens
                 hiddens = results["new_hidden"].detach()
-
-                # update encoded_obs and encoded_prev_action
-                if encoded_obs is None:
-                    encoded_obs = results["encoded_obs"]
-                if encoded_prev_action is None:
-                    encoded_prev_action = results["encoded_prev_action"]
 
                 # detach memory
                 self.tgn.memory.detach_()  # type: ignore
