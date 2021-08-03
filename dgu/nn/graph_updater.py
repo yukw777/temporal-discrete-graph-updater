@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+import torchmetrics
 
 from typing import Optional, Dict, List
 from torch.optim import Adam, Optimizer
@@ -17,6 +18,7 @@ from dgu.nn.graph_event_decoder import (
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import TWCmdGenTemporalBatch
+from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -161,6 +163,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.decoder = RNNGraphEventDecoder(4 * hidden_dim, hidden_dim, event_decoder)
 
         self.criterion = nn.CrossEntropyLoss(reduction="none")
+
+        self.event_type_f1 = torchmetrics.F1(ignore_index=EVENT_TYPE_ID_MAP["pad"])
+        self.src_node_f1 = torchmetrics.F1()
+        self.dst_node_f1 = torchmetrics.F1()
+        self.label_f1 = torchmetrics.F1(ignore_index=0)
 
     def forward(  # type: ignore
         self,
@@ -411,10 +418,85 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         assert hiddens is not None
         return {"loss": loss, "hiddens": hiddens}
 
+    def validation_step(  # type: ignore
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+    ) -> Dict[str, torch.Tensor]:
+        for textual_inputs, graph_event_inputs in batch.data:
+            hiddens: Optional[torch.Tensor] = None
+            for graph_event in graph_event_inputs:
+                results = self(
+                    textual_inputs.obs_mask,
+                    textual_inputs.prev_action_mask,
+                    graph_event.tgt_event_type_ids,
+                    graph_event.tgt_event_src_ids,
+                    graph_event.tgt_event_src_mask,
+                    graph_event.tgt_event_dst_ids,
+                    graph_event.tgt_event_dst_mask,
+                    graph_event.tgt_event_edge_ids,
+                    graph_event.tgt_event_label_ids,
+                    graph_event.tgt_event_timestamps,
+                    graph_event.node_ids,
+                    graph_event.edge_ids,
+                    graph_event.edge_index,
+                    graph_event.edge_timestamps,
+                    decoder_hidden=hiddens,
+                    obs_word_ids=textual_inputs.obs_word_ids,
+                    prev_action_word_ids=textual_inputs.prev_action_word_ids,
+                )
+
+                # calculate F1s
+                self.log(
+                    "val_event_type_f1",
+                    self.event_type_f1(
+                        results["event_type_logits"].softmax(dim=1),
+                        graph_event.groundtruth_event_type_ids.flatten(),
+                    ),
+                )
+                src_mask = graph_event.groundtruth_event_src_mask.flatten().bool()
+                if torch.any(src_mask):
+                    self.log(
+                        "val_src_node_f1",
+                        self.src_node_f1(
+                            results["src_logits"][src_mask].softmax(dim=1),
+                            graph_event.groundtruth_event_src_ids[src_mask].flatten(),
+                        ),
+                    )
+                dst_mask = graph_event.groundtruth_event_dst_mask.flatten().bool()
+                if torch.any(dst_mask):
+                    self.log(
+                        "val_dst_node_f1",
+                        self.dst_node_f1(
+                            results["dst_logits"][dst_mask].softmax(dim=1),
+                            graph_event.groundtruth_event_dst_ids[dst_mask].flatten(),
+                        ),
+                    )
+                self.log(
+                    "val_label_f1",
+                    self.label_f1(
+                        results["label_logits"].softmax(dim=1),
+                        graph_event.groundtruth_event_label_ids.flatten(),
+                    ),
+                )
+
+                # update hiddens
+                hiddens = results["new_hidden"]
+
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
     def on_train_batch_start(
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
+    ) -> None:
+        # reset tgn
+        self.tgn.reset()
+
+    def on_validation_batch_start(
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
+    ) -> None:
+        # reset tgn
+        self.tgn.reset()
+
+    def on_test_batch_start(
         self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
     ) -> None:
         # reset tgn
