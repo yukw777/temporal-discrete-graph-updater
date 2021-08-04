@@ -418,9 +418,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         assert hiddens is not None
         return {"loss": loss, "hiddens": hiddens}
 
-    def validation_step(  # type: ignore
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int
-    ) -> Dict[str, torch.Tensor]:
+    def eval_step(self, batch: TWCmdGenTemporalBatch, log_prefix: str) -> None:
         for textual_inputs, graph_event_inputs in batch.data:
             hiddens: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
@@ -446,7 +444,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
                 # calculate F1s
                 self.log(
-                    "val_event_type_f1",
+                    log_prefix + "_event_type_f1",
                     self.event_type_f1(
                         results["event_type_logits"].softmax(dim=1),
                         graph_event.groundtruth_event_type_ids.flatten(),
@@ -455,7 +453,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 src_mask = graph_event.groundtruth_event_src_mask.flatten().bool()
                 if torch.any(src_mask):
                     self.log(
-                        "val_src_node_f1",
+                        log_prefix + "_src_node_f1",
                         self.src_node_f1(
                             results["src_logits"][src_mask].softmax(dim=1),
                             graph_event.groundtruth_event_src_ids[src_mask].flatten(),
@@ -464,14 +462,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 dst_mask = graph_event.groundtruth_event_dst_mask.flatten().bool()
                 if torch.any(dst_mask):
                     self.log(
-                        "val_dst_node_f1",
+                        log_prefix + "_dst_node_f1",
                         self.dst_node_f1(
                             results["dst_logits"][dst_mask].softmax(dim=1),
                             graph_event.groundtruth_event_dst_ids[dst_mask].flatten(),
                         ),
                     )
                 self.log(
-                    "val_label_f1",
+                    log_prefix + "_label_f1",
                     self.label_f1(
                         results["label_logits"].softmax(dim=1),
                         graph_event.groundtruth_event_label_ids.flatten(),
@@ -480,6 +478,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
                 # update hiddens
                 hiddens = results["new_hidden"]
+
+    def validation_step(  # type: ignore
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+    ) -> None:
+        self.eval_step(batch, "val")
+
+    def test_step(  # type: ignore
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+    ) -> None:
+        self.eval_step(batch, "test")
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore

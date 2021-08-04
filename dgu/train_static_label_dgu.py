@@ -37,6 +37,9 @@ def main(cfg: DictConfig) -> None:
     # fit
     trainer.fit(lm, datamodule=dm)
 
+    # test
+    trainer.test()
+
 
 if __name__ == "__main__":
     main()
