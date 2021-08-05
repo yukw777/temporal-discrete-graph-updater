@@ -190,11 +190,11 @@ class TemporalGraphNetwork(nn.Module):
         # )
 
         # aggregate messages
-        agg_src_msgs = self.agg_message(src_msgs, src_ids).flatten(end_dim=1)
-        # (batch * max_src_id,
+        agg_src_msgs = self.agg_message(src_msgs, src_ids)
+        # (max_src_id,
         #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
-        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids).flatten(end_dim=1)
-        # (batch * max_dst_id,
+        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids)
+        # (max_dst_id,
         #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
 
         # get unique IDs
@@ -431,7 +431,7 @@ class TemporalGraphNetwork(nn.Module):
 
     def agg_message(self, messages: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
         """
-        Aggregate messages based on the given node IDs. For now we calculate the mean.
+        Aggregate messages based on the given node IDs. For now we calculate the sum.
 
         messages: (
             batch,
@@ -441,12 +441,11 @@ class TemporalGraphNetwork(nn.Module):
         ids: (batch, event_seq_len)
 
         output: (
-            batch,
             max_src_id,
             event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
         )
         """
-        return scatter(messages, ids, dim=1, reduce="mean")
+        return scatter(messages.flatten(end_dim=1), ids.flatten(), dim=0)
 
     def update_node_features(
         self,

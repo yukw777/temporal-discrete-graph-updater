@@ -251,15 +251,13 @@ def test_tgn_message(
 @pytest.mark.parametrize(
     "messages,ids,expected",
     [
-        (torch.ones(1, 1, 4), torch.tensor([0]), torch.ones(1, 1, 4)),
+        (torch.ones(1, 1, 4), torch.tensor([[0]]), torch.ones(1, 4)),
         (
             torch.cat(
                 [torch.ones(1, 4), torch.zeros(1, 4), torch.ones(1, 4)]
             ).unsqueeze(0),
             torch.tensor([[0, 1, 1]]),
-            torch.cat(
-                [torch.ones(1, 4), torch.tensor([[0.5, 0.5, 0.5, 0.5]])]
-            ).unsqueeze(0),
+            torch.ones(2, 4),
         ),
         (
             torch.stack(
@@ -269,14 +267,7 @@ def test_tgn_message(
                 ]
             ),
             torch.tensor([[0, 1, 1], [0, 1, 0]]),
-            torch.stack(
-                [
-                    torch.cat([torch.ones(1, 4), torch.tensor([[0.5, 0.5, 0.5, 0.5]])]),
-                    torch.cat(
-                        [torch.tensor([[0.5, 0.5, 0.5, 0.5]]), torch.zeros(1, 4)]
-                    ),
-                ]
-            ),
+            torch.tensor([[2.0, 2.0, 2.0, 2.0], [1.0, 1.0, 1.0, 1.0]]),
         ),
     ],
 )
