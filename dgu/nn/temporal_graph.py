@@ -1,12 +1,65 @@
 import torch
 import torch.nn as nn
 
-from typing import Tuple
+from typing import Tuple, Optional
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
 from dgu.constants import EVENT_TYPE_ID_MAP
+
+
+class TransformerConvStack(nn.Module):
+    def __init__(
+        self,
+        node_dim: int,
+        output_dim: int,
+        num_block: int,
+        heads: int = 1,
+        edge_dim: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        self.stack = nn.ModuleList(
+            [
+                TransformerConv(node_dim, output_dim, edge_dim=edge_dim, heads=heads)
+                if i == 0
+                else TransformerConv(
+                    node_dim + heads * output_dim,
+                    output_dim,
+                    edge_dim=edge_dim,
+                    heads=heads,
+                )
+                for i in range(num_block)
+            ]
+        )
+        self.linear = nn.Linear(heads * output_dim, output_dim)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        x: (num_node, node_dim)
+        edge_index: (2, num_edge)
+        edge_attr: (num_edge, edge_dim)
+
+        output: (num_node, output_dim)
+        """
+        for i, gnn in enumerate(self.stack):
+            if i == 0:
+                node_embeddings = gnn(x, edge_index, edge_attr=edge_attr)
+                # (num_node, heads * output_dim)
+            else:
+                node_embeddings = gnn(
+                    torch.cat([node_embeddings, x], dim=-1),
+                    edge_index,
+                    edge_attr=edge_attr,
+                )
+                # (num_node, heads * output_dim)
+        return self.linear(node_embeddings)
+        # (num_node, output_dim)
 
 
 class TemporalGraphNetwork(nn.Module):

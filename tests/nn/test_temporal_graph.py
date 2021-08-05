@@ -649,3 +649,23 @@ def test_localize_edge_index(edge_index, node_ids, expected):
     assert TemporalGraphNetwork.localize_edge_index(edge_index, node_ids).equal(
         expected
     )
+
+
+@pytest.mark.parametrize(
+    "node_dim,output_dim,num_block,heads,edge_dim,num_node,num_edge",
+    [(16, 8, 1, 1, None, 1, 0), (16, 8, 4, 3, 12, 5, 4)],
+)
+def test_transformer_conv_stack(
+    node_dim, output_dim, num_block, heads, edge_dim, num_node, num_edge
+):
+    stack = TransformerConvStack(
+        node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
+    )
+    assert (
+        stack(
+            torch.rand(num_node, node_dim),
+            torch.randint(num_node, (2, num_edge)),
+            edge_attr=None if edge_dim is None else torch.rand(num_edge, edge_dim),
+        ).size()
+        == (num_node, output_dim)
+    )
