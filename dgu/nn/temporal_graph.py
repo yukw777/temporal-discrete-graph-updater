@@ -72,6 +72,8 @@ class TemporalGraphNetwork(nn.Module):
         time_enc_dim: int,
         event_embedding_dim: int,
         output_dim: int,
+        transformer_conv_num_block: int,
+        transformer_conv_num_heads: int,
     ) -> None:
         super().__init__()
         self.max_num_nodes = max_num_nodes
@@ -121,10 +123,12 @@ class TemporalGraphNetwork(nn.Module):
             memory_dim,
         )
 
-        # GNN for the final node embeddings
-        self.gnn = TransformerConv(
+        # TransformerConvStack for the final node embeddings
+        self.gnn = TransformerConvStack(
             event_embedding_dim + memory_dim,
             output_dim,
+            transformer_conv_num_block,
+            heads=transformer_conv_num_heads,
             edge_dim=time_enc_dim + event_embedding_dim,
         )
 
@@ -228,26 +232,31 @@ class TemporalGraphNetwork(nn.Module):
                 rel_t.size(0), -1, self.time_enc_dim
             )
             # (batch, num_edge, time_enc_dim)
-            node_embeddings = self.gnn(
-                torch.cat(
-                    [
-                        self.node_features[node_ids],  # type: ignore
-                        # (batch, num_node)
-                        self.memory[node_ids],  # type: ignore
-                        # (batch, num_node)
-                    ],
-                    dim=-1,
-                ).flatten(end_dim=1),
-                # (batch * num_node, event_embedding_dim + memory_dim)
+            x = torch.cat(
+                [
+                    self.node_features[node_ids],  # type: ignore
+                    # (batch, num_node, event_embedding_dim)
+                    self.memory[node_ids],  # type: ignore
+                    # (batch, num_node, memory_dim)
+                ],
+                dim=-1,
+            ).flatten(end_dim=1)
+            # (batch * num_node, event_embedding_dim + memory_dim)
+            edge_attr = torch.cat(
+                [
+                    rel_t_embs,
+                    self.edge_features[edge_ids],  # type: ignore
+                ],
+                dim=-1,
+            ).flatten(end_dim=1)
+            # (batch * num_node, time_enc_dim + event_embedding_dim)
+            localized_edge_index = (
                 self.localize_edge_index(edge_index, node_ids)
                 .transpose(0, 1)
-                .flatten(start_dim=1),
-                # (2, batch * num_node)
-                torch.cat(
-                    [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
-                ).flatten(end_dim=1),
-                # (batch * num_node, time_enc_dim + event_embedding_dim)
+                .flatten(start_dim=1)
             )
+            # (2, batch * num_node)
+            node_embeddings = self.gnn(x, localized_edge_index, edge_attr=edge_attr)
             # (batch * num_node, output_dim)
         else:
             # no nodes, so no node embeddings either

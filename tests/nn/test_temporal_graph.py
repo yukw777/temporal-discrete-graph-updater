@@ -217,7 +217,7 @@ def test_tgn_message(
     src_expected,
     dst_expected,
 ):
-    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4, 4, 4, 4, 8)
+    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4, 4, 4, 4, 8, 1, 1)
     for i in range(num_nodes):
         tgn.memory[i] = torch.tensor([i] * 4).float()
     for i in range(num_edges):
@@ -281,7 +281,7 @@ def test_tgn_message(
     ],
 )
 def test_tgn_agg_message(messages, ids, expected):
-    tgn = TemporalGraphNetwork(10, 10, 4, 4, 4, 4, 8)
+    tgn = TemporalGraphNetwork(10, 10, 4, 4, 4, 4, 8, 1, 1)
     assert tgn.agg_message(messages, ids).equal(expected)
 
 
@@ -364,7 +364,7 @@ def test_tgn_agg_message(messages, ids, expected):
     ],
 )
 def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, expected):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
     tgn.update_node_features(event_type_ids, src_ids, event_embeddings)
     assert tgn.node_features.equal(expected)
 
@@ -450,7 +450,7 @@ def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, exp
 def test_tgn_update_edge_features(
     event_type_ids, event_edge_ids, event_embeddings, expected
 ):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
     tgn.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
     assert tgn.edge_features.equal(expected)
 
@@ -550,19 +550,23 @@ def test_tgn_update_edge_features(
 def test_tgn_update_last_update(
     event_type_ids, event_edge_ids, event_timestamps, expected
 ):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
     tgn.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
     assert tgn.last_update.equal(expected)
 
 
 @pytest.mark.parametrize(
     "event_type_dim,memory_dim,time_enc_dim,event_embedding_dim,output_dim,"
-    "batch,event_seq_len,num_node,num_edge",
+    "batch,event_seq_len,num_node,num_edge,transformer_conv_num_block,"
+    "transformer_conv_num_heads",
     [
-        (4, 8, 16, 20, 12, 1, 0, 0, 0),
-        (4, 8, 16, 20, 12, 1, 3, 4, 5),
-        (4, 8, 16, 20, 12, 8, 5, 10, 20),
-        (8, 16, 32, 48, 24, 16, 10, 20, 40),
+        (4, 8, 16, 20, 12, 1, 0, 0, 0, 1, 1),
+        (4, 8, 16, 20, 12, 1, 3, 4, 5, 1, 1),
+        (4, 8, 16, 20, 12, 1, 3, 4, 5, 2, 2),
+        (4, 8, 16, 20, 12, 8, 5, 10, 20, 4, 4),
+        (4, 8, 16, 20, 12, 8, 5, 10, 20, 4, 4),
+        (8, 16, 32, 48, 24, 16, 10, 20, 40, 6, 6),
+        (8, 16, 32, 48, 24, 16, 10, 20, 40, 8, 8),
     ],
 )
 def test_tgn_forward(
@@ -575,6 +579,8 @@ def test_tgn_forward(
     event_seq_len,
     num_node,
     num_edge,
+    transformer_conv_num_block,
+    transformer_conv_num_heads,
 ):
     tgn = TemporalGraphNetwork(
         100,
@@ -584,6 +590,8 @@ def test_tgn_forward(
         time_enc_dim,
         event_embedding_dim,
         output_dim,
+        transformer_conv_num_block,
+        transformer_conv_num_heads,
     )
     assert (
         tgn(
