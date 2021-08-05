@@ -214,6 +214,12 @@ class TemporalGraphNetwork(nn.Module):
                 # (num_uniq_src_ids + num_uniq_dst_ids, memory_dim)
             )
 
+        # update node features
+        self.update_node_features(event_type_ids, src_ids, event_embeddings)
+
+        # update edge features
+        self.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
+
         # calculate the node embeddings
         if node_ids.size(1) != 0:
             rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
@@ -247,12 +253,6 @@ class TemporalGraphNetwork(nn.Module):
             # no nodes, so no node embeddings either
             node_embeddings = torch.zeros(0, self.output_dim, device=node_ids.device)
             # (0, output_dim)
-
-        # update node features
-        self.update_node_features(event_type_ids, src_ids, event_embeddings)
-
-        # update edge features
-        self.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
 
         # update last updated timestamps
         self.update_last_update(event_type_ids, event_edge_ids, event_timestamps)

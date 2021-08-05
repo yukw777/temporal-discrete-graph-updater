@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from dgu.nn.temporal_graph import TemporalGraphNetwork
+from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
 from dgu.nn.utils import compute_masks_from_event_type_ids
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
