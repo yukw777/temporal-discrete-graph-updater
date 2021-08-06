@@ -383,28 +383,28 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
 
                 # calculate losses
-                event_type_loss = torch.mean(
+                event_type_loss = torch.sum(
                     self.criterion(
                         results["event_type_logits"],
                         graph_event.groundtruth_event_type_ids.flatten(),
                     )
                     * graph_event.groundtruth_event_mask
                 )
-                src_loss = torch.mean(
+                src_loss = torch.sum(
                     self.criterion(
                         results["src_logits"],
                         graph_event.groundtruth_event_src_ids.flatten(),
                     )
                     * graph_event.groundtruth_event_src_mask
                 )
-                dst_loss = torch.mean(
+                dst_loss = torch.sum(
                     self.criterion(
                         results["dst_logits"],
                         graph_event.groundtruth_event_dst_ids.flatten(),
                     )
                     * graph_event.groundtruth_event_dst_mask
                 )
-                label_loss = torch.mean(
+                label_loss = torch.sum(
                     self.criterion(
                         results["label_logits"],
                         graph_event.groundtruth_event_label_ids.flatten(),
