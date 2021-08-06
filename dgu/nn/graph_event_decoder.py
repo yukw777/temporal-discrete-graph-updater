@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from typing import Tuple, Dict, Optional
 
-from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from dgu.constants import EVENT_TYPES
 
 
 class EventTypeHead(nn.Module):
@@ -156,14 +156,9 @@ class EventStaticLabelHead(nn.Module):
             torch.cat([node_label_embeddings, edge_label_embeddings]),
         )
 
-    def forward(
-        self,
-        autoregressive_embedding: torch.Tensor,
-        event_type: torch.Tensor,
-    ) -> torch.Tensor:
+    def forward(self, autoregressive_embedding: torch.Tensor) -> torch.Tensor:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
-        event_type: (batch)
 
         output:
             label_logits: (batch, num_label), logits for nodes first, then edges
@@ -177,34 +172,7 @@ class EventStaticLabelHead(nn.Module):
         # (batch, key_query_dim)
 
         # multiply key and query to calculate the logits
-        label_logits = torch.matmul(query, key.transpose(0, 1))
-        # (batch, num_label)
-
-        # calculate label mask based on event_type
-        one_hot_event_type = F.one_hot(event_type, num_classes=len(EVENT_TYPES)).float()
-        # (batch, num_event_type)
-        mask = torch.hstack(
-            [
-                # one hot encoding for node add/delete events
-                one_hot_event_type[
-                    :, EVENT_TYPE_ID_MAP["node-add"] : EVENT_TYPE_ID_MAP["edge-add"]
-                ]
-                # sum to get one hot encoding for node events
-                .sum(1, keepdim=True)
-                # repeat for the number of node labels
-                .expand(-1, self.num_node_label),
-                # one hot encoding for edge add/delete events
-                one_hot_event_type[:, EVENT_TYPE_ID_MAP["edge-add"] :]
-                # sum to get one hot encoding for edge events
-                .sum(1, keepdim=True)
-                # repeat for the number of edge labels
-                .expand(-1, self.num_edge_label),
-            ]
-        )
-        # (batch, num_label)
-
-        # mask out the label logits and return
-        return label_logits * mask
+        return torch.matmul(query, key.transpose(0, 1))
 
 
 class StaticLabelGraphEventDecoder(nn.Module):
@@ -260,9 +228,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
         dst_logits, autoregressive_embedding = self.event_dst_head(
             autoregressive_embedding, node_embeddings
         )
-        label_logits = self.event_label_head(
-            autoregressive_embedding, event_type_logits.argmax(dim=1)
-        )
+        label_logits = self.event_label_head(autoregressive_embedding)
         return {
             "event_type_logits": event_type_logits,
             "src_logits": src_logits,

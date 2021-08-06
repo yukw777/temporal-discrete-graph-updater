@@ -1,8 +1,6 @@
 import pytest
 import torch
 
-from itertools import cycle
-
 from dgu.nn.graph_event_decoder import (
     EventTypeHead,
     EventNodeHead,
@@ -10,7 +8,7 @@ from dgu.nn.graph_event_decoder import (
     StaticLabelGraphEventDecoder,
     RNNGraphEventDecoder,
 )
-from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from dgu.constants import EVENT_TYPES
 
 
 @pytest.mark.parametrize(
@@ -79,40 +77,8 @@ def test_event_static_label_head(
         torch.rand(num_node_label, label_embedding_dim),
         torch.rand(num_edge_label, label_embedding_dim),
     )
-    event_types = []
-    for i in cycle(range(len(EVENT_TYPES))):
-        event_types.append(i)
-        if len(event_types) == batch:
-            break
-    event_type = torch.tensor(event_types)
-    label_logits = head(torch.rand(batch, autoregressive_embedding_dim), event_type)
+    label_logits = head(torch.rand(batch, autoregressive_embedding_dim))
     assert label_logits.size() == (batch, num_node_label + num_edge_label)
-
-    # make sure the logits are masked correctly
-    for et, logits in zip(event_type, label_logits):
-        if et.item() in {
-            EVENT_TYPE_ID_MAP["pad"],
-            EVENT_TYPE_ID_MAP["start"],
-            EVENT_TYPE_ID_MAP["end"],
-        }:
-            # pad, start or end so all the logits should be zero
-            assert logits.equal(torch.zeros(num_node_label + num_edge_label))
-        elif et.item() in {
-            EVENT_TYPE_ID_MAP["node-add"],
-            EVENT_TYPE_ID_MAP["node-delete"],
-        }:
-            # node-add or node-delete so the edge logits should be zero
-            assert not logits[:num_node_label].equal(torch.zeros(num_node_label))
-            assert logits[num_node_label:].equal(torch.zeros(num_edge_label))
-        elif et.item() in {
-            EVENT_TYPE_ID_MAP["edge-add"],
-            EVENT_TYPE_ID_MAP["edge-delete"],
-        }:
-            # edge-add or edge-delete so the node logits should be zero
-            assert logits[:num_node_label].equal(torch.zeros(num_node_label))
-            assert not logits[num_node_label:].equal(torch.zeros(num_edge_label))
-        else:
-            raise ValueError("Unknown event type")
 
 
 @pytest.mark.parametrize(
