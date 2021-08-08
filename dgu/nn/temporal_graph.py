@@ -1,12 +1,65 @@
 import torch
 import torch.nn as nn
 
-from typing import Tuple
+from typing import Tuple, Optional
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
 from dgu.constants import EVENT_TYPE_ID_MAP
+
+
+class TransformerConvStack(nn.Module):
+    def __init__(
+        self,
+        node_dim: int,
+        output_dim: int,
+        num_block: int,
+        heads: int = 1,
+        edge_dim: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        self.stack = nn.ModuleList(
+            [
+                TransformerConv(node_dim, output_dim, edge_dim=edge_dim, heads=heads)
+                if i == 0
+                else TransformerConv(
+                    node_dim + heads * output_dim,
+                    output_dim,
+                    edge_dim=edge_dim,
+                    heads=heads,
+                )
+                for i in range(num_block)
+            ]
+        )
+        self.linear = nn.Linear(heads * output_dim, output_dim)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        x: (num_node, node_dim)
+        edge_index: (2, num_edge)
+        edge_attr: (num_edge, edge_dim)
+
+        output: (num_node, output_dim)
+        """
+        for i, gnn in enumerate(self.stack):
+            if i == 0:
+                node_embeddings = gnn(x, edge_index, edge_attr=edge_attr)
+                # (num_node, heads * output_dim)
+            else:
+                node_embeddings = gnn(
+                    torch.cat([node_embeddings, x], dim=-1),
+                    edge_index,
+                    edge_attr=edge_attr,
+                )
+                # (num_node, heads * output_dim)
+        return self.linear(node_embeddings)
+        # (num_node, output_dim)
 
 
 class TemporalGraphNetwork(nn.Module):
@@ -19,6 +72,8 @@ class TemporalGraphNetwork(nn.Module):
         time_enc_dim: int,
         event_embedding_dim: int,
         output_dim: int,
+        transformer_conv_num_block: int,
+        transformer_conv_num_heads: int,
     ) -> None:
         super().__init__()
         self.max_num_nodes = max_num_nodes
@@ -68,10 +123,12 @@ class TemporalGraphNetwork(nn.Module):
             memory_dim,
         )
 
-        # GNN for the final node embeddings
-        self.gnn = TransformerConv(
+        # TransformerConvStack for the final node embeddings
+        self.gnn = TransformerConvStack(
             event_embedding_dim + memory_dim,
             output_dim,
+            transformer_conv_num_block,
+            heads=transformer_conv_num_heads,
             edge_dim=time_enc_dim + event_embedding_dim,
         )
 
@@ -133,11 +190,11 @@ class TemporalGraphNetwork(nn.Module):
         # )
 
         # aggregate messages
-        agg_src_msgs = self.agg_message(src_msgs, src_ids).flatten(end_dim=1)
-        # (batch * max_src_id,
+        agg_src_msgs = self.agg_message(src_msgs, src_ids)
+        # (max_src_id,
         #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
-        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids).flatten(end_dim=1)
-        # (batch * max_dst_id,
+        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids)
+        # (max_dst_id,
         #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
 
         # get unique IDs
@@ -161,6 +218,12 @@ class TemporalGraphNetwork(nn.Module):
                 # (num_uniq_src_ids + num_uniq_dst_ids, memory_dim)
             )
 
+        # update node features
+        self.update_node_features(event_type_ids, src_ids, event_embeddings)
+
+        # update edge features
+        self.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
+
         # calculate the node embeddings
         if node_ids.size(1) != 0:
             rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
@@ -169,37 +232,36 @@ class TemporalGraphNetwork(nn.Module):
                 rel_t.size(0), -1, self.time_enc_dim
             )
             # (batch, num_edge, time_enc_dim)
-            node_embeddings = self.gnn(
-                torch.cat(
-                    [
-                        self.node_features[node_ids],  # type: ignore
-                        # (batch, num_node)
-                        self.memory[node_ids],  # type: ignore
-                        # (batch, num_node)
-                    ],
-                    dim=-1,
-                ).flatten(end_dim=1),
-                # (batch * num_node, event_embedding_dim + memory_dim)
+            x = torch.cat(
+                [
+                    self.node_features[node_ids],  # type: ignore
+                    # (batch, num_node, event_embedding_dim)
+                    self.memory[node_ids],  # type: ignore
+                    # (batch, num_node, memory_dim)
+                ],
+                dim=-1,
+            ).flatten(end_dim=1)
+            # (batch * num_node, event_embedding_dim + memory_dim)
+            edge_attr = torch.cat(
+                [
+                    rel_t_embs,
+                    self.edge_features[edge_ids],  # type: ignore
+                ],
+                dim=-1,
+            ).flatten(end_dim=1)
+            # (batch * num_node, time_enc_dim + event_embedding_dim)
+            localized_edge_index = (
                 self.localize_edge_index(edge_index, node_ids)
                 .transpose(0, 1)
-                .flatten(start_dim=1),
-                # (2, batch * num_node)
-                torch.cat(
-                    [rel_t_embs, self.edge_features[edge_ids]], dim=-1  # type: ignore
-                ).flatten(end_dim=1),
-                # (batch * num_node, time_enc_dim + event_embedding_dim)
+                .flatten(start_dim=1)
             )
+            # (2, batch * num_node)
+            node_embeddings = self.gnn(x, localized_edge_index, edge_attr=edge_attr)
             # (batch * num_node, output_dim)
         else:
             # no nodes, so no node embeddings either
             node_embeddings = torch.zeros(0, self.output_dim, device=node_ids.device)
             # (0, output_dim)
-
-        # update node features
-        self.update_node_features(event_type_ids, src_ids, event_embeddings)
-
-        # update edge features
-        self.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
 
         # update last updated timestamps
         self.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
@@ -369,7 +431,7 @@ class TemporalGraphNetwork(nn.Module):
 
     def agg_message(self, messages: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
         """
-        Aggregate messages based on the given node IDs. For now we calculate the mean.
+        Aggregate messages based on the given node IDs. For now we calculate the sum.
 
         messages: (
             batch,
@@ -379,12 +441,11 @@ class TemporalGraphNetwork(nn.Module):
         ids: (batch, event_seq_len)
 
         output: (
-            batch,
             max_src_id,
             event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
         )
         """
-        return scatter(messages, ids, dim=1, reduce="mean")
+        return scatter(messages.flatten(end_dim=1), ids.flatten(), dim=0)
 
     def update_node_features(
         self,

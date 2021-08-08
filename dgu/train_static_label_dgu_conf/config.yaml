@@ -19,6 +19,11 @@ model:
   max_num_nodes: 8000
   max_num_edges: 8000
   word_emb_dim: 300
+  tgn_event_type_emb_dim: 64
+  tgn_memory_dim: 64
+  tgn_time_enc_dim: 64
+  tgn_num_gnn_block: 6
+  tgn_num_gnn_head: 1
   text_encoder_num_blocks: 1
   text_encoder_num_conv_layers: 5
   text_encoder_kernel_size: 5
@@ -29,7 +34,7 @@ model:
   pretrained_word_embedding_path: embedding/crawl-300d-2M.vec
 
 train:
-  learning_rate: 1e-3
+  learning_rate: 1e-4
 
 trainer:
   _target_: pytorch_lightning.Trainer

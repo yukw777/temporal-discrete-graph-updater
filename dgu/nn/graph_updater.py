@@ -37,6 +37,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         tgn_event_type_emb_dim: int = 8,
         tgn_memory_dim: int = 8,
         tgn_time_enc_dim: int = 8,
+        tgn_num_gnn_block: int = 1,
+        tgn_num_gnn_head: int = 1,
         text_encoder_num_blocks: int = 1,
         text_encoder_num_conv_layers: int = 3,
         text_encoder_kernel_size: int = 5,
@@ -59,6 +61,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "tgn_event_type_emb_dim",
             "tgn_memory_dim",
             "tgn_time_enc_dim",
+            "tgn_num_gnn_block",
+            "tgn_num_gnn_head",
             "text_encoder_num_blocks",
             "text_encoder_num_conv_layers",
             "text_encoder_kernel_size",
@@ -146,6 +150,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             tgn_time_enc_dim,
             word_emb_dim,
             hidden_dim,
+            tgn_num_gnn_block,
+            tgn_num_gnn_head,
         )
 
         # representation aggregator
@@ -377,28 +383,28 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
 
                 # calculate losses
-                event_type_loss = torch.mean(
+                event_type_loss = torch.sum(
                     self.criterion(
                         results["event_type_logits"],
                         graph_event.groundtruth_event_type_ids.flatten(),
                     )
                     * graph_event.groundtruth_event_mask
                 )
-                src_loss = torch.mean(
+                src_loss = torch.sum(
                     self.criterion(
                         results["src_logits"],
                         graph_event.groundtruth_event_src_ids.flatten(),
                     )
                     * graph_event.groundtruth_event_src_mask
                 )
-                dst_loss = torch.mean(
+                dst_loss = torch.sum(
                     self.criterion(
                         results["dst_logits"],
                         graph_event.groundtruth_event_dst_ids.flatten(),
                     )
                     * graph_event.groundtruth_event_dst_mask
                 )
-                label_loss = torch.mean(
+                label_loss = torch.sum(
                     self.criterion(
                         results["label_logits"],
                         graph_event.groundtruth_event_label_ids.flatten(),

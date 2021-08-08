@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from dgu.nn.temporal_graph import TemporalGraphNetwork
+from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
 from dgu.nn.utils import compute_masks_from_event_type_ids
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
@@ -217,7 +217,7 @@ def test_tgn_message(
     src_expected,
     dst_expected,
 ):
-    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4, 4, 4, 4, 8)
+    tgn = TemporalGraphNetwork(num_nodes, num_edges, 4, 4, 4, 4, 8, 1, 1)
     for i in range(num_nodes):
         tgn.memory[i] = torch.tensor([i] * 4).float()
     for i in range(num_edges):
@@ -251,15 +251,13 @@ def test_tgn_message(
 @pytest.mark.parametrize(
     "messages,ids,expected",
     [
-        (torch.ones(1, 1, 4), torch.tensor([0]), torch.ones(1, 1, 4)),
+        (torch.ones(1, 1, 4), torch.tensor([[0]]), torch.ones(1, 4)),
         (
             torch.cat(
                 [torch.ones(1, 4), torch.zeros(1, 4), torch.ones(1, 4)]
             ).unsqueeze(0),
             torch.tensor([[0, 1, 1]]),
-            torch.cat(
-                [torch.ones(1, 4), torch.tensor([[0.5, 0.5, 0.5, 0.5]])]
-            ).unsqueeze(0),
+            torch.ones(2, 4),
         ),
         (
             torch.stack(
@@ -269,19 +267,12 @@ def test_tgn_message(
                 ]
             ),
             torch.tensor([[0, 1, 1], [0, 1, 0]]),
-            torch.stack(
-                [
-                    torch.cat([torch.ones(1, 4), torch.tensor([[0.5, 0.5, 0.5, 0.5]])]),
-                    torch.cat(
-                        [torch.tensor([[0.5, 0.5, 0.5, 0.5]]), torch.zeros(1, 4)]
-                    ),
-                ]
-            ),
+            torch.tensor([[2.0, 2.0, 2.0, 2.0], [1.0, 1.0, 1.0, 1.0]]),
         ),
     ],
 )
 def test_tgn_agg_message(messages, ids, expected):
-    tgn = TemporalGraphNetwork(10, 10, 4, 4, 4, 4, 8)
+    tgn = TemporalGraphNetwork(10, 10, 4, 4, 4, 4, 8, 1, 1)
     assert tgn.agg_message(messages, ids).equal(expected)
 
 
@@ -364,7 +355,7 @@ def test_tgn_agg_message(messages, ids, expected):
     ],
 )
 def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, expected):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
     tgn.update_node_features(event_type_ids, src_ids, event_embeddings)
     assert tgn.node_features.equal(expected)
 
@@ -450,7 +441,7 @@ def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, exp
 def test_tgn_update_edge_features(
     event_type_ids, event_edge_ids, event_embeddings, expected
 ):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
     tgn.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
     assert tgn.edge_features.equal(expected)
 
@@ -550,19 +541,23 @@ def test_tgn_update_edge_features(
 def test_tgn_update_last_update(
     event_type_ids, event_edge_ids, event_timestamps, expected
 ):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10)
+    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
     tgn.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
     assert tgn.last_update.equal(expected)
 
 
 @pytest.mark.parametrize(
     "event_type_dim,memory_dim,time_enc_dim,event_embedding_dim,output_dim,"
-    "batch,event_seq_len,num_node,num_edge",
+    "batch,event_seq_len,num_node,num_edge,transformer_conv_num_block,"
+    "transformer_conv_num_heads",
     [
-        (4, 8, 16, 20, 12, 1, 0, 0, 0),
-        (4, 8, 16, 20, 12, 1, 3, 4, 5),
-        (4, 8, 16, 20, 12, 8, 5, 10, 20),
-        (8, 16, 32, 48, 24, 16, 10, 20, 40),
+        (4, 8, 16, 20, 12, 1, 0, 0, 0, 1, 1),
+        (4, 8, 16, 20, 12, 1, 3, 4, 5, 1, 1),
+        (4, 8, 16, 20, 12, 1, 3, 4, 5, 2, 2),
+        (4, 8, 16, 20, 12, 8, 5, 10, 20, 4, 4),
+        (4, 8, 16, 20, 12, 8, 5, 10, 20, 4, 4),
+        (8, 16, 32, 48, 24, 16, 10, 20, 40, 6, 6),
+        (8, 16, 32, 48, 24, 16, 10, 20, 40, 8, 8),
     ],
 )
 def test_tgn_forward(
@@ -575,6 +570,8 @@ def test_tgn_forward(
     event_seq_len,
     num_node,
     num_edge,
+    transformer_conv_num_block,
+    transformer_conv_num_heads,
 ):
     tgn = TemporalGraphNetwork(
         100,
@@ -584,6 +581,8 @@ def test_tgn_forward(
         time_enc_dim,
         event_embedding_dim,
         output_dim,
+        transformer_conv_num_block,
+        transformer_conv_num_heads,
     )
     assert (
         tgn(
@@ -648,4 +647,24 @@ def test_tgn_forward(
 def test_localize_edge_index(edge_index, node_ids, expected):
     assert TemporalGraphNetwork.localize_edge_index(edge_index, node_ids).equal(
         expected
+    )
+
+
+@pytest.mark.parametrize(
+    "node_dim,output_dim,num_block,heads,edge_dim,num_node,num_edge",
+    [(16, 8, 1, 1, None, 1, 0), (16, 8, 4, 3, 12, 5, 4)],
+)
+def test_transformer_conv_stack(
+    node_dim, output_dim, num_block, heads, edge_dim, num_node, num_edge
+):
+    stack = TransformerConvStack(
+        node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
+    )
+    assert (
+        stack(
+            torch.rand(num_node, node_dim),
+            torch.randint(num_node, (2, num_edge)),
+            edge_attr=None if edge_dim is None else torch.rand(num_edge, edge_dim),
+        ).size()
+        == (num_node, output_dim)
     )
