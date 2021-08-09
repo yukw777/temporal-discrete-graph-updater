@@ -1,11 +1,9 @@
 import pytest
 import json
 import torch
-import pickle
 import shutil
 import os
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from dgu.data import (
@@ -526,13 +524,13 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     "event_seq": [
                         {
                             "type": "node-add",
-                            "node_id": 3,
+                            "node_id": 1,
                             "timestamp": 2,
                             "label": "n0",
                         },
                         {
                             "type": "node-add",
-                            "node_id": 4,
+                            "node_id": 2,
                             "timestamp": 2,
                             "label": "n1",
                         },
@@ -544,29 +542,29 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     "event_seq": [
                         {
                             "type": "edge-add",
-                            "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "edge_id": 1,
+                            "src_id": 1,
+                            "dst_id": 2,
                             "timestamp": 2,
                             "label": "e0",
                         },
                         {
                             "type": "edge-delete",
-                            "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "edge_id": 1,
+                            "src_id": 1,
+                            "dst_id": 2,
                             "timestamp": 2,
                             "label": "e0",
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 3,
+                            "node_id": 1,
                             "timestamp": 2,
                             "label": "n0",
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 4,
+                            "node_id": 2,
                             "timestamp": 2,
                             "label": "n1",
                         },
@@ -730,13 +728,13 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     "event_seq": [
                         {
                             "type": "node-add",
-                            "node_id": 3,
+                            "node_id": 1,
                             "timestamp": 2,
                             "label": "n0",
                         },
                         {
                             "type": "node-add",
-                            "node_id": 4,
+                            "node_id": 2,
                             "timestamp": 2,
                             "label": "n1",
                         },
@@ -748,29 +746,29 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     "event_seq": [
                         {
                             "type": "edge-add",
-                            "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "edge_id": 1,
+                            "src_id": 1,
+                            "dst_id": 2,
                             "timestamp": 2,
                             "label": "e0",
                         },
                         {
                             "type": "edge-delete",
-                            "edge_id": 2,
-                            "src_id": 3,
-                            "dst_id": 4,
+                            "edge_id": 1,
+                            "src_id": 1,
+                            "dst_id": 2,
                             "timestamp": 2,
                             "label": "e0",
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 3,
+                            "node_id": 1,
                             "timestamp": 2,
                             "label": "n0",
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 4,
+                            "node_id": 2,
                             "timestamp": 2,
                             "label": "n1",
                         },
@@ -936,29 +934,6 @@ def test_read_label_vocab_files():
         "in": 4,
         "is": 5,
     }
-
-
-@pytest.mark.parametrize(
-    "path,expected",
-    [
-        ("data-path/data.json", Path("data-path/data.pickle")),
-        ("/abs/data-path/data.json", Path("/abs/data-path/data.pickle")),
-    ],
-)
-def test_tw_cmd_gen_datamodule_get_serialized_path(path, expected):
-    assert TWCmdGenTemporalDataModule.get_serialized_path(path) == expected
-
-
-def test_tw_cmd_gen_datamodule_serialize_dataset(tmpdir):
-    original_dataset = TWCmdGenTemporalDataset("tests/data/test_data.json")
-
-    serialized_path = tmpdir / "test_data.pickle"
-    assert not serialized_path.exists()
-    TWCmdGenTemporalDataModule.serialize_dataset(
-        "tests/data/test_data.json", serialized_path
-    )
-    with open(serialized_path, "rb") as f:
-        assert original_dataset == pickle.load(f)
 
 
 @pytest.mark.parametrize(
