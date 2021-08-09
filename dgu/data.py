@@ -3,13 +3,11 @@ import itertools
 import json
 import pytorch_lightning as pl
 import torch
-import pickle
 
 from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict, deque
 from torch.utils.data import Sampler, Dataset, DataLoader, get_worker_info
 from hydra.utils import to_absolute_path
-from pathlib import Path
 from torch.nn.utils.rnn import pad_sequence
 from dataclasses import dataclass, field
 
@@ -973,15 +971,12 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
-        self.serialized_train_path = self.get_serialized_path(self.train_path)
         self.train_batch_size = train_batch_size
         self.train_num_worker = train_num_worker
         self.val_path = to_absolute_path(val_path)
-        self.serialized_val_path = self.get_serialized_path(self.val_path)
         self.val_batch_size = val_batch_size
         self.val_num_worker = val_num_worker
         self.test_path = to_absolute_path(test_path)
-        self.serialized_test_path = self.get_serialized_path(self.test_path)
         self.test_batch_size = test_batch_size
         self.test_num_worker = test_num_worker
 
@@ -995,33 +990,16 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         self.max_num_nodes = max_num_nodes
         self.max_num_edges = max_num_edges
 
-    @staticmethod
-    def get_serialized_path(raw_path: str) -> Path:
-        path = Path(raw_path)
-        return path.parent / (path.stem + ".pickle")
-
-    @classmethod
-    def serialize_dataset(cls, path: str, serialized_path: Path) -> None:
-        if not serialized_path.exists():
-            dataset = TWCmdGenTemporalDataset(path)
-            with open(serialized_path, "wb") as f:
-                pickle.dump(dataset, f)
-
     def prepare_data(self) -> None:
-        self.serialize_dataset(self.train_path, self.serialized_train_path)
-        self.serialize_dataset(self.val_path, self.serialized_val_path)
-        self.serialize_dataset(self.test_path, self.serialized_test_path)
+        pass
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage is None:
-            with open(self.serialized_train_path, "rb") as f:
-                self.train = pickle.load(f)
-            with open(self.serialized_val_path, "rb") as f:
-                self.valid = pickle.load(f)
+            self.train = TWCmdGenTemporalDataset(self.train_path)
+            self.valid = TWCmdGenTemporalDataset(self.val_path)
 
         if stage == "test" or stage is None:
-            with open(self.serialized_test_path, "rb") as f:
-                self.test = pickle.load(f)
+            self.test = TWCmdGenTemporalDataset(self.test_path)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
