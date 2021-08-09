@@ -5,7 +5,6 @@ import pytorch_lightning as pl
 import torch
 import pickle
 
-from tqdm import tqdm
 from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict, deque
 from torch.utils.data import Sampler, Dataset, DataLoader, get_worker_info
@@ -92,95 +91,61 @@ class TWCmdGenTemporalDataset(Dataset):
     def __init__(self, path: str) -> None:
         with open(path, "r") as f:
             raw_data = json.load(f)
-        graph = TextWorldGraph()
-        self.data: List[List[Dict[str, Any]]] = []
-        walkthrough_examples: List[Dict[str, Any]] = []
-        random_examples: List[Dict[str, Any]] = []
-        batch: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(list)
-        curr_walkthrough_step = -1
-        curr_game = ""
+        self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self.walkthrough_example_ids: List[Tuple[str, int]] = []
+        self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
+            list
+        )
 
-        for example in tqdm(
-            # add a bogus game at the end to take care of the last datapoints
-            raw_data["examples"] + [{"game": "", "step": [0, 0]}],
-            desc="processing examples",
-        ):
+        for example in raw_data["examples"]:
             game = example["game"]
-            if curr_game == "":
-                # if it's the first or last (bogus) game, set it right away
-                curr_game = game
-            walkthrough_step, _ = example["step"]
-            if curr_walkthrough_step != walkthrough_step:
-                # a new walkthrough step has been taken
-                # add the walkthrough examples so far
-                for timestamp, w_example in enumerate(walkthrough_examples):
-                    event_seq = list(
-                        itertools.chain.from_iterable(
-                            graph.process_triplet_cmd(
-                                curr_game, curr_walkthrough_step, timestamp, cmd
-                            )
-                            for cmd in w_example["target_commands"]
-                        )
-                    )
-                    batch[(curr_game, curr_walkthrough_step)].append(
-                        {
-                            "game": curr_game,
-                            "walkthrough_step": curr_walkthrough_step,
-                            "observation": w_example["observation"],
-                            "previous_action": w_example["previous_action"],
-                            "timestamp": timestamp,
-                            "event_seq": event_seq,
-                        }
-                    )
-
-                # add the random examples
-                for timestamp, r_example in enumerate(random_examples):
-                    event_seq = list(
-                        itertools.chain.from_iterable(
-                            graph.process_triplet_cmd(
-                                curr_game,
-                                curr_walkthrough_step,
-                                len(walkthrough_examples) + timestamp,
-                                cmd,
-                            )
-                            for cmd in r_example["target_commands"]
-                        )
-                    )
-                    batch[(curr_game, curr_walkthrough_step)].append(
-                        {
-                            "game": curr_game,
-                            "walkthrough_step": curr_walkthrough_step,
-                            "observation": r_example["observation"],
-                            "previous_action": r_example["previous_action"],
-                            "timestamp": len(walkthrough_examples) + timestamp,
-                            "event_seq": event_seq,
-                        }
-                    )
-
-                if curr_game != game:
-                    # new game, so add the batch to the dataset
-                    # and reset walkthrough_examples and batch
-                    self.data.extend(batch.values())
-                    walkthrough_examples = []
-                    batch = defaultdict(list)
-                    curr_game = game
-                walkthrough_examples.append(example)
-                random_examples = []
-                curr_walkthrough_step = walkthrough_step
+            walkthrough_step, random_step = example["step"]
+            if random_step == 0:
+                # walkthrough example
+                self.walkthrough_examples[(game, walkthrough_step)] = example
+                self.walkthrough_example_ids.append((game, walkthrough_step))
             else:
-                # a new random step has been taken, so add to random_examples
-                random_examples.append(example)
+                # random example
+                self.random_examples[(game, walkthrough_step)].append(example)
 
     def __getitem__(self, idx: int) -> List[Dict[str, Any]]:
-        return self.data[idx]
+        game, walkthrough_step = self.walkthrough_example_ids[idx]
+        walkthrough_examples = [
+            self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
+        ]
+        random_examples = self.random_examples[(game, walkthrough_step)]
+        graph = TextWorldGraph()
+        data: List[Dict[str, Any]] = []
+        for timestamp, example in enumerate(walkthrough_examples + random_examples):
+            event_seq = list(
+                itertools.chain.from_iterable(
+                    graph.process_triplet_cmd(game, walkthrough_step, timestamp, cmd)
+                    for cmd in example["target_commands"]
+                )
+            )
+            data.append(
+                {
+                    "game": game,
+                    "walkthrough_step": walkthrough_step,
+                    "observation": example["observation"],
+                    "previous_action": example["previous_action"],
+                    "timestamp": timestamp,
+                    "event_seq": event_seq,
+                }
+            )
+        return data
 
     def __len__(self) -> int:
-        return len(self.data)
+        return len(self.walkthrough_example_ids)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalDataset):
             return False
-        return self.data == o.data
+        return (
+            self.walkthrough_examples == o.walkthrough_examples
+            and self.walkthrough_example_ids == o.walkthrough_example_ids
+            and self.random_examples == o.random_examples
+        )
 
 
 def empty_tensor() -> torch.Tensor:
