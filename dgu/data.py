@@ -1,4 +1,3 @@
-import math
 import itertools
 import json
 import pytorch_lightning as pl
@@ -6,7 +5,7 @@ import torch
 
 from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict, deque
-from torch.utils.data import Sampler, Dataset, DataLoader, get_worker_info
+from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from torch.nn.utils.rnn import pad_sequence
 from dataclasses import dataclass, field
@@ -341,10 +340,28 @@ class TWCmdGenTemporalDataCollator:
     ) -> None:
         self.max_node_id = max_node_id
         self.max_edge_id = max_edge_id
-        self.worker_id_space_initialized = False
 
         self.preprocessor = preprocessor
         self.label_id_map = label_id_map
+        self.init_id_space()
+
+    def init_id_space(self) -> None:
+        self.unused_node_ids: Deque[int] = deque(i for i in range(1, self.max_node_id))
+        self.unused_edge_ids: Deque[int] = deque(i for i in range(1, self.max_edge_id))
+
+        # {(game, walkthrough_step): (
+        #       {node_id: allocated_node_id, ...},
+        #       {edge_id: allocated_edge_id, ...})}
+        self.allocated_id_map: Dict[
+            Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]
+        ] = defaultdict(self.create_allocated_id_tuple)
+
+        self.node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
+            self.create_node_id_set
+        )
+        self.edges: Dict[Tuple[str, int], Dict[int, Tuple[int, int]]] = defaultdict(
+            self.create_edges_dict
+        )
 
     @staticmethod
     def create_node_id_set() -> Set[int]:
@@ -357,8 +374,8 @@ class TWCmdGenTemporalDataCollator:
         return {0: (0, 0)}
 
     @staticmethod
-    def create_global_worker_id_tuple() -> Tuple[Dict[int, int], Dict[int, int]]:
-        # always map worker node/edge ID 0 to the padding node/edge ID
+    def create_allocated_id_tuple() -> Tuple[Dict[int, int], Dict[int, int]]:
+        # always map allocated node/edge ID 0 to the padding node/edge ID
         return ({0: 0}, {0: 0})
 
     def update_subgraph(
@@ -370,101 +387,35 @@ class TWCmdGenTemporalDataCollator:
         """
         event_type = event["type"]
         if event_type == "node-add":
-            self.global_node_ids[(game, walkthrough_step)].add(event["node_id"])
+            self.node_ids[(game, walkthrough_step)].add(event["node_id"])
         elif event_type == "edge-add":
-            self.global_edges[(game, walkthrough_step)][event["edge_id"]] = (
+            self.edges[(game, walkthrough_step)][event["edge_id"]] = (
                 event["src_id"],
                 event["dst_id"],
             )
 
-    def init_worker_id_space(self, worker_info: Optional[Tuple[int, int]]) -> None:
+    def allocate_ids(self, game: str, walkthrough_step: int) -> None:
         """
-        Initialize the node/edge ID space for the worker. If info is None, there
-        are no workers so assign the whole ID space. Otherwise, divide up the overall
-        ID space into equal chunks and assign.
-
-        worker_info: (worker_id, num_workers)
+        Allocate node/edge IDs for the game.
         """
-        # NOTE: the ID space starts from 1 since 0 is for padding
-        if worker_info is None:
-            # main process, assign the whole ID space
-            node_id_start = 1
-            node_id_end = self.max_node_id
-            edge_id_start = 1
-            edge_id_end = self.max_edge_id
-        else:
-            # worker process, assign a chunk of the whole ID space
-            worker_id, num_workers = worker_info
+        # retrieve the allocated node/edge ID map that needs to be updated
+        allocated_node_id_map, allocated_edge_id_map = self.allocated_id_map[
+            (game, walkthrough_step)
+        ]
 
-            def calc_start_end(
-                min_id: int, max_id: int, worker_id: int, num_workers: int
-            ) -> Tuple[int, int]:
-                per_worker = int(math.ceil((max_id - min_id) / float(num_workers)))
-                id_start = min_id + worker_id * per_worker
-                id_end = min(id_start + per_worker, max_id)
-                return id_start, id_end
+        # retrieve the node IDs that have allocated node IDs
+        node_ids = self.node_ids[(game, walkthrough_step)]
 
-            node_id_start, node_id_end = calc_start_end(
-                1, self.max_node_id, worker_id, num_workers
-            )
-            edge_id_start, edge_id_end = calc_start_end(
-                1, self.max_edge_id, worker_id, num_workers
-            )
-        self.unused_worker_node_ids: Deque[int] = deque(
-            i for i in range(node_id_start, node_id_end)
-        )
-        self.unused_worker_edge_ids: Deque[int] = deque(
-            i for i in range(edge_id_start, edge_id_end)
-        )
+        # assign node IDs to unallocated node IDs
+        for unallocated_node_id in node_ids - allocated_node_id_map.keys():
+            allocated_node_id_map[unallocated_node_id] = self.unused_node_ids.popleft()
 
-        # {(game, walkthrough_step): (
-        #       {global_node_id: worker_node_id, ...},
-        #       {global_edge_id: worker_edge_id, ...})}
-        self.allocated_global_worker_id_map: Dict[
-            Tuple[str, int], Tuple[Dict[int, int], Dict[int, int]]
-        ] = defaultdict(self.create_global_worker_id_tuple)
+        # retrieve the edge IDs and edge indices that have allocated node/edge IDs
+        edges = self.edges[(game, walkthrough_step)]
 
-        self.global_node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
-            self.create_node_id_set
-        )
-        self.global_edges: Dict[
-            Tuple[str, int], Dict[int, Tuple[int, int]]
-        ] = defaultdict(self.create_edges_dict)
-
-        # set the flag to True so it doesn't get reinitialized
-        self.worker_id_space_initialized = True
-
-    def allocate_worker_ids(self, game: str, walkthrough_step: int) -> None:
-        """
-        Allocate worker IDs to global IDs for the game.
-        """
-        # retrieve the global-to-worker node/edge ID map that needs to be updated
-        (
-            allocated_node_id_map,
-            allocated_edge_id_map,
-        ) = self.allocated_global_worker_id_map[(game, walkthrough_step)]
-
-        # retrieve the global node IDs that have worker node IDs
-        global_node_ids = self.global_node_ids[(game, walkthrough_step)]
-
-        # assign worker node IDs to unallocated global node IDs
-        for unallocated_global_node_id in (
-            global_node_ids - allocated_node_id_map.keys()
-        ):
-            allocated_node_id_map[
-                unallocated_global_node_id
-            ] = self.unused_worker_node_ids.popleft()
-
-        # retrieve the global edge IDs and edge indices that have worker node/edge IDs
-        global_edges = self.global_edges[(game, walkthrough_step)]
-
-        # assign worker edge IDs and node IDs to global edge IDs and edge indices
-        for unallocated_global_edge_id in (
-            global_edges.keys() - allocated_edge_id_map.keys()
-        ):
-            allocated_edge_id_map[
-                unallocated_global_edge_id
-            ] = self.unused_worker_edge_ids.popleft()
+        # assign edge IDs and node IDs to unallocated edge IDs and edge indices
+        for unallocated_edge_id in edges.keys() - allocated_edge_id_map.keys():
+            allocated_edge_id_map[unallocated_edge_id] = self.unused_edge_ids.popleft()
 
     def collate_textual_inputs(
         self, obs: List[str], prev_actions: List[str]
@@ -664,20 +615,18 @@ class TWCmdGenTemporalDataCollator:
                 if i == 0:
                     # add the previous subgraph node/edge IDs
                     # this is to support the initial event generation.
-                    node_id_map, edge_id_map = self.allocated_global_worker_id_map[
+                    node_id_map, edge_id_map = self.allocated_id_map[
                         (game, walkthrough_step)
                     ]
                     event_seq_node_ids[-1].append(
                         [
                             node_id_map[nid]
-                            for nid in sorted(
-                                self.global_node_ids[(game, walkthrough_step)]
-                            )
+                            for nid in sorted(self.node_ids[(game, walkthrough_step)])
                         ]
                     )
                     edge_id_list: List[int] = []
                     edge_index_list: List[Tuple[int, int]] = []
-                    for edge_id, edge_index in self.global_edges[
+                    for edge_id, edge_index in self.edges[
                         (game, walkthrough_step)
                     ].items():
                         edge_id_list.append(edge_id)
@@ -699,13 +648,13 @@ class TWCmdGenTemporalDataCollator:
                 self.update_subgraph(game, walkthrough_step, event)
 
                 # get the worker node/edge ID maps based on the updated graph
-                self.allocate_worker_ids(game, walkthrough_step)
-                node_id_map, edge_id_map = self.allocated_global_worker_id_map[
+                self.allocate_ids(game, walkthrough_step)
+                node_id_map, edge_id_map = self.allocated_id_map[
                     (game, walkthrough_step)
                 ]
 
                 # collect all the allocated worker node IDs
-                event_node_ids = sorted(self.global_node_ids[(game, walkthrough_step)])
+                event_node_ids = sorted(self.node_ids[(game, walkthrough_step)])
                 event_seq_node_ids[i].append(
                     [node_id_map[nid] for nid in event_node_ids]
                 )
@@ -719,9 +668,7 @@ class TWCmdGenTemporalDataCollator:
 
                 edge_id_list = []
                 edge_index_list = []
-                for edge_id, edge_index in self.global_edges[
-                    (game, walkthrough_step)
-                ].items():
+                for edge_id, edge_index in self.edges[(game, walkthrough_step)].items():
                     edge_id_list.append(edge_id)
                     edge_index_list.append(edge_index)
                 event_seq_edge_ids[i].append([edge_id_map[eid] for eid in edge_id_list])
@@ -865,15 +812,7 @@ class TWCmdGenTemporalDataCollator:
             ...
         )
         """
-        # we initialize the worker ID space for every batch
-        worker_info = get_worker_info()
-        self.init_worker_id_space(
-            (worker_info.id, worker_info.num_workers)
-            if worker_info is not None
-            else None
-        )
-
-        # start collating
+        self.init_id_space()
         max_episode_len = max(len(episode) for episode in batch)
         collated_batch: List[
             Tuple[TWCmdGenTemporalTextualInput, List[TWCmdGenTemporalGraphicalInput]]
