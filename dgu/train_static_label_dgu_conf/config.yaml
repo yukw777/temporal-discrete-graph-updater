@@ -16,8 +16,8 @@ data:
 
 model:
   hidden_dim: 64
-  max_num_nodes: 8000
-  max_num_edges: 8000
+  max_num_nodes: 1000
+  max_num_edges: 1000
   word_emb_dim: 300
   tgn_event_type_emb_dim: 64
   tgn_memory_dim: 64
