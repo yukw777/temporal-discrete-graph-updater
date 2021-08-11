@@ -328,6 +328,7 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
             ],
             {
                 "node_ids": [torch.tensor([[0]])],
+                "node_masks": [torch.tensor([[0.0]])],
                 "edge_ids": [torch.tensor([[0]])],
                 "edge_index": [torch.tensor([[[0], [0]]])],
                 "edge_timestamps": [torch.tensor([[0.0]])],
@@ -374,6 +375,12 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     torch.tensor([[0, 1]]),
                     torch.tensor([[0, 1, 2]]),
                     torch.tensor([[0, 1, 2]]),
+                ],
+                "node_masks": [
+                    torch.tensor([[0.0]]),
+                    torch.tensor([[0.0, 1.0]]),
+                    torch.tensor([[0.0, 1.0, 1.0]]),
+                    torch.tensor([[0.0, 1.0, 1.0]]),
                 ],
                 "edge_ids": [
                     torch.tensor([[0]]),
@@ -491,6 +498,15 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                ],
+                "node_masks": [
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 1, 1], [0, 0, 0]]).float(),
+                    torch.tensor([[0, 1, 0], [0, 1, 0], [0, 1, 1], [0, 0, 0]]).float(),
+                    torch.tensor([[0, 1, 1], [0, 1, 1], [0, 1, 1], [0, 0, 0]]).float(),
+                    torch.tensor([[0, 1, 1], [0, 0, 0], [0, 1, 1], [0, 0, 0]]).float(),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 1, 1], [0, 0, 0]]).float(),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 1, 1], [0, 0, 0]]).float(),
+                    torch.tensor([[0, 0, 0], [0, 0, 0], [0, 1, 1], [0, 0, 0]]).float(),
                 ],
                 "edge_ids": [
                     torch.tensor([[0], [0], [0], [0]]),
@@ -611,6 +627,7 @@ def test_tw_cmd_gen_collator_collate_graphical_inputs(
     results = tw_cmd_gen_collator.collate_graphical_inputs(batch_step)
     for k in [
         "node_ids",
+        "node_masks",
         "edge_ids",
         "edge_index",
         "edge_timestamps",
@@ -901,6 +918,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                         (
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0]]),
+                                node_mask=torch.tensor([[0.0]]),
                                 edge_ids=torch.tensor([[0]]),
                                 edge_index=torch.tensor([[[0], [0]]]),
                                 edge_timestamps=torch.tensor([[2.0]]),
@@ -922,6 +940,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1]]),
+                                node_mask=torch.tensor([[0.0, 1.0]]),
                                 edge_ids=torch.tensor([[0]]),
                                 edge_index=torch.tensor([[[0], [0]]]),
                                 edge_timestamps=torch.tensor([[2.0]]),
@@ -943,6 +962,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2]]),
+                                node_mask=torch.tensor([[0, 1.0, 1.0]]),
                                 edge_ids=torch.tensor([[0]]),
                                 edge_index=torch.tensor([[[0], [0]]]),
                                 edge_timestamps=torch.tensor([[2.0]]),
@@ -964,6 +984,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2]]),
+                                node_mask=torch.tensor([[0, 1.0, 1.0]]),
                                 edge_ids=torch.tensor([[0, 1]]),
                                 edge_index=torch.tensor([[[0, 1], [0, 2]]]),
                                 edge_timestamps=torch.tensor([[2.0, 2.0]]),
@@ -1125,6 +1146,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                         (
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0], [0]]),
+                                node_mask=torch.tensor([[0.0], [0.0]]),
                                 edge_ids=torch.tensor([[0], [0]]),
                                 edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
                                 edge_timestamps=torch.tensor([[2.0], [1.0]]),
@@ -1146,6 +1168,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1], [0, 3]]),
+                                node_mask=torch.tensor([[0, 1.0], [0, 1.0]]),
                                 edge_ids=torch.tensor([[0], [0]]),
                                 edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
                                 edge_timestamps=torch.tensor([[2.0], [1.0]]),
@@ -1167,6 +1190,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 3, 4]]),
+                                node_mask=torch.tensor([[0, 1.0, 1.0], [0, 1.0, 1.0]]),
                                 edge_ids=torch.tensor([[0], [0]]),
                                 edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
                                 edge_timestamps=torch.tensor([[2.0], [1.0]]),
@@ -1188,6 +1212,9 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_mask=torch.tensor(
+                                    [[0, 1.0, 1.0], [0.0, 0.0, 0.0]]
+                                ),
                                 edge_ids=torch.tensor([[0, 1], [0, 0]]),
                                 edge_index=torch.tensor(
                                     [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
@@ -1235,6 +1262,9 @@ def test_tw_cmd_gen_collator_init_id_space(
                         (
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_mask=torch.tensor(
+                                    [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
+                                ),
                                 edge_ids=torch.tensor([[0, 1], [0, 0]]),
                                 edge_index=torch.tensor(
                                     [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
@@ -1258,6 +1288,9 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_mask=torch.tensor(
+                                    [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
+                                ),
                                 edge_ids=torch.tensor([[0, 1], [0, 0]]),
                                 edge_index=torch.tensor(
                                     [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
@@ -1281,6 +1314,9 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_mask=torch.tensor(
+                                    [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
+                                ),
                                 edge_ids=torch.tensor([[0, 1], [0, 0]]),
                                 edge_index=torch.tensor(
                                     [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]
@@ -1304,6 +1340,9 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_mask=torch.tensor(
+                                    [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
+                                ),
                                 edge_ids=torch.tensor([[0, 1], [0, 0]]),
                                 edge_index=torch.tensor(
                                     [[[0, 1], [0, 2]], [[0, 0], [0, 0]]]

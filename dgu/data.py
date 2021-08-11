@@ -186,6 +186,7 @@ class TWCmdGenTemporalTextualInput:
 @dataclass(frozen=True)
 class TWCmdGenTemporalGraphicalInput:
     node_ids: torch.Tensor = field(default_factory=empty_tensor)
+    node_mask: torch.Tensor = field(default_factory=empty_tensor)
     edge_ids: torch.Tensor = field(default_factory=empty_tensor)
     edge_index: torch.Tensor = field(default_factory=empty_tensor)
     edge_timestamps: torch.Tensor = field(default_factory=empty_tensor)
@@ -210,6 +211,7 @@ class TWCmdGenTemporalGraphicalInput:
             return False
         return (
             self.node_ids.equal(o.node_ids)
+            and self.node_mask.equal(o.node_mask)
             and self.edge_ids.equal(o.edge_ids)
             and self.edge_index.equal(o.edge_index)
             and self.edge_timestamps.equal(o.edge_timestamps)
@@ -233,6 +235,7 @@ class TWCmdGenTemporalGraphicalInput:
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
             node_ids=self.node_ids.to(*args, **kwargs),
+            node_mask=self.node_mask.to(*args, **kwargs),
             edge_ids=self.edge_ids.to(*args, **kwargs),
             edge_index=self.edge_index.to(*args, **kwargs),
             edge_timestamps=self.edge_timestamps.to(*args, **kwargs),
@@ -268,6 +271,7 @@ class TWCmdGenTemporalGraphicalInput:
     def pin_memory(self) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
             node_ids=self.node_ids.pin_memory(),
+            node_mask=self.node_mask.pin_memory(),
             edge_ids=self.edge_ids.pin_memory(),
             edge_index=self.edge_index.pin_memory(),
             edge_timestamps=self.edge_timestamps.pin_memory(),
@@ -733,6 +737,7 @@ class TWCmdGenTemporalDataCollator:
             )
             for i in range(-1, max_event_seq_len)
         ]
+        node_masks = [(nids != 0).float() for nids in node_ids]
         edge_ids: List[torch.Tensor] = [
             pad_sequence(
                 [torch.tensor(step_eids) for step_eids in event_seq_edge_ids[i]],
@@ -761,6 +766,7 @@ class TWCmdGenTemporalDataCollator:
         ]
         return {
             "node_ids": node_ids,
+            "node_masks": node_masks,
             "edge_ids": edge_ids,
             "edge_index": edge_index_tensor,
             "edge_timestamps": edge_timestamps,
@@ -835,6 +841,7 @@ class TWCmdGenTemporalDataCollator:
                 graph_events.append(
                     TWCmdGenTemporalGraphicalInput(
                         node_ids=graphical["node_ids"][j],
+                        node_mask=graphical["node_masks"][j],
                         edge_ids=graphical["edge_ids"][j],
                         edge_index=graphical["edge_index"][j],
                         edge_timestamps=graphical["edge_timestamps"][j],
