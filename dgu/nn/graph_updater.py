@@ -280,9 +280,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
         results = self.decoder(
-            delta_g,
-            prev_node_embeddings * prev_node_mask.unsqueeze(-1),
-            hidden=decoder_hidden,
+            delta_g, prev_node_embeddings, prev_node_mask, hidden=decoder_hidden
         )
         results["encoded_obs"] = encoded_obs
         results["encoded_prev_action"] = encoded_prev_action
