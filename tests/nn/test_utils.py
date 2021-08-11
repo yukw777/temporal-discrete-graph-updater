@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch.nn.functional as F
 
 from pathlib import Path
 
@@ -56,14 +55,22 @@ def test_masked_mean(batched_input, batched_mask, expected):
     assert masked_mean(batched_input, batched_mask).equal(expected)
 
 
-def test_masked_softmax():
-    batched_input = torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float()
-    batched_mask = torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float()
+@pytest.mark.parametrize(
+    "batched_input,batched_mask",
+    [
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float(),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3),
+        ),
+    ],
+)
+def test_masked_softmax(batched_input, batched_mask):
     batched_output = masked_softmax(batched_input, batched_mask, dim=1)
-
-    # compare the result from masked_softmax with regular softmax with filtered values
-    for input, mask, output in zip(batched_input, batched_mask, batched_output):
-        assert output[output != 0].equal(F.softmax(input[mask == 1], dim=0))
+    assert torch.all(batched_output.sum(dim=1) == 1)
 
 
 @pytest.mark.parametrize(
