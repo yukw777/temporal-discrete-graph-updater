@@ -8,6 +8,8 @@ from dgu.nn.rep_aggregator import ContextQueryAttention, ReprAggregator
 @pytest.mark.parametrize(
     "hidden_dim,batch_size,ctx_seq_len,query_seq_len",
     [
+        (10, 1, 0, 4),
+        (10, 1, 2, 0),
         (10, 1, 2, 4),
         (10, 3, 5, 10),
     ],

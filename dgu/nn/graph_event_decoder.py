@@ -74,11 +74,15 @@ class EventNodeHead(nn.Module):
         )
 
     def forward(
-        self, autoregressive_embedding: torch.Tensor, node_embeddings: torch.Tensor
+        self,
+        autoregressive_embedding: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         node_embeddings: (batch, num_node, node_embedding_dim)
+        node_mask: (batch, num_node)
 
         output:
             node_logits: (batch, num_node)
@@ -99,7 +103,7 @@ class EventNodeHead(nn.Module):
         query = self.query_linear(autoregressive_embedding)
         # (batch, key_query_dim)
 
-        node_logits = torch.matmul(key, query.unsqueeze(-1)).squeeze(-1)
+        node_logits = torch.matmul(key, query.unsqueeze(-1)).squeeze(-1) * node_mask
         # (batch, num_node)
 
         # autoregressive embedding
@@ -202,7 +206,10 @@ class StaticLabelGraphEventDecoder(nn.Module):
         )
 
     def forward(
-        self, graph_event_embeddings: torch.Tensor, node_embeddings: torch.Tensor
+        self,
+        graph_event_embeddings: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
         Based on the graph event embeddings and node embeddings, calculate
@@ -211,6 +218,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
 
         graph_event_embeddings: (batch, graph_event_embedding_dim)
         node_embeddings: (batch, num_node, node_embedding_dim)
+        node_mask: (batch, num_node)
 
         output: {
             "event_type_logits": (batch, num_event_type),
@@ -223,10 +231,10 @@ class StaticLabelGraphEventDecoder(nn.Module):
             graph_event_embeddings
         )
         src_logits, autoregressive_embedding = self.event_src_head(
-            autoregressive_embedding, node_embeddings
+            autoregressive_embedding, node_embeddings, node_mask
         )
         dst_logits, autoregressive_embedding = self.event_dst_head(
-            autoregressive_embedding, node_embeddings
+            autoregressive_embedding, node_embeddings, node_mask
         )
         label_logits = self.event_label_head(autoregressive_embedding)
         return {
@@ -252,12 +260,14 @@ class RNNGraphEventDecoder(nn.Module):
         self,
         delta_g: torch.Tensor,
         node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
         hidden: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         input:
             delta_g: (batch, input_dim)
             node_embeddings: (batch, num_node, node_embedding_dim)
+            node_mask: (batch, num_node)
             hidden: (batch, hidden_dim)
 
         output:
@@ -270,6 +280,6 @@ class RNNGraphEventDecoder(nn.Module):
             }
         """
         new_hidden = self.gru_cell(delta_g, hidden)
-        results = self.graph_event_decoder(new_hidden, node_embeddings)
+        results = self.graph_event_decoder(new_hidden, node_embeddings, node_mask)
         results["new_hidden"] = new_hidden
         return results

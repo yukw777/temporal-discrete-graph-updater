@@ -1,6 +1,5 @@
 import pytest
 import torch
-import torch.nn.functional as F
 
 from pathlib import Path
 
@@ -16,45 +15,62 @@ from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
 
 
-def test_masked_mean():
-    batched_input = torch.tensor(
-        [
-            [
-                [1, 2, 300],
-                [300, 100, 200],
-                [3, 4, 100],
-            ],
-            [
-                [300, 100, 200],
-                [6, 2, 300],
-                [10, 4, 100],
-            ],
-        ]
-    ).float()
-    batched_mask = torch.tensor(
-        [
-            [1, 0, 1],
-            [0, 1, 1],
-        ]
-    ).float()
-    assert masked_mean(batched_input, batched_mask).equal(
-        torch.tensor(
-            [
-                [2, 3, 200],
-                [8, 3, 200],
-            ]
-        ).float()
-    )
+@pytest.mark.parametrize(
+    "batched_input,batched_mask,expected",
+    [
+        (torch.rand(3, 0, 8), torch.ones(3, 0), torch.zeros(3, 8)),
+        (torch.rand(3, 0, 8), torch.zeros(3, 0), torch.zeros(3, 8)),
+        (torch.rand(3, 1, 8), torch.zeros(3, 1), torch.zeros(3, 8)),
+        (
+            torch.tensor(
+                [
+                    [
+                        [1, 2, 300],
+                        [300, 100, 200],
+                        [3, 4, 100],
+                    ],
+                    [
+                        [300, 100, 200],
+                        [6, 2, 300],
+                        [10, 4, 100],
+                    ],
+                ]
+            ).float(),
+            torch.tensor(
+                [
+                    [1, 0, 1],
+                    [0, 1, 1],
+                ]
+            ).float(),
+            torch.tensor(
+                [
+                    [2, 3, 200],
+                    [8, 3, 200],
+                ]
+            ).float(),
+        ),
+    ],
+)
+def test_masked_mean(batched_input, batched_mask, expected):
+    assert masked_mean(batched_input, batched_mask).equal(expected)
 
 
-def test_masked_softmax():
-    batched_input = torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float()
-    batched_mask = torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float()
+@pytest.mark.parametrize(
+    "batched_input,batched_mask",
+    [
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float(),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3),
+        ),
+    ],
+)
+def test_masked_softmax(batched_input, batched_mask):
     batched_output = masked_softmax(batched_input, batched_mask, dim=1)
-
-    # compare the result from masked_softmax with regular softmax with filtered values
-    for input, mask, output in zip(batched_input, batched_mask, batched_output):
-        assert output[output != 0].equal(F.softmax(input[mask == 1], dim=0))
+    assert torch.all(batched_output.sum(dim=1) == 1)
 
 
 @pytest.mark.parametrize(

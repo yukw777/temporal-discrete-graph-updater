@@ -188,6 +188,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_event_label_ids: torch.Tensor,
         prev_event_timestamps: torch.Tensor,
         prev_node_ids: torch.Tensor,
+        prev_node_mask: torch.Tensor,
         prev_edge_ids: torch.Tensor,
         prev_edge_index: torch.Tensor,
         prev_edge_timestamps: torch.Tensor,
@@ -211,6 +212,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_event_mask: (batch, prev_event_seq_len)
             prev_event_timestamps: (batch, prev_event_seq_len)
             prev_node_ids: (batch, prev_num_node)
+            prev_node_mask: (batch, prev_num_node)
             prev_edge_ids: (batch, prev_num_edge)
             prev_edge_index: (batch, 2, prev_num_edge)
             prev_edge_timestamps: (batch, prev_num_edge)
@@ -269,6 +271,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         delta_g = self.f_delta(
             prev_node_embeddings,
+            prev_node_mask,
             encoded_obs,
             obs_mask,
             encoded_prev_action,
@@ -276,7 +279,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         # (batch, 4 * hidden_dim)
 
-        results = self.decoder(delta_g, prev_node_embeddings, hidden=decoder_hidden)
+        results = self.decoder(
+            delta_g, prev_node_embeddings, prev_node_mask, hidden=decoder_hidden
+        )
         results["encoded_obs"] = encoded_obs
         results["encoded_prev_action"] = encoded_prev_action
 
@@ -296,13 +301,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def f_delta(
         self,
         node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
         obs_embeddings: torch.Tensor,
         obs_mask: torch.Tensor,
         prev_action_embeddings: torch.Tensor,
         prev_action_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
-        node_embeddings: (batch, prev_num_node, hidden_dim)
+        node_embeddings: (batch, num_node, hidden_dim)
+        node_mask: (batch, num_node)
         obs_embeddings: (batch, obs_len, hidden_dim)
         obs_mask: (batch, obs_len)
         prev_action_embeddings: (batch, prev_action_len, hidden_dim)
@@ -310,44 +317,30 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         output: (batch, 4 * hidden_dim)
         """
-        # no masks necessary for prev_node_embeddings, so just create a fake one
-        batch_size = obs_embeddings.size(0)
-        prev_node_mask = torch.ones(
-            batch_size, node_embeddings.size(1), device=node_embeddings.device
-        )
-
         h_og, h_go = self.repr_aggr(
             obs_embeddings,
             node_embeddings,
             obs_mask,
-            prev_node_mask,
+            node_mask,
         )
         # h_og: (batch, obs_len, hidden_dim)
-        # h_go: (batch, prev_num_node, hidden_dim)
+        # h_go: (batch, num_node, hidden_dim)
         h_ag, h_ga = self.repr_aggr(
             prev_action_embeddings,
             node_embeddings,
             prev_action_mask,
-            prev_node_mask,
+            node_mask,
         )
         # h_ag: (batch, prev_action_len, hidden_dim)
-        # h_ga: (batch, prev_num_node, hidden_dim)
+        # h_ga: (batch, num_node, hidden_dim)
 
         mean_h_og = masked_mean(h_og, obs_mask)
         # (batch, hidden_dim)
-        if h_go.size(1) == 0:
-            # if there are no nodes, just use zeros
-            mean_h_go = torch.zeros_like(mean_h_og)
-        else:
-            mean_h_go = masked_mean(h_go, prev_node_mask)
+        mean_h_go = masked_mean(h_go, node_mask)
         # (batch, hidden_dim)
         mean_h_ag = masked_mean(h_ag, prev_action_mask)
         # (batch, hidden_dim)
-        if h_ga.size(1) == 0:
-            # if there are no nodes, just use zeros
-            mean_h_ga = torch.zeros_like(mean_h_ag)
-        else:
-            mean_h_ga = masked_mean(h_ga, prev_node_mask)
+        mean_h_ga = masked_mean(h_ga, node_mask)
         # (batch, hidden_dim)
 
         return torch.cat([mean_h_og, mean_h_go, mean_h_ag, mean_h_ga], dim=1)
@@ -374,6 +367,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graph_event.tgt_event_label_ids,
                     graph_event.tgt_event_timestamps,
                     graph_event.node_ids,
+                    graph_event.node_mask,
                     graph_event.edge_ids,
                     graph_event.edge_index,
                     graph_event.edge_timestamps,
@@ -440,6 +434,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graph_event.tgt_event_label_ids,
                     graph_event.tgt_event_timestamps,
                     graph_event.node_ids,
+                    graph_event.node_mask,
                     graph_event.edge_ids,
                     graph_event.edge_index,
                     graph_event.edge_timestamps,

@@ -24,11 +24,18 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 
 @pytest.mark.parametrize(
     "batch,num_node,obs_len,prev_action_len",
-    [(1, 0, 10, 5), (8, 0, 20, 10), (8, 10, 20, 10)],
+    [(1, 0, 10, 5), (8, 0, 20, 10), (8, 1, 20, 10), (8, 10, 20, 10)],
 )
 def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
     delta_g = sldgu.f_delta(
         torch.rand(batch, num_node, sldgu.hparams.hidden_dim),
+        # the first node is always the pad node, so make sure to mask that to test
+        torch.cat(
+            [torch.zeros(batch, 1), torch.randint(2, (batch, num_node - 1)).float()],
+            dim=-1,
+        )
+        if num_node != 0
+        else torch.randint(2, (batch, num_node)).float(),
         torch.rand(batch, obs_len, sldgu.hparams.hidden_dim),
         torch.randint(2, (batch, obs_len)).float(),
         torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim),
@@ -96,6 +103,7 @@ def test_sldgu_forward(
         torch.randint(prev_num_node, (batch, prev_num_node))
         if prev_num_node > 0
         else torch.zeros(batch, 0).long(),
+        torch.randint(2, (batch, prev_num_node)).float(),
         torch.randint(prev_num_edge, (batch, prev_num_edge))
         if prev_num_edge > 0
         else torch.zeros(batch, 0).long(),
