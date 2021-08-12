@@ -189,33 +189,19 @@ class TemporalGraphNetwork(nn.Module):
         # )
 
         # aggregate messages
-        agg_src_msgs = self.agg_message(src_msgs, src_ids)
-        # (max_src_id,
+        event_node_ids = torch.cat([src_ids, dst_ids])
+        agg_msgs = self.agg_message(torch.cat([src_msgs, dst_msgs]), event_node_ids)
+        # (max_event_node_id,
         #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
-        agg_dst_msgs = self.agg_message(dst_msgs, dst_ids)
-        # (max_dst_id,
-        #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
-
-        # get unique IDs
-        uniq_src_ids = src_ids.unique()
-        # (num_uniq_src_ids)
-        uniq_dst_ids = dst_ids.unique()
-        # (num_uniq_dst_ids)
-        uniq_ids = torch.cat([uniq_src_ids, uniq_dst_ids])
-        # (num_uniq_src_ids + num_uniq_dst_ids)
 
         # update the memories
         # note that source IDs and destination IDs never overlap as we don't have
         # self-loops in our graphs (except for the pad edge, but that doesn't matter).
-        if uniq_ids.size(0) > 0:
-            self.memory[uniq_ids] = self.rnn(  # type: ignore
-                torch.cat([agg_src_msgs[uniq_src_ids], agg_dst_msgs[uniq_dst_ids]]),
-                # (num_uniq_src_ids + num_uniq_dst_ids,
-                #  event_type_emb_dim + 2 * memory_dim + time_enc_dim +
-                #  event_embedding_dim)
-                self.memory[uniq_ids],  # type: ignore
-                # (num_uniq_src_ids + num_uniq_dst_ids, memory_dim)
-            )
+        unique_event_node_ids = event_node_ids.unique()
+        self.memory[unique_event_node_ids] = self.rnn(  # type: ignore
+            agg_msgs[unique_event_node_ids],
+            self.memory[unique_event_node_ids],  # type: ignore
+        )
 
         # update node features
         self.update_node_features(event_type_ids, src_ids, event_embeddings)
