@@ -158,7 +158,6 @@ class TemporalGraphNetwork(nn.Module):
         dst_mask: (batch, event_seq_len)
         event_edge_ids: (batch, event_seq_len)
         event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        event_mask: (batch, event_seq_len)
         event_timestamps: (batch, event_seq_len)
         node_ids: (batch, num_node)
         edge_ids: (batch, num_edge)
