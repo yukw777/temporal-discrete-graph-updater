@@ -901,7 +901,8 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 "label": "in",
                             },
                         ],
-                    }
+                        "commands": ["add , player , kitchen , in"],
+                    },
                 ]
             ],
             TWCmdGenTemporalBatch(
@@ -1005,6 +1006,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 groundtruth_event_mask=torch.tensor([[1.0]]),
                             ),
                         ),
+                        (("add , player , kitchen , in",),),
                     ),
                 )
             ),
@@ -1041,6 +1043,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 "label": "in",
                             },
                         ],
+                        "commands": ["add , player , kitchen , in"],
                     },
                     {
                         "game": "g1",
@@ -1070,6 +1073,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 "label": "kitchen",
                             },
                         ],
+                        "commands": ["delete , player , kitchen , in"],
                     },
                 ],
                 [
@@ -1093,6 +1097,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 "label": "kitchen",
                             },
                         ],
+                        "commands": ["add , player , kitchen , in"],
                     },
                 ],
             ],
@@ -1237,6 +1242,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
                             ),
                         ),
+                        (
+                            ("add , player , kitchen , in",),
+                            ("add , player , kitchen , in",),
+                        ),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(
@@ -1365,6 +1374,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                                 groundtruth_event_mask=torch.tensor([[1.0], [0.0]]),
                             ),
                         ),
+                        (("delete , player , kitchen , in",), ()),
                     ),
                 )
             ),
@@ -1463,6 +1473,7 @@ def test_tw_cmd_gen_temporal_graphical_input_to(graphical):
                             groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
                         ),
                     ),
+                    (("",),),
                 ),
                 (
                     TWCmdGenTemporalTextualInput(
@@ -1515,6 +1526,7 @@ def test_tw_cmd_gen_temporal_graphical_input_to(graphical):
                             groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
                         ),
                     ),
+                    (("",), ("",)),
                 ),
             )
         )
@@ -1537,10 +1549,12 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                             TWCmdGenTemporalGraphicalInput(),
                             TWCmdGenTemporalGraphicalInput(),
                         ),
+                        (("",),),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(),
                         (TWCmdGenTemporalGraphicalInput(),),
+                        (("",),),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(),
@@ -1549,6 +1563,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                             TWCmdGenTemporalGraphicalInput(),
                             TWCmdGenTemporalGraphicalInput(),
                         ),
+                        (("",),),
                     ),
                 )
             ),
@@ -1562,10 +1577,12 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                                 TWCmdGenTemporalGraphicalInput(),
                                 TWCmdGenTemporalGraphicalInput(),
                             ),
+                            (("",),),
                         ),
                         (
                             TWCmdGenTemporalTextualInput(),
                             (TWCmdGenTemporalGraphicalInput(),),
+                            (("",),),
                         ),
                     )
                 ),
@@ -1578,6 +1595,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                                 TWCmdGenTemporalGraphicalInput(),
                                 TWCmdGenTemporalGraphicalInput(),
                             ),
+                            (("",),),
                         ),
                     ),
                 ),
@@ -1592,10 +1610,12 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                             TWCmdGenTemporalGraphicalInput(),
                             TWCmdGenTemporalGraphicalInput(),
                         ),
+                        (("",),),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(),
                         (TWCmdGenTemporalGraphicalInput(),),
+                        (("",),),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(),
@@ -1604,6 +1624,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                             TWCmdGenTemporalGraphicalInput(),
                             TWCmdGenTemporalGraphicalInput(),
                         ),
+                        (("",),),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(),
@@ -1613,6 +1634,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                             TWCmdGenTemporalGraphicalInput(),
                             TWCmdGenTemporalGraphicalInput(),
                         ),
+                        (("",),),
                     ),
                     (
                         TWCmdGenTemporalTextualInput(),
@@ -1623,6 +1645,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                             TWCmdGenTemporalGraphicalInput(),
                             TWCmdGenTemporalGraphicalInput(),
                         ),
+                        (("",),),
                     ),
                 )
             ),
@@ -1636,10 +1659,12 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                                 TWCmdGenTemporalGraphicalInput(),
                                 TWCmdGenTemporalGraphicalInput(),
                             ),
+                            (("",),),
                         ),
                         (
                             TWCmdGenTemporalTextualInput(),
                             (TWCmdGenTemporalGraphicalInput(),),
+                            (("",),),
                         ),
                         (
                             TWCmdGenTemporalTextualInput(),
@@ -1648,6 +1673,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                                 TWCmdGenTemporalGraphicalInput(),
                                 TWCmdGenTemporalGraphicalInput(),
                             ),
+                            (("",),),
                         ),
                     )
                 ),
@@ -1661,6 +1687,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                                 TWCmdGenTemporalGraphicalInput(),
                                 TWCmdGenTemporalGraphicalInput(),
                             ),
+                            (("",),),
                         ),
                         (
                             TWCmdGenTemporalTextualInput(),
@@ -1671,6 +1698,7 @@ def test_tw_cmd_gen_temporal_batch_to(batch):
                                 TWCmdGenTemporalGraphicalInput(),
                                 TWCmdGenTemporalGraphicalInput(),
                             ),
+                            (("",),),
                         ),
                     ),
                 ),
@@ -1801,6 +1829,7 @@ def test_tw_cmd_gen_temporal_graphical_input_pin_memory(graphical):
                             groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
                         ),
                     ),
+                    (("",),),
                 ),
                 (
                     TWCmdGenTemporalTextualInput(
@@ -1853,6 +1882,7 @@ def test_tw_cmd_gen_temporal_graphical_input_pin_memory(graphical):
                             groundtruth_event_mask=torch.randint(2, (3, 6)).float(),
                         ),
                     ),
+                    (("",),),
                 ),
             )
         )
@@ -1865,7 +1895,7 @@ def test_tw_cmd_gen_temporal_batch_pin_memory(batch):
     # just check that we're creating a correct copy
     pinned = batch.pin_memory()
     assert pinned == batch
-    for textual, graphicals in pinned.data:
+    for textual, graphicals, _ in pinned.data:
         assert textual.obs_word_ids.is_pinned()
         assert textual.obs_mask.is_pinned()
         assert textual.prev_action_word_ids.is_pinned()

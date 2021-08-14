@@ -62,6 +62,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 "observation": "observation...",
                 "previous_action": "previous action...",
                 "event_seq": [graph event, ...],
+                "commands": [graph commands, ...],
             },
             ...
         ]
@@ -128,6 +129,7 @@ class TWCmdGenTemporalDataset(Dataset):
                     "previous_action": example["previous_action"],
                     "timestamp": timestamp,
                     "event_seq": event_seq,
+                    "commands": example["target_commands"],
                 }
             )
         return data
@@ -296,7 +298,11 @@ class TWCmdGenTemporalGraphicalInput:
 @dataclass(frozen=True)
 class TWCmdGenTemporalBatch:
     data: Tuple[
-        Tuple[TWCmdGenTemporalTextualInput, Tuple[TWCmdGenTemporalGraphicalInput, ...]],
+        Tuple[
+            TWCmdGenTemporalTextualInput,
+            Tuple[TWCmdGenTemporalGraphicalInput, ...],
+            Tuple[Tuple[str, ...], ...],
+        ],
         ...,
     ] = field(default_factory=tuple)
 
@@ -309,8 +315,9 @@ class TWCmdGenTemporalBatch:
                 (
                     textual.to(*args, **kwargs),
                     tuple(graphical.to(*args, **kwargs) for graphical in graphicals),
+                    commands,
                 )
-                for textual, graphicals in self.data
+                for textual, graphicals, commands in self.data
             )
         )
 
@@ -320,8 +327,9 @@ class TWCmdGenTemporalBatch:
                 (
                     textual.pin_memory(),
                     tuple(graphical.pin_memory() for graphical in graphicals),
+                    commands,
                 )
-                for textual, graphicals in self.data
+                for textual, graphicals, commands in self.data
             )
         )
 
@@ -813,6 +821,10 @@ class TWCmdGenTemporalDataCollator:
                         groundtruth_event_mask: (batch, 1),
                     ),
                     ...
+                ),
+                (
+                    (commands, ...),
+                    ...
                 )
             ),
             ...
@@ -821,7 +833,11 @@ class TWCmdGenTemporalDataCollator:
         self.init_id_space()
         max_episode_len = max(len(episode) for episode in batch)
         collated_batch: List[
-            Tuple[TWCmdGenTemporalTextualInput, List[TWCmdGenTemporalGraphicalInput]]
+            Tuple[
+                TWCmdGenTemporalTextualInput,
+                List[TWCmdGenTemporalGraphicalInput],
+                Tuple[Tuple[str, ...], ...],
+            ]
         ] = []
         for i in range(max_episode_len):
             batch_ith_step = [
@@ -833,6 +849,7 @@ class TWCmdGenTemporalDataCollator:
                 [step.get("observation", "<bos> <eos>") for step in batch_ith_step],
                 [step.get("previous_action", "<bos> <eos>") for step in batch_ith_step],
             )
+            cmds = tuple(tuple(step.get("commands", [])) for step in batch_ith_step)
 
             graph_events: List[TWCmdGenTemporalGraphicalInput] = []
             non_graphical = self.collate_non_graphical_inputs(batch_ith_step)
@@ -888,11 +905,11 @@ class TWCmdGenTemporalDataCollator:
                         ],
                     )
                 )
-            collated_batch.append((textual, graph_events))
+            collated_batch.append((textual, graph_events, cmds))
         return TWCmdGenTemporalBatch(
             data=tuple(
-                (textual, tuple(graph_events))
-                for textual, graph_events in collated_batch
+                (textual, tuple(graph_events), tuple(cmds))
+                for textual, graph_events, cmds in collated_batch
             )
         )
 
