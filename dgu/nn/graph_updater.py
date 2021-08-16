@@ -19,6 +19,7 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import TWCmdGenTemporalBatch
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.metrics import ExactMatch
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -131,6 +132,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_label_embeddings = masked_mean(
             pretrained_word_embeddings(edge_label_word_ids), edge_label_mask
         )
+        self.label_id_map: List[str] = node_vocab + relation_vocab
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -174,6 +176,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.src_node_f1 = torchmetrics.F1()
         self.dst_node_f1 = torchmetrics.F1()
         self.label_f1 = torchmetrics.F1(ignore_index=0)
+
+        self.graph_exact_match = ExactMatch()
 
     def forward(  # type: ignore
         self,
@@ -355,7 +359,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         hiddens: Optional[torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         losses: List[torch.Tensor] = []
-        for textual_inputs, graph_event_inputs in batch.data:
+        for textual_inputs, graph_event_inputs, _ in batch.data:
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -421,8 +425,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return {"loss": loss, "hiddens": hiddens}
 
     def eval_step(self, batch: TWCmdGenTemporalBatch, log_prefix: str) -> None:
-        for textual_inputs, graph_event_inputs in batch.data:
-            hiddens: Optional[torch.Tensor] = None
+        hiddens: Optional[torch.Tensor] = None
+        batch_size = batch.data[0][0].obs_word_ids.size(0)
+        batch_groundtruth_cmds: List[List[str]] = [[]] * batch_size  # batch * cmds
+        batch_predicted_cmds: List[List[str]] = [[]] * batch_size  # batch * cmds
+
+        for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
+            # collect groundtruth commands
+            for i, cmds in enumerate(groundtruth_cmds):
+                batch_groundtruth_cmds[i].extend(cmds)
+
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -445,7 +457,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
                 )
 
-                # calculate F1s
+                # calculate classification F1s
                 self.log(
                     log_prefix + "_event_type_f1",
                     self.event_type_f1(
@@ -479,8 +491,41 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 )
 
+                # calculate graph tuples from predicted graph events (teacher forcing)
+                for i, (event_type_id, src_pos_id, dst_pos_id, label_id) in enumerate(
+                    zip(
+                        results["event_type_logits"].argmax(dim=1).tolist(),
+                        results["src_logits"].argmax(dim=1).tolist(),
+                        results["dst_logits"].argmax(dim=1).tolist(),
+                        results["label_logits"].argmax(dim=1).tolist(),
+                    )
+                ):
+                    if event_type_id in {
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                    }:
+                        cmd = (
+                            "add"
+                            if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
+                            else "delete"
+                        )
+                        src_label = graph_event.node_labels[i][
+                            graph_event.node_ids[i, src_pos_id].item()  # type: ignore
+                        ]
+                        dst_label = graph_event.node_labels[i][
+                            graph_event.node_ids[i, dst_pos_id].item()  # type: ignore
+                        ]
+                        edge_label = self.label_id_map[label_id]
+                        batch_predicted_cmds[i].append(
+                            " , ".join([cmd, src_label, dst_label, edge_label])
+                        )
+
                 # update hiddens
                 hiddens = results["new_hidden"]
+        self.log(
+            log_prefix + "_graph_em",
+            self.graph_exact_match(batch_predicted_cmds, batch_groundtruth_cmds),
+        )
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
