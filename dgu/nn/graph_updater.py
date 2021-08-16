@@ -5,6 +5,7 @@ import torchmetrics
 import itertools
 import random
 import wandb
+import dgu.metrics
 
 from typing import Optional, Dict, List, Tuple
 from torch.optim import Adam, Optimizer
@@ -23,7 +24,6 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import TWCmdGenTemporalBatch
 from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.metrics import ExactMatch
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -183,8 +183,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.dst_node_f1 = torchmetrics.F1()
         self.label_f1 = torchmetrics.F1(ignore_index=0)
 
-        self.graph_exact_match = ExactMatch()
-        self.token_exact_match = ExactMatch()
+        self.graph_predicted_exact_match = dgu.metrics.ExactMatch()
+        self.token_predicted_exact_match = dgu.metrics.ExactMatch()
+        self.graph_predicted_f1 = dgu.metrics.F1()
+        self.token_predicted_f1 = dgu.metrics.F1()
 
     def forward(  # type: ignore
         self,
@@ -542,12 +544,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     )
                 )
                 self.log(
-                    log_prefix + "_graph_em",
-                    self.graph_exact_match(step_predicted_cmds, step_groundtruth_cmds),
+                    log_prefix + "_graph_predicted_em",
+                    self.graph_predicted_exact_match(
+                        step_predicted_cmds, step_groundtruth_cmds
+                    ),
                 )
                 self.log(
-                    log_prefix + "_token_em",
-                    self.token_exact_match(
+                    log_prefix + "_token_predicted_em",
+                    self.token_predicted_exact_match(
+                        step_predicted_tokens, step_groundtruth_tokens
+                    ),
+                )
+                self.log(
+                    log_prefix + "_graph_predicted_f1",
+                    self.graph_predicted_f1(step_predicted_cmds, step_groundtruth_cmds),
+                )
+                self.log(
+                    log_prefix + "_token_predicted_f1",
+                    self.token_predicted_f1(
                         step_predicted_tokens, step_groundtruth_tokens
                     ),
                 )
