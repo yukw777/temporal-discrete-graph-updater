@@ -47,7 +47,6 @@ def test_event_node_head(
     logits, autoregressive_embedding = head(
         torch.rand(batch, autoregressive_embedding_dim),
         torch.rand(batch, num_node, node_embedding_dim),
-        torch.randint(2, (batch, num_node)).float(),
     )
     assert logits.size() == (batch, num_node)
     assert autoregressive_embedding.size() == (batch, autoregressive_embedding_dim)
@@ -113,7 +112,6 @@ def test_static_label_graph_event_decoder(
     results = decoder(
         torch.rand(batch, graph_event_embedding_dim),
         torch.rand(batch, num_node, node_embedding_dim),
-        torch.randint(2, (batch, num_node)).float(),
     )
 
     assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
@@ -149,7 +147,6 @@ def test_rnn_graph_event_decoder(hidden, input_dim, hidden_dim, batch, num_node)
     results = decoder(
         torch.rand(batch, input_dim),
         torch.rand(batch, num_node, node_embedding_dim),
-        torch.randint(2, (batch, num_node)).float(),
         hidden=torch.rand(batch, hidden_dim) if hidden else None,
     )
 
