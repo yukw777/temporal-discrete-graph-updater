@@ -533,7 +533,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         dst_label = graph_event.node_labels[i][
                             graph_event.node_ids[i, dst_pos_id].item()  # type: ignore
                         ]
-                        edge_label = self.label_id_map[label_id]
+                        # in the original dataset, multi-word edge labels are joined by
+                        # an underscore
+                        edge_label = "_".join(self.label_id_map[label_id].split())
                         predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
                         step_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
                         step_predicted_tokens[i].extend(predicted_cmd_tokens)
