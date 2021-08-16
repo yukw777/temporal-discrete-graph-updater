@@ -429,16 +429,17 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def eval_step(self, batch: TWCmdGenTemporalBatch, log_prefix: str) -> None:
         hiddens: Optional[torch.Tensor] = None
         batch_size = batch.data[0][0].obs_word_ids.size(0)
-        batch_groundtruth_cmds: List[List[str]] = [[]] * batch_size  # batch * cmds
-        batch_groundtruth_tokens: List[List[str]] = [[]] * batch_size  # batch * tokens
-        batch_predicted_cmds: List[List[str]] = [[]] * batch_size  # batch * cmds
-        batch_predicted_tokens: List[List[str]] = [[]] * batch_size  # batch * tokens
 
         for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
+            step_groundtruth_cmds: List[List[str]] = [[]] * batch_size
+            step_groundtruth_tokens: List[List[str]] = [[]] * batch_size
+            step_predicted_cmds: List[List[str]] = [[]] * batch_size
+            step_predicted_tokens: List[List[str]] = [[]] * batch_size
+
             # collect groundtruth commands
             for i, cmds in enumerate(groundtruth_cmds):
-                batch_groundtruth_cmds[i].extend(cmds)
-                batch_groundtruth_tokens[i].extend(
+                step_groundtruth_cmds[i].extend(cmds)
+                step_groundtruth_tokens[i].extend(
                     itertools.chain.from_iterable(cmd.split(" , ") for cmd in cmds)
                 )
 
@@ -524,19 +525,21 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         ]
                         edge_label = self.label_id_map[label_id]
                         predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
-                        batch_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
-                        batch_predicted_tokens[i].extend(predicted_cmd_tokens)
+                        step_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
+                        step_predicted_tokens[i].extend(predicted_cmd_tokens)
+                self.log(
+                    log_prefix + "_graph_em",
+                    self.graph_exact_match(step_predicted_cmds, step_groundtruth_cmds),
+                )
+                self.log(
+                    log_prefix + "_token_em",
+                    self.token_exact_match(
+                        step_predicted_tokens, step_groundtruth_tokens
+                    ),
+                )
 
                 # update hiddens
                 hiddens = results["new_hidden"]
-        self.log(
-            log_prefix + "_graph_em",
-            self.graph_exact_match(batch_predicted_cmds, batch_groundtruth_cmds),
-        )
-        self.log(
-            log_prefix + "_token_em",
-            self.token_exact_match(batch_predicted_tokens, batch_groundtruth_tokens),
-        )
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
