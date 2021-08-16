@@ -18,7 +18,9 @@ def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     output: (batch, hidden_dim)
     """
     return (input * mask.unsqueeze(-1)).sum(dim=1) / (
-        mask.sum(dim=1, keepdim=True) + 1e-32  # small eps to avoid divide by zero
+        mask.sum(dim=1, keepdim=True).clamp(
+            min=torch.finfo(input.dtype).tiny
+        )  # clamp to avoid divide by 0
     )
 
 
@@ -28,8 +30,10 @@ def masked_softmax(
     """
     input, mask and output all have the same dimensions
     """
-    # replace the values to be ignored with a small epsilon value
-    return F.softmax(input.masked_fill(mask == 0, 1e-32), dim=dim)
+    # replace the values to be ignored with the minimum value of the data type
+    return F.softmax(
+        input.masked_fill(mask == 0, torch.finfo(input.dtype).min), dim=dim
+    )
 
 
 def compute_masks_from_event_type_ids(
