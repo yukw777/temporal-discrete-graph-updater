@@ -188,6 +188,7 @@ class TWCmdGenTemporalTextualInput:
 @dataclass(frozen=True)
 class TWCmdGenTemporalGraphicalInput:
     node_ids: torch.Tensor = field(default_factory=empty_tensor)
+    node_labels: List[Dict[int, str]] = field(default_factory=list)
     node_mask: torch.Tensor = field(default_factory=empty_tensor)
     edge_ids: torch.Tensor = field(default_factory=empty_tensor)
     edge_index: torch.Tensor = field(default_factory=empty_tensor)
@@ -213,6 +214,7 @@ class TWCmdGenTemporalGraphicalInput:
             return False
         return (
             self.node_ids.equal(o.node_ids)
+            and self.node_labels == o.node_labels
             and self.node_mask.equal(o.node_mask)
             and self.edge_ids.equal(o.edge_ids)
             and self.edge_index.equal(o.edge_index)
@@ -237,6 +239,7 @@ class TWCmdGenTemporalGraphicalInput:
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
             node_ids=self.node_ids.to(*args, **kwargs),
+            node_labels=self.node_labels,
             node_mask=self.node_mask.to(*args, **kwargs),
             edge_ids=self.edge_ids.to(*args, **kwargs),
             edge_index=self.edge_index.to(*args, **kwargs),
@@ -273,6 +276,7 @@ class TWCmdGenTemporalGraphicalInput:
     def pin_memory(self) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
             node_ids=self.node_ids.pin_memory(),
+            node_labels=self.node_labels,
             node_mask=self.node_mask.pin_memory(),
             edge_ids=self.edge_ids.pin_memory(),
             edge_index=self.edge_index.pin_memory(),
@@ -371,6 +375,9 @@ class TWCmdGenTemporalDataCollator:
         self.node_ids: Dict[Tuple[str, int], Set[int]] = defaultdict(
             self.create_node_id_set
         )
+        self.node_labels: Dict[Tuple[str, int], Dict[int, str]] = defaultdict(
+            self.create_node_label_dict
+        )
         self.edges: Dict[Tuple[str, int], Dict[int, Tuple[int, int]]] = defaultdict(
             self.create_edges_dict
         )
@@ -379,6 +386,11 @@ class TWCmdGenTemporalDataCollator:
     def create_node_id_set() -> Set[int]:
         # always include the placeholder node 0
         return {0}
+
+    @staticmethod
+    def create_node_label_dict() -> Dict[int, str]:
+        # always include the placeholder node 0
+        return {0: "<pad>"}
 
     @staticmethod
     def create_edges_dict() -> Dict[int, Tuple[int, int]]:
@@ -400,6 +412,9 @@ class TWCmdGenTemporalDataCollator:
         event_type = event["type"]
         if event_type == "node-add":
             self.node_ids[(game, walkthrough_step)].add(event["node_id"])
+            self.node_labels[(game, walkthrough_step)][event["node_id"]] = event[
+                "label"
+            ]
         elif event_type == "edge-add":
             self.edges[(game, walkthrough_step)][event["edge_id"]] = (
                 event["src_id"],
@@ -574,6 +589,7 @@ class TWCmdGenTemporalDataCollator:
 
         output: {
             "node_ids": len({0: (batch, num_nodes), ...}) = event_seq_len,
+            "node_labels": len({0: {node_id: node_label, ...}, ...}) = event_seq_len,
             "edge_ids": len({0: (batch, num_edges), ...}) = event_seq_len,
             "edge_index": len({0: (batch, 2, num_edges), ...}) = event_seq_len,
             "edge_timestamps": len({0: (batch, num_edges), ...}) = event_seq_len,
@@ -590,6 +606,7 @@ class TWCmdGenTemporalDataCollator:
         batch_event_dst_pos: List[List[int]] = []
         batch_event_edge_ids: List[List[int]] = []
         event_seq_node_ids: Dict[int, List[List[int]]] = defaultdict(list)
+        event_seq_node_labels: Dict[int, List[Dict[int, str]]] = defaultdict(list)
         event_seq_edge_ids: Dict[int, List[List[int]]] = defaultdict(list)
         event_seq_edge_index: Dict[int, List[List[Tuple[int, int]]]] = defaultdict(list)
         event_seq_edge_timestamps: Dict[int, List[List[float]]] = defaultdict(list)
@@ -605,6 +622,7 @@ class TWCmdGenTemporalDataCollator:
             if max_event_seq_len == 0:
                 # no event sequence in this batch_step
                 event_seq_node_ids[-1].append([0])
+                event_seq_node_labels[-1].append({0: "<pad>"})
                 event_seq_edge_ids[-1].append([0])
                 event_seq_edge_index[-1].append([(0, 0)])
                 event_seq_edge_timestamps[-1].append([0.0])
@@ -612,11 +630,13 @@ class TWCmdGenTemporalDataCollator:
                 if step == {} or i >= len(step["event_seq"]):
                     # we've passed the last event, so just add padded lists and move on
                     event_seq_node_ids[i].append([0])
+                    event_seq_node_labels[i].append({0: "<pad>"})
                     event_seq_edge_ids[i].append([0])
                     event_seq_edge_index[i].append([(0, 0)])
                     event_seq_edge_timestamps[i].append([0.0])
                     if i == 0:
                         event_seq_node_ids[-1].append([0])
+                        event_seq_node_labels[-1].append({0: "<pad>"})
                         event_seq_edge_ids[-1].append([0])
                         event_seq_edge_index[-1].append([(0, 0)])
                         event_seq_edge_timestamps[-1].append([0.0])
@@ -635,6 +655,14 @@ class TWCmdGenTemporalDataCollator:
                             node_id_map[nid]
                             for nid in sorted(self.node_ids[(game, walkthrough_step)])
                         ]
+                    )
+                    event_seq_node_labels[-1].append(
+                        {
+                            node_id_map[nid]: label
+                            for nid, label in self.node_labels[
+                                (game, walkthrough_step)
+                            ].items()
+                        }
                     )
                     edge_id_list: List[int] = []
                     edge_index_list: List[Tuple[int, int]] = []
@@ -669,6 +697,14 @@ class TWCmdGenTemporalDataCollator:
                 event_node_ids = sorted(self.node_ids[(game, walkthrough_step)])
                 event_seq_node_ids[i].append(
                     [node_id_map[nid] for nid in event_node_ids]
+                )
+                event_seq_node_labels[i].append(
+                    {
+                        node_id_map[nid]: label
+                        for nid, label in self.node_labels[
+                            (game, walkthrough_step)
+                        ].items()
+                    }
                 )
 
                 # create a map from global node ID => position in event_node_ids
@@ -745,6 +781,9 @@ class TWCmdGenTemporalDataCollator:
             )
             for i in range(-1, max_event_seq_len)
         ]
+        node_labels: List[List[Dict[int, str]]] = [
+            event_seq_node_labels[i] for i in range(-1, max_event_seq_len)
+        ]
         node_masks = [(nids != 0).float() for nids in node_ids]
         edge_ids: List[torch.Tensor] = [
             pad_sequence(
@@ -774,6 +813,7 @@ class TWCmdGenTemporalDataCollator:
         ]
         return {
             "node_ids": node_ids,
+            "node_labels": node_labels,
             "node_masks": node_masks,
             "edge_ids": edge_ids,
             "edge_index": edge_index_tensor,
@@ -801,6 +841,7 @@ class TWCmdGenTemporalDataCollator:
                 (
                     TWCmdGenTemporalGraphicalInput(
                         node_ids: (batch, num_nodes),
+                        node_labels: [{node_id: node_label, ...}, ...],
                         edge_ids: (batch, num_edges),
                         edge_index: (batch, 2, num_edges),
                         edge_timestamps: (batch, num_edges),
@@ -858,6 +899,7 @@ class TWCmdGenTemporalDataCollator:
                 graph_events.append(
                     TWCmdGenTemporalGraphicalInput(
                         node_ids=graphical["node_ids"][j],
+                        node_labels=graphical["node_labels"][j],
                         node_mask=graphical["node_masks"][j],
                         edge_ids=graphical["edge_ids"][j],
                         edge_index=graphical["edge_index"][j],

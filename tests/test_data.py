@@ -328,6 +328,7 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
             ],
             {
                 "node_ids": [torch.tensor([[0]])],
+                "node_labels": [[{0: "<pad>"}]],
                 "node_masks": [torch.tensor([[0.0]])],
                 "edge_ids": [torch.tensor([[0]])],
                 "edge_index": [torch.tensor([[[0], [0]]])],
@@ -375,6 +376,12 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     torch.tensor([[0, 1]]),
                     torch.tensor([[0, 1, 2]]),
                     torch.tensor([[0, 1, 2]]),
+                ],
+                "node_labels": [
+                    [{0: "<pad>"}],
+                    [{0: "<pad>", 1: "n0"}],
+                    [{0: "<pad>", 1: "n0", 2: "n1"}],
+                    [{0: "<pad>", 1: "n0", 2: "n1"}],
                 ],
                 "node_masks": [
                     torch.tensor([[0.0]]),
@@ -498,6 +505,50 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 3, 4], [0, 0, 0]]),
+                ],
+                "node_labels": [
+                    [
+                        {0: "<pad>"},
+                        {0: "<pad>"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
+                    [
+                        {0: "<pad>", 1: "n0"},
+                        {0: "<pad>", 3: "n0"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
+                    [
+                        {0: "<pad>", 1: "n0", 2: "n1"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
+                    [
+                        {0: "<pad>", 1: "n0", 2: "n1"},
+                        {0: "<pad>"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
+                    [
+                        {0: "<pad>"},
+                        {0: "<pad>"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
+                    [
+                        {0: "<pad>"},
+                        {0: "<pad>"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
+                    [
+                        {0: "<pad>"},
+                        {0: "<pad>"},
+                        {0: "<pad>", 3: "n0", 4: "n1"},
+                        {0: "<pad>"},
+                    ],
                 ],
                 "node_masks": [
                     torch.tensor([[0, 0, 0], [0, 0, 0], [0, 1, 1], [0, 0, 0]]).float(),
@@ -627,13 +678,17 @@ def test_tw_cmd_gen_collator_collate_graphical_inputs(
     results = tw_cmd_gen_collator.collate_graphical_inputs(batch_step)
     for k in [
         "node_ids",
+        "node_labels",
         "node_masks",
         "edge_ids",
         "edge_index",
         "edge_timestamps",
     ]:
         for el, expected_el in zip(results[k], expected[k]):
-            assert el.equal(expected_el)
+            if k == "node_labels":
+                assert el == expected_el
+            else:
+                assert el.equal(expected_el)
     for k in [
         "tgt_event_src_ids",
         "tgt_event_dst_ids",
@@ -663,12 +718,18 @@ def test_read_label_vocab_files():
     [
         (
             [
-                ("g1", 0, {"type": "node-add", "node_id": 1}),
-                ("g1", 0, {"type": "node-add", "node_id": 2}),
+                ("g1", 0, {"type": "node-add", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-add", "node_id": 2, "label": "n2"}),
                 (
                     "g1",
                     0,
-                    {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 2},
+                    {
+                        "type": "edge-add",
+                        "edge_id": 1,
+                        "src_id": 1,
+                        "dst_id": 2,
+                        "label": "e1",
+                    },
                 ),
             ],
             [
@@ -691,19 +752,31 @@ def test_read_label_vocab_files():
         ),
         (
             [
-                ("g1", 0, {"type": "node-add", "node_id": 1}),
-                ("g1", 0, {"type": "node-add", "node_id": 2}),
+                ("g1", 0, {"type": "node-add", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-add", "node_id": 2, "label": "n2"}),
                 (
                     "g1",
                     0,
-                    {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 2},
+                    {
+                        "type": "edge-add",
+                        "edge_id": 1,
+                        "src_id": 1,
+                        "dst_id": 2,
+                        "label": "e1",
+                    },
                 ),
-                ("g1", 1, {"type": "node-add", "node_id": 3}),
-                ("g1", 1, {"type": "node-add", "node_id": 4}),
+                ("g1", 1, {"type": "node-add", "node_id": 3, "label": "n1"}),
+                ("g1", 1, {"type": "node-add", "node_id": 4, "label": "n2"}),
                 (
                     "g1",
                     1,
-                    {"type": "edge-add", "edge_id": 2, "src_id": 3, "dst_id": 4},
+                    {
+                        "type": "edge-add",
+                        "edge_id": 2,
+                        "src_id": 3,
+                        "dst_id": 4,
+                        "label": "e1",
+                    },
                 ),
             ],
             [
@@ -773,57 +846,97 @@ def test_tw_cmd_gen_collator_allocate_ids(tw_cmd_gen_collator, events, expected)
     "events,expected_node_ids,expected_edges",
     [
         (
-            [("g0", 0, {"type": "node-add", "node_id": 1})],
+            [("g0", 0, {"type": "node-add", "node_id": 1, "label": "n1"})],
             {("g0", 0): {0, 1}},
             {},
         ),
         (
             [
-                ("g0", 0, {"type": "node-add", "node_id": 1}),
-                ("g0", 0, {"type": "node-delete", "node_id": 1}),
+                ("g0", 0, {"type": "node-add", "node_id": 1, "label": "n1"}),
+                ("g0", 0, {"type": "node-delete", "node_id": 1, "label": "n1"}),
             ],
             {("g0", 0): {0, 1}},
             {},
         ),
         (
             [
-                ("g0", 0, {"type": "node-add", "node_id": 2}),
-                ("g0", 1, {"type": "node-add", "node_id": 1}),
-                ("g1", 0, {"type": "node-add", "node_id": 3}),
-                ("g0", 1, {"type": "node-add", "node_id": 4}),
-                ("g1", 0, {"type": "node-add", "node_id": 5}),
-                ("g0", 1, {"type": "node-delete", "node_id": 1}),
-                ("g1", 0, {"type": "node-delete", "node_id": 3}),
+                ("g0", 0, {"type": "node-add", "node_id": 2, "label": "n2"}),
+                ("g0", 1, {"type": "node-add", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-add", "node_id": 3, "label": "n3"}),
+                ("g0", 1, {"type": "node-add", "node_id": 4, "label": "n4"}),
+                ("g1", 0, {"type": "node-add", "node_id": 5, "label": "n5"}),
+                ("g0", 1, {"type": "node-delete", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-delete", "node_id": 3, "label": "n3"}),
             ],
             {("g0", 0): {0, 2}, ("g0", 1): {0, 1, 4}, ("g1", 0): {0, 3, 5}},
             {},
         ),
         (
             [
-                ("g0", 0, {"type": "node-add", "node_id": 2}),
-                ("g0", 1, {"type": "node-add", "node_id": 1}),
-                ("g1", 0, {"type": "node-add", "node_id": 3}),
-                ("g0", 1, {"type": "node-add", "node_id": 4}),
-                ("g1", 0, {"type": "node-add", "node_id": 5}),
-                ("g0", 1, {"type": "node-delete", "node_id": 1}),
-                ("g1", 0, {"type": "node-delete", "node_id": 3}),
-                ("g0", 1, {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 4}),
-                ("g1", 0, {"type": "edge-add", "edge_id": 2, "src_id": 5, "dst_id": 3}),
+                ("g0", 0, {"type": "node-add", "node_id": 2, "label": "n2"}),
+                ("g0", 1, {"type": "node-add", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-add", "node_id": 3, "label": "n3"}),
+                ("g0", 1, {"type": "node-add", "node_id": 4, "label": "n4"}),
+                ("g1", 0, {"type": "node-add", "node_id": 5, "label": "n5"}),
+                ("g0", 1, {"type": "node-delete", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-delete", "node_id": 3, "label": "n3"}),
+                (
+                    "g0",
+                    1,
+                    {
+                        "type": "edge-add",
+                        "edge_id": 1,
+                        "src_id": 1,
+                        "dst_id": 4,
+                        "label": "e1",
+                    },
+                ),
+                (
+                    "g1",
+                    0,
+                    {
+                        "type": "edge-add",
+                        "edge_id": 2,
+                        "src_id": 5,
+                        "dst_id": 3,
+                        "label": "e2",
+                    },
+                ),
             ],
             {("g0", 0): {0, 2}, ("g0", 1): {0, 1, 4}, ("g1", 0): {0, 3, 5}},
             {("g0", 1): {0: (0, 0), 1: (1, 4)}, ("g1", 0): {0: (0, 0), 2: (5, 3)}},
         ),
         (
             [
-                ("g0", 0, {"type": "node-add", "node_id": 2}),
-                ("g0", 1, {"type": "node-add", "node_id": 1}),
-                ("g1", 0, {"type": "node-add", "node_id": 3}),
-                ("g0", 1, {"type": "node-add", "node_id": 4}),
-                ("g1", 0, {"type": "node-add", "node_id": 5}),
-                ("g0", 1, {"type": "node-delete", "node_id": 1}),
-                ("g1", 0, {"type": "node-delete", "node_id": 3}),
-                ("g0", 1, {"type": "edge-add", "edge_id": 1, "src_id": 1, "dst_id": 4}),
-                ("g1", 0, {"type": "edge-add", "edge_id": 2, "src_id": 5, "dst_id": 3}),
+                ("g0", 0, {"type": "node-add", "node_id": 2, "label": "n2"}),
+                ("g0", 1, {"type": "node-add", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-add", "node_id": 3, "label": "n3"}),
+                ("g0", 1, {"type": "node-add", "node_id": 4, "label": "n4"}),
+                ("g1", 0, {"type": "node-add", "node_id": 5, "label": "n5"}),
+                ("g0", 1, {"type": "node-delete", "node_id": 1, "label": "n1"}),
+                ("g1", 0, {"type": "node-delete", "node_id": 3, "label": "n3"}),
+                (
+                    "g0",
+                    1,
+                    {
+                        "type": "edge-add",
+                        "edge_id": 1,
+                        "src_id": 1,
+                        "dst_id": 4,
+                        "label": "e1",
+                    },
+                ),
+                (
+                    "g1",
+                    0,
+                    {
+                        "type": "edge-add",
+                        "edge_id": 2,
+                        "src_id": 5,
+                        "dst_id": 3,
+                        "label": "e2",
+                    },
+                ),
                 (
                     "g1",
                     0,
@@ -919,6 +1032,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                         (
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0]]),
+                                node_labels=[{0: "<pad>"}],
                                 node_mask=torch.tensor([[0.0]]),
                                 edge_ids=torch.tensor([[0]]),
                                 edge_index=torch.tensor([[[0], [0]]]),
@@ -941,6 +1055,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1]]),
+                                node_labels=[{0: "<pad>", 1: "player"}],
                                 node_mask=torch.tensor([[0.0, 1.0]]),
                                 edge_ids=torch.tensor([[0]]),
                                 edge_index=torch.tensor([[[0], [0]]]),
@@ -963,6 +1078,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2]]),
+                                node_labels=[{0: "<pad>", 1: "player", 2: "kitchen"}],
                                 node_mask=torch.tensor([[0, 1.0, 1.0]]),
                                 edge_ids=torch.tensor([[0]]),
                                 edge_index=torch.tensor([[[0], [0]]]),
@@ -985,6 +1101,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2]]),
+                                node_labels=[{0: "<pad>", 1: "player", 2: "kitchen"}],
                                 node_mask=torch.tensor([[0, 1.0, 1.0]]),
                                 edge_ids=torch.tensor([[0, 1]]),
                                 edge_index=torch.tensor([[[0, 1], [0, 2]]]),
@@ -1151,6 +1268,7 @@ def test_tw_cmd_gen_collator_init_id_space(
                         (
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0], [0]]),
+                                node_labels=[{0: "<pad>"}, {0: "<pad>"}],
                                 node_mask=torch.tensor([[0.0], [0.0]]),
                                 edge_ids=torch.tensor([[0], [0]]),
                                 edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
@@ -1173,6 +1291,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1], [0, 3]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player"},
+                                    {0: "<pad>", 3: "player"},
+                                ],
                                 node_mask=torch.tensor([[0, 1.0], [0, 1.0]]),
                                 edge_ids=torch.tensor([[0], [0]]),
                                 edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
@@ -1195,6 +1317,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 3, 4]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player", 2: "kitchen"},
+                                    {0: "<pad>", 3: "player", 4: "kitchen"},
+                                ],
                                 node_mask=torch.tensor([[0, 1.0, 1.0], [0, 1.0, 1.0]]),
                                 edge_ids=torch.tensor([[0], [0]]),
                                 edge_index=torch.tensor([[[0], [0]], [[0], [0]]]),
@@ -1217,6 +1343,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player", 2: "kitchen"},
+                                    {0: "<pad>"},
+                                ],
                                 node_mask=torch.tensor(
                                     [[0, 1.0, 1.0], [0.0, 0.0, 0.0]]
                                 ),
@@ -1271,6 +1401,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                         (
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player", 2: "kitchen"},
+                                    {0: "<pad>"},
+                                ],
                                 node_mask=torch.tensor(
                                     [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
                                 ),
@@ -1297,6 +1431,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player", 2: "kitchen"},
+                                    {0: "<pad>"},
+                                ],
                                 node_mask=torch.tensor(
                                     [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
                                 ),
@@ -1323,6 +1461,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player", 2: "kitchen"},
+                                    {0: "<pad>"},
+                                ],
                                 node_mask=torch.tensor(
                                     [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
                                 ),
@@ -1349,6 +1491,10 @@ def test_tw_cmd_gen_collator_init_id_space(
                             ),
                             TWCmdGenTemporalGraphicalInput(
                                 node_ids=torch.tensor([[0, 1, 2], [0, 0, 0]]),
+                                node_labels=[
+                                    {0: "<pad>", 1: "player", 2: "kitchen"},
+                                    {0: "<pad>"},
+                                ],
                                 node_mask=torch.tensor(
                                     [[0.0, 1.0, 1.0], [0.0, 0.0, 0.0]]
                                 ),
