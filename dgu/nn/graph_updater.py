@@ -3,11 +3,14 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import torchmetrics
 import itertools
+import random
+import wandb
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
+from pytorch_lightning.loggers import WandbLogger
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
@@ -49,6 +52,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         max_decode_len: int = 100,
         learning_rate: float = 5e-4,
         truncated_bptt_steps: int = 0,
+        log_k_triple_sets: int = 3,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
         node_vocab_path: Optional[str] = None,
@@ -73,6 +77,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "max_decode_len",
             "learning_rate",
             "truncated_bptt_steps",
+            "log_k_triple_sets",
         )
         self.truncated_bptt_steps = truncated_bptt_steps
         # preprocessor
@@ -426,9 +431,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         assert hiddens is not None
         return {"loss": loss, "hiddens": hiddens}
 
-    def eval_step(self, batch: TWCmdGenTemporalBatch, log_prefix: str) -> None:
+    def eval_step(
+        self, batch: TWCmdGenTemporalBatch, log_prefix: str
+    ) -> List[Tuple[str, str]]:
         hiddens: Optional[torch.Tensor] = None
         batch_size = batch.data[0][0].obs_word_ids.size(0)
+        table_data: List[Tuple[str, str]] = []
 
         for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
             step_groundtruth_cmds: List[List[str]] = [[]] * batch_size
@@ -527,6 +535,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
                         step_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
                         step_predicted_tokens[i].extend(predicted_cmd_tokens)
+                table_data.extend(
+                    zip(
+                        [" | ".join(cmds) for cmds in step_groundtruth_cmds],
+                        [" | ".join(cmds) for cmds in step_predicted_cmds],
+                    )
+                )
                 self.log(
                     log_prefix + "_graph_em",
                     self.graph_exact_match(step_predicted_cmds, step_groundtruth_cmds),
@@ -540,16 +554,46 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
                 # update hiddens
                 hiddens = results["new_hidden"]
+        return table_data
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
-    ) -> None:
-        self.eval_step(batch, "val")
+    ) -> List[Tuple[str, str]]:
+        return self.eval_step(batch, "val")
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
+    ) -> List[Tuple[str, str]]:
+        return self.eval_step(batch, "test")
+
+    def wandb_log_gen_obs(
+        self, outputs: List[List[Tuple[str, str]]], table_title: str
     ) -> None:
-        self.eval_step(batch, "test")
+        flat_outputs = [item for sublist in outputs for item in sublist]
+        data = (
+            random.sample(flat_outputs, self.hparams.log_k_triple_sets)  # type: ignore
+            if len(flat_outputs) >= self.hparams.log_k_triple_sets  # type: ignore
+            else flat_outputs
+        )
+        self.logger.experiment.log(
+            {table_title: wandb.Table(data=data, columns=["Groundtruth", "Predicted"])}
+        )
+
+    def validation_epoch_end(  # type: ignore
+        self,
+        outputs: List[List[Tuple[str, str]]],
+    ) -> None:
+        if isinstance(self.logger, WandbLogger):
+            self.wandb_log_gen_obs(
+                outputs, f"Predicted Graph Triplets Val Epoch {self.current_epoch}"
+            )
+
+    def test_epoch_end(  # type: ignore
+        self,
+        outputs: List[List[Tuple[str, str]]],
+    ) -> None:
+        if isinstance(self.logger, WandbLogger):
+            self.wandb_log_gen_obs(outputs, "Predicted Graph Triplets Test")
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
