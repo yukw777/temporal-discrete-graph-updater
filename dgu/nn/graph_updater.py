@@ -2,11 +2,16 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import torchmetrics
+import itertools
+import random
+import wandb
+import dgu.metrics
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
+from pytorch_lightning.loggers import WandbLogger
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
@@ -47,6 +52,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         max_decode_len: int = 100,
         learning_rate: float = 5e-4,
         truncated_bptt_steps: int = 0,
+        log_k_triple_sets: int = 3,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
         node_vocab_path: Optional[str] = None,
@@ -71,6 +77,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "max_decode_len",
             "learning_rate",
             "truncated_bptt_steps",
+            "log_k_triple_sets",
         )
         self.truncated_bptt_steps = truncated_bptt_steps
         # preprocessor
@@ -131,6 +138,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_label_embeddings = masked_mean(
             pretrained_word_embeddings(edge_label_word_ids), edge_label_mask
         )
+        self.label_id_map: List[str] = node_vocab + relation_vocab
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -174,6 +182,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.src_node_f1 = torchmetrics.F1()
         self.dst_node_f1 = torchmetrics.F1()
         self.label_f1 = torchmetrics.F1(ignore_index=0)
+
+        self.graph_predicted_exact_match = dgu.metrics.ExactMatch()
+        self.token_predicted_exact_match = dgu.metrics.ExactMatch()
+        self.graph_predicted_f1 = dgu.metrics.F1()
+        self.token_predicted_f1 = dgu.metrics.F1()
 
     def forward(  # type: ignore
         self,
@@ -355,7 +368,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         hiddens: Optional[torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         losses: List[torch.Tensor] = []
-        for textual_inputs, graph_event_inputs in batch.data:
+        for textual_inputs, graph_event_inputs, _ in batch.data:
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -420,9 +433,26 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         assert hiddens is not None
         return {"loss": loss, "hiddens": hiddens}
 
-    def eval_step(self, batch: TWCmdGenTemporalBatch, log_prefix: str) -> None:
-        for textual_inputs, graph_event_inputs in batch.data:
-            hiddens: Optional[torch.Tensor] = None
+    def eval_step(
+        self, batch: TWCmdGenTemporalBatch, log_prefix: str
+    ) -> List[Tuple[str, str]]:
+        hiddens: Optional[torch.Tensor] = None
+        batch_size = batch.data[0][0].obs_word_ids.size(0)
+        table_data: List[Tuple[str, str]] = []
+
+        for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
+            step_groundtruth_cmds: List[List[str]] = [[]] * batch_size
+            step_groundtruth_tokens: List[List[str]] = [[]] * batch_size
+            step_predicted_cmds: List[List[str]] = [[]] * batch_size
+            step_predicted_tokens: List[List[str]] = [[]] * batch_size
+
+            # collect groundtruth commands
+            for i, cmds in enumerate(groundtruth_cmds):
+                step_groundtruth_cmds[i].extend(cmds)
+                step_groundtruth_tokens[i].extend(
+                    itertools.chain.from_iterable(cmd.split(" , ") for cmd in cmds)
+                )
+
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -445,7 +475,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
                 )
 
-                # calculate F1s
+                # calculate classification F1s
                 self.log(
                     log_prefix + "_event_type_f1",
                     self.event_type_f1(
@@ -479,18 +509,107 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 )
 
+                # calculate graph tuples from predicted graph events (teacher forcing)
+                for i, (event_type_id, src_pos_id, dst_pos_id, label_id) in enumerate(
+                    zip(
+                        results["event_type_logits"].argmax(dim=1).tolist(),
+                        results["src_logits"].argmax(dim=1).tolist(),
+                        results["dst_logits"].argmax(dim=1).tolist(),
+                        results["label_logits"].argmax(dim=1).tolist(),
+                    )
+                ):
+                    if event_type_id in {
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                    }:
+                        cmd = (
+                            "add"
+                            if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
+                            else "delete"
+                        )
+                        src_label = graph_event.node_labels[i][
+                            graph_event.node_ids[i, src_pos_id].item()  # type: ignore
+                        ]
+                        dst_label = graph_event.node_labels[i][
+                            graph_event.node_ids[i, dst_pos_id].item()  # type: ignore
+                        ]
+                        # in the original dataset, multi-word edge labels are joined by
+                        # an underscore
+                        edge_label = "_".join(self.label_id_map[label_id].split())
+                        predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
+                        step_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
+                        step_predicted_tokens[i].extend(predicted_cmd_tokens)
+                table_data.extend(
+                    zip(
+                        [" | ".join(cmds) for cmds in step_groundtruth_cmds],
+                        [" | ".join(cmds) for cmds in step_predicted_cmds],
+                    )
+                )
+                self.log(
+                    log_prefix + "_graph_predicted_em",
+                    self.graph_predicted_exact_match(
+                        step_predicted_cmds, step_groundtruth_cmds
+                    ),
+                )
+                self.log(
+                    log_prefix + "_token_predicted_em",
+                    self.token_predicted_exact_match(
+                        step_predicted_tokens, step_groundtruth_tokens
+                    ),
+                )
+                self.log(
+                    log_prefix + "_graph_predicted_f1",
+                    self.graph_predicted_f1(step_predicted_cmds, step_groundtruth_cmds),
+                )
+                self.log(
+                    log_prefix + "_token_predicted_f1",
+                    self.token_predicted_f1(
+                        step_predicted_tokens, step_groundtruth_tokens
+                    ),
+                )
+
                 # update hiddens
                 hiddens = results["new_hidden"]
+        return table_data
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
-    ) -> None:
-        self.eval_step(batch, "val")
+    ) -> List[Tuple[str, str]]:
+        return self.eval_step(batch, "val")
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
+    ) -> List[Tuple[str, str]]:
+        return self.eval_step(batch, "test")
+
+    def wandb_log_gen_obs(
+        self, outputs: List[List[Tuple[str, str]]], table_title: str
     ) -> None:
-        self.eval_step(batch, "test")
+        flat_outputs = [item for sublist in outputs for item in sublist]
+        data = (
+            random.sample(flat_outputs, self.hparams.log_k_triple_sets)  # type: ignore
+            if len(flat_outputs) >= self.hparams.log_k_triple_sets  # type: ignore
+            else flat_outputs
+        )
+        self.logger.experiment.log(
+            {table_title: wandb.Table(data=data, columns=["Groundtruth", "Predicted"])}
+        )
+
+    def validation_epoch_end(  # type: ignore
+        self,
+        outputs: List[List[Tuple[str, str]]],
+    ) -> None:
+        if isinstance(self.logger, WandbLogger):
+            self.wandb_log_gen_obs(
+                outputs, f"Predicted Graph Triplets Val Epoch {self.current_epoch}"
+            )
+
+    def test_epoch_end(  # type: ignore
+        self,
+        outputs: List[List[Tuple[str, str]]],
+    ) -> None:
+        if isinstance(self.logger, WandbLogger):
+            self.wandb_log_gen_obs(outputs, "Predicted Graph Triplets Test")
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
