@@ -246,7 +246,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             src_logits: (batch, num_node)
             dst_logits: (batch, num_node)
             label_logits: (batch, num_label)
-            new_hidden: (batch, hidden_dim)
+            new_decoder_hidden: (batch, hidden_dim)
             encoded_obs: (batch, obs_len, hidden_dim)
             encoded_prev_action: (batch, prev_action_len, hidden_dim)
         }
@@ -297,6 +297,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_node_embeddings * prev_node_mask.unsqueeze(-1),
             hidden=decoder_hidden,
         )
+        results["new_decoder_hidden"] = results["new_hidden"]
+        del results["new_hidden"]
         results["encoded_obs"] = encoded_obs
         results["encoded_prev_action"] = encoded_prev_action
 
@@ -365,10 +367,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         batch: TWCmdGenTemporalBatch,
         batch_idx: int,
-        hiddens: Optional[torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        _hiddens: Optional[torch.Tensor],  # not used since it's tracked in self.memory
+    ) -> torch.Tensor:
         losses: List[torch.Tensor] = []
         for textual_inputs, graph_event_inputs, _ in batch.data:
+            decoder_hidden: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -386,7 +389,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graph_event.edge_ids,
                     graph_event.edge_index,
                     graph_event.edge_timestamps,
-                    decoder_hidden=hiddens,
+                    decoder_hidden=decoder_hidden,
                     obs_word_ids=textual_inputs.obs_word_ids,
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
                 )
@@ -422,21 +425,19 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
                 losses.append(event_type_loss + src_loss + dst_loss + label_loss)
 
-                # update hiddens
-                hiddens = results["new_hidden"].detach()
+                # update decoder hidden
+                decoder_hidden = results["new_decoder_hidden"]
 
                 # detach memory
                 self.tgn.memory.detach_()  # type: ignore
 
         loss = torch.stack(losses).mean()
         self.log("train_loss", loss, prog_bar=True)
-        assert hiddens is not None
-        return {"loss": loss, "hiddens": hiddens}
+        return loss
 
     def eval_step(
         self, batch: TWCmdGenTemporalBatch, log_prefix: str
     ) -> List[Tuple[str, str]]:
-        hiddens: Optional[torch.Tensor] = None
         batch_size = batch.data[0][0].obs_word_ids.size(0)
         table_data: List[Tuple[str, str]] = []
 
@@ -453,6 +454,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     itertools.chain.from_iterable(cmd.split(" , ") for cmd in cmds)
                 )
 
+            decoder_hidden: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
@@ -470,7 +472,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graph_event.edge_ids,
                     graph_event.edge_index,
                     graph_event.edge_timestamps,
-                    decoder_hidden=hiddens,
+                    decoder_hidden=decoder_hidden,
                     obs_word_ids=textual_inputs.obs_word_ids,
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
                 )
@@ -568,8 +570,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 )
 
-                # update hiddens
-                hiddens = results["new_hidden"]
+                # update decoder hidden
+                decoder_hidden = results["new_decoder_hidden"]
         return table_data
 
     def validation_step(  # type: ignore

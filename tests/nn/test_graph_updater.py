@@ -129,7 +129,7 @@ def test_sldgu_forward(
     assert results["src_logits"].size() == (batch, prev_num_node)
     assert results["dst_logits"].size() == (batch, prev_num_node)
     assert results["label_logits"].size() == (batch, num_label)
-    assert results["new_hidden"].size() == (batch, sldgu.hparams.hidden_dim)
+    assert results["new_decoder_hidden"].size() == (batch, sldgu.hparams.hidden_dim)
     if encoded_textual_input:
         assert results["encoded_obs"].equal(encoded_obs)
         assert results["encoded_prev_action"].equal(encoded_prev_action)
