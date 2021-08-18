@@ -441,6 +441,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         batch_size = batch.data[0][0].obs_word_ids.size(0)
         table_data: List[Tuple[str, str]] = []
 
+        losses: List[torch.Tensor] = []
         for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
             step_groundtruth_cmds: List[List[str]] = [[]] * batch_size
             step_groundtruth_tokens: List[List[str]] = [[]] * batch_size
@@ -476,6 +477,37 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     obs_word_ids=textual_inputs.obs_word_ids,
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
                 )
+
+                # calculate losses
+                event_type_loss = torch.sum(
+                    self.criterion(
+                        results["event_type_logits"],
+                        graph_event.groundtruth_event_type_ids.flatten(),
+                    )
+                    * graph_event.groundtruth_event_mask
+                )
+                src_loss = torch.sum(
+                    self.criterion(
+                        results["src_logits"],
+                        graph_event.groundtruth_event_src_ids.flatten(),
+                    )
+                    * graph_event.groundtruth_event_src_mask
+                )
+                dst_loss = torch.sum(
+                    self.criterion(
+                        results["dst_logits"],
+                        graph_event.groundtruth_event_dst_ids.flatten(),
+                    )
+                    * graph_event.groundtruth_event_dst_mask
+                )
+                label_loss = torch.sum(
+                    self.criterion(
+                        results["label_logits"],
+                        graph_event.groundtruth_event_label_ids.flatten(),
+                    )
+                    * graph_event.groundtruth_event_mask
+                )
+                losses.append(event_type_loss + src_loss + dst_loss + label_loss)
 
                 # calculate classification F1s
                 self.log(
@@ -572,6 +604,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
                 # update decoder hidden
                 decoder_hidden = results["new_decoder_hidden"]
+        loss = torch.stack(losses).mean()
+        self.log(log_prefix + "_loss", loss, prog_bar=True)
         return table_data
 
     def validation_step(  # type: ignore
