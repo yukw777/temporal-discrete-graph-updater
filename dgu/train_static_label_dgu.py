@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 from dgu.data import TWCmdGenTemporalDataModule
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
@@ -16,7 +17,14 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed)
 
     # trainer
-    trainer = instantiate(cfg.trainer)
+    trainer = instantiate(
+        cfg.trainer,
+        callbacks=[
+            ModelCheckpoint(
+                monitor="val_loss", filename="static-label-dgu-{epoch}-{val_loss:.2f}"
+            )
+        ],
+    )
 
     # data module
     dm = TWCmdGenTemporalDataModule(
