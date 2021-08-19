@@ -290,128 +290,138 @@ class TemporalGraphNetwork(nn.Module):
         return indices.view_as(edge_index)
         # (batch, 2, num_edge)
 
-    def message(
+    def node_message(
+        self,
+        event_type_ids: torch.Tensor,
+        node_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+        event_timestamps: torch.Tensor,
+        event_mask: torch.Tensor,
+        memory: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Calculate node event messages. We concatenate the event type,
+        node memory, time embedding and event embedding. Note that node messages
+        created here do contain placeholder zeros for the destination node in
+        order to keep the same dimension as edge messages.
+
+        Special events like pad, start, end are masked out to be zeros, which means
+        these will go away when messages are aggregated.
+
+        event_type_ids: (batch)
+        node_ids: (batch)
+        event_embeddings: (batch event_embedding_dim)
+        event_timestamps: (batch)
+        event_mask: (batch)
+        memory: (num_node, memory_dim)
+
+        output: (batch, message_dim)
+        """
+        event_type_embs = self.event_type_emb(event_type_ids)
+        # (batch, event_type_emb_dim)
+
+        node_memory = memory[node_ids]
+        # (batch, memory_dim)
+
+        timestamp_emb = self.time_encoder(event_timestamps)
+        # (batch, time_enc_dim)
+
+        return (
+            torch.cat(
+                [
+                    event_type_embs,
+                    node_memory,
+                    torch.zeros_like(node_memory),
+                    timestamp_emb,
+                    event_embeddings,
+                ],
+                dim=-1,
+            )
+            # mask out special events
+            * event_mask.unsqueeze(-1)
+        )
+        # (batch, message_dim)
+
+    def edge_message(
         self,
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
-        src_mask: torch.Tensor,
         dst_ids: torch.Tensor,
-        dst_mask: torch.Tensor,
-        event_embeddings: torch.Tensor,
         event_edge_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
         event_timestamps: torch.Tensor,
+        event_mask: torch.Tensor,
+        memory: torch.Tensor,
+        last_update: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Calculate graph event messages. We concatenate the event type,
-        source and destination memories, time embedding and event embedding.
+        Calculate edge event messages. We concatenate the event type,
+        source and destination memories, relative time embedding and event embedding.
 
-        Special events like pad, start, end are masked out. Node events are also
-        masked out for destination node messages.
+        Special events like pad, start, end are masked out.
 
-        event_type_ids: (batch, event_seq_len)
-        src_ids: (batch, event_seq_len)
-        src_mask: (batch, event_seq_len)
-        dst_ids: (batch, event_seq_len)
-        dst_mask: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        event_edge_ids: (batch, event_seq_len)
-        event_timestamps: (batch, event_seq_len)
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        event_edge_ids: (batch)
+        event_embeddings: (batch event_embedding_dim)
+        event_timestamps: (batch)
+        event_mask: (batch)
+        memory: (num_node, memory_dim)
+        last_update: (num_edge)
 
         output:
-            src_messages: (
-                batch,
-                event_seq_len,
-                event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-            )
-            dst_messages: (
-                batch,
-                event_seq_len,
-                event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-            )
+            src_messages: (batch, message_dim)
+            dst_messages: (batch, message_dim)
         """
-        # repeat event type id for event type embeddings
         event_type_embs = self.event_type_emb(event_type_ids)
-        # (batch, event_seq_len, event_type_emb_dim)
+        # (batch, event_type_emb_dim)
 
-        # use the memory for node embeddings
-        src_embs = self.memory[src_ids] * src_mask.unsqueeze(-1)  # type: ignore
-        # (batch, event_seq_len, hidden_dim)
-        dst_embs = self.memory[dst_ids] * dst_mask.unsqueeze(-1)  # type: ignore
-        # (batch, event_seq_len, hidden_dim)
+        src_memory = memory[src_ids]
+        # (batch, memory_dim)
+        dst_memory = memory[dst_ids]
+        # (batch, memory_dim)
 
         # calculate relative timestamps for edge events
-        edge_last_update = self.last_update[event_edge_ids]  # type: ignore
-        # (batch, event_seq_len)
+        edge_last_update = last_update[event_edge_ids]
+        # (batch)
 
-        # multiply edge_last_update by dst_mask so that we
-        # only subtract last update timestamps for edge events
-        rel_edge_timestamps = event_timestamps - edge_last_update * dst_mask
-        # (batch, event_seq_len)
+        rel_edge_timestamps = event_timestamps - edge_last_update
+        # (batch)
 
-        # only select node events from event_timestamps
-        # and only select edge events from rel_edge_timestamps (use dst_mask)
-        # then add them and pass it through the time encoder to get the embeddings
-        # finally, mask out timestamp embeddings for special events
-        is_node_event = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
-        )
-        is_not_special_event = torch.logical_not(
-            torch.logical_or(
-                torch.logical_or(
-                    event_type_ids == EVENT_TYPE_ID_MAP["pad"],
-                    event_type_ids == EVENT_TYPE_ID_MAP["start"],
-                ),
-                event_type_ids == EVENT_TYPE_ID_MAP["end"],
-            )
-        )
-        # (batch, event_seq_len)
-        timestamp_emb = self.time_encoder(
-            event_timestamps * is_node_event + rel_edge_timestamps * dst_mask
-        ).view(
-            event_timestamps.size(0), -1, self.time_enc_dim
-        ) * is_not_special_event.unsqueeze(
-            -1
-        )
-        # (batch, event_seq_len, time_enc_dim)
+        timestamp_emb = self.time_encoder(rel_edge_timestamps)
+        # (batch, time_enc_dim)
 
-        # mask out special events
         src_messages = (
             torch.cat(
                 [
                     event_type_embs,
-                    src_embs,
-                    dst_embs,
+                    src_memory,
+                    dst_memory,
                     timestamp_emb,
                     event_embeddings,
                 ],
                 dim=-1,
             )
-            * is_not_special_event.unsqueeze(-1)
+            # mask out special events
+            * event_mask.unsqueeze(-1)
         )
-        # (
-        #   batch,
-        #   event_seq_len,
-        #   event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        # )
+        # (batch, message_dim)
         dst_messages = (
             torch.cat(
                 [
                     event_type_embs,
-                    dst_embs,
-                    src_embs,
+                    dst_memory,
+                    src_memory,
                     timestamp_emb,
                     event_embeddings,
                 ],
                 dim=-1,
             )
-            * dst_mask.unsqueeze(-1)
+            # mask out special events
+            * event_mask.unsqueeze(-1)
         )
-        # (
-        #   batch,
-        #   event_seq_len,
-        #   event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        # )
+        # (batch, message_dim)
         return src_messages, dst_messages
 
     def agg_message(self, messages: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
