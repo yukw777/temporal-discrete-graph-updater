@@ -357,87 +357,74 @@ def test_tgn_edge_message(
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,src_ids,event_embeddings,expected",
+    "node_features,node_event_type_ids,node_event_node_ids,"
+    "node_event_embeddings,expected",
     [
         (
-            torch.tensor(
-                [
-                    [
-                        EVENT_TYPE_ID_MAP["node-delete"],
-                        EVENT_TYPE_ID_MAP["edge-add"],
-                        EVENT_TYPE_ID_MAP["edge-delete"],
-                    ]
-                ]
-            ),
-            torch.tensor([[1, 2, 3]]).long(),
-            torch.tensor([[0.0, 1.0, 2.0]]).unsqueeze(-1).expand(-1, -1, 16),
-            torch.zeros(5, 16),
+            torch.zeros(0, 4),
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([0]),
+            torch.ones(1, 4),
+            torch.ones(1, 4),
         ),
         (
-            torch.tensor(
-                [
-                    [
-                        EVENT_TYPE_ID_MAP["start"],
-                        EVENT_TYPE_ID_MAP["node-add"],
-                        EVENT_TYPE_ID_MAP["end"],
-                    ]
-                ]
-            ),
-            torch.tensor([[0, 1, 0]]).long(),
-            torch.tensor([[0.0, 1.0, 2.0]]).unsqueeze(-1).expand(-1, -1, 16),
-            torch.tensor([[0] * 16, [1] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
+            torch.zeros(0, 4),
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([2]),
+            torch.ones(1, 4),
+            torch.tensor([[0] * 4, [0] * 4, [1] * 4]).float(),
         ),
         (
-            torch.tensor(
-                [
-                    [
-                        EVENT_TYPE_ID_MAP["node-add"],
-                        EVENT_TYPE_ID_MAP["node-add"],
-                    ]
-                ]
-            ),
-            torch.tensor([[1, 1]]).long(),
-            torch.tensor([[0.0, 1.0]]).unsqueeze(-1).expand(-1, -1, 16),
-            torch.tensor([[0] * 16, [1] * 16, [0] * 16, [0] * 16, [0] * 16]).float(),
+            torch.ones(1, 4),
+            torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
+            torch.tensor([0]),
+            torch.ones(1, 4),
+            torch.ones(1, 4),
         ),
         (
+            torch.ones(3, 4),
             torch.tensor(
                 [
-                    [
-                        EVENT_TYPE_ID_MAP["start"],
-                        EVENT_TYPE_ID_MAP["node-add"],
-                        EVENT_TYPE_ID_MAP["node-delete"],
-                        EVENT_TYPE_ID_MAP["edge-add"],
-                        EVENT_TYPE_ID_MAP["edge-delete"],
-                        EVENT_TYPE_ID_MAP["end"],
-                        EVENT_TYPE_ID_MAP["pad"],
-                        EVENT_TYPE_ID_MAP["pad"],
-                    ],
-                    [
-                        EVENT_TYPE_ID_MAP["start"],
-                        EVENT_TYPE_ID_MAP["node-add"],
-                        EVENT_TYPE_ID_MAP["node-delete"],
-                        EVENT_TYPE_ID_MAP["edge-add"],
-                        EVENT_TYPE_ID_MAP["edge-delete"],
-                        EVENT_TYPE_ID_MAP["node-add"],
-                        EVENT_TYPE_ID_MAP["edge-delete"],
-                        EVENT_TYPE_ID_MAP["end"],
-                    ],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["end"],
                 ]
             ),
-            torch.tensor([[0, 0, 1, 2, 2, 0, 0, 0], [0, 3, 4, 3, 4, 4, 3, 0]]),
-            torch.tensor([list(range(8)), [i + 2 for i in range(8)]])
-            .float()
-            .unsqueeze(-1)
-            .expand(-1, -1, 16),
-            torch.tensor([[1] * 16, [0] * 16, [0] * 16, [3] * 16, [7] * 16]).float(),
+            torch.tensor([0, 2, 0, 0]).long(),
+            torch.tensor([0, 2, 3, 0]).float().unsqueeze(-1).expand(-1, 4),
+            torch.tensor([[3] * 4, [1] * 4, [2] * 4]).float(),
+        ),
+        (
+            torch.ones(3, 4),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["end"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+            torch.tensor([0, 2, 5, 2, 0, 0]).long(),
+            torch.tensor([0, 2, 3, 2, 0, 0]).float().unsqueeze(-1).expand(-1, 4),
+            torch.tensor(
+                [[1] * 4, [1] * 4, [2] * 4, [0] * 4, [0] * 4, [3] * 4]
+            ).float(),
         ),
     ],
 )
-def test_tgn_update_node_features(event_type_ids, src_ids, event_embeddings, expected):
-    tgn = TemporalGraphNetwork(5, 5, 10, 10, 10, 16, 10, 1, 1)
-    tgn.update_node_features(event_type_ids, src_ids, event_embeddings)
-    assert tgn.node_features.equal(expected)
+def test_tgn_update_node_features(
+    node_features,
+    node_event_type_ids,
+    node_event_node_ids,
+    node_event_embeddings,
+    expected,
+):
+    assert TemporalGraphNetwork.update_node_features(
+        node_features, node_event_type_ids, node_event_node_ids, node_event_embeddings
+    ).equal(expected)
 
 
 @pytest.mark.parametrize(

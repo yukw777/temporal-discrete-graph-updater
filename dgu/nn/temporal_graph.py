@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from typing import Tuple, Optional
 from torch_geometric.nn import TransformerConv
@@ -351,30 +352,47 @@ class TemporalGraphNetwork(nn.Module):
         # (batch, message_dim)
         return src_messages, dst_messages
 
+    @staticmethod
     def update_node_features(
-        self,
-        event_type_ids: torch.Tensor,
-        src_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-    ) -> None:
+        node_features: torch.Tensor,
+        node_event_type_ids: torch.Tensor,
+        node_event_node_ids: torch.Tensor,
+        node_event_embeddings: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Update node features using node-add event embeddings.
 
-        event_type_ids: (batch, event_seq_len)
-        src_ids: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
+        node_features: (num_node, event_embedding_dim)
+        node_event_type_ids: (num_node_event)
+        node_event_node_ids: (num_node_event)
+        node_event_embeddings: (num_node_event, event_embedding_dim)
+
+        output: (new_num_node, event_embedding_dim)
         """
         # update node features using node-add event embeddings
-        is_node_add = event_type_ids.flatten() == EVENT_TYPE_ID_MAP["node-add"]
-        # (batch * event_seq_len)
-        node_add_src_ids = src_ids.flatten()[is_node_add]
+        is_node_add = node_event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        # (num_node_event)
+        node_add_node_ids = node_event_node_ids[is_node_add]
         # (num_node_add)
 
-        # Duplicates are not possible because we generate a new ID for
-        # every added node.
-        node_add_event_embeddings = event_embeddings.flatten(end_dim=1)[is_node_add]
+        if node_add_node_ids.numel() == 0:
+            # no nodes have been added, so nothing to do
+            return node_features.clone()
+
+        # expand the given node_features if a node with a bigger id has been added
+        num_new_nodes = int(node_add_node_ids.max() + 1 - node_features.size(0))
+        if num_new_nodes > 0:
+            new_node_features = F.pad(node_features, (0, 0, 0, num_new_nodes))
+        else:
+            # no need to expand, just copy
+            new_node_features = node_features.clone()
+
+        # update node features
+        node_add_event_embeddings = node_event_embeddings[is_node_add]
         # (num_node_add, event_embedding_dim)
-        self.node_features[node_add_src_ids] = node_add_event_embeddings  # type: ignore
+        new_node_features[node_add_node_ids] = node_add_event_embeddings
+
+        return new_node_features
 
     def update_edge_features(
         self,
