@@ -435,31 +435,77 @@ class TemporalGraphNetwork(nn.Module):
             edge_event_embeddings,
         )
 
+    @staticmethod
+    def expand_last_update(
+        edge_last_update: torch.Tensor,
+        edge_event_type_ids: torch.Tensor,
+        edge_event_edge_ids: torch.Tensor,
+        edge_event_timestamps: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Expand last update timestamps for edges with last updates for new edges added.
+        The last updates for new edges are initialized to be the given event timestamps
+        so that the relative timestamps would be 0.
+
+        edge_last_update: (num_edge)
+        edge_event_type_ids: (num_event)
+        edge_event_edge_ids: (num_event)
+        edge_event_timestamps: (num_event)
+
+        output: (new_num_edge)
+        """
+        is_edge_add_event = edge_event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        # (num_event)
+        edge_add_event_edge_ids = edge_event_edge_ids[is_edge_add_event]
+        # (num_edge_add_event)
+
+        if edge_add_event_edge_ids.numel() == 0:
+            # nothing has been added, so no need to expand
+            expanded_last_update = edge_last_update.clone()
+        else:
+            num_new_edges = int(
+                edge_add_event_edge_ids.max() + 1 - edge_last_update.size(0)
+            )
+            if num_new_edges > 0:
+                expanded_last_update = F.pad(edge_last_update, (0, num_new_edges))
+            else:
+                # no need to expand
+                expanded_last_update = edge_last_update.clone()
+        # (new_num_edge)
+
+        # set the last updates of the new edges as their event timestamps
+        expanded_last_update[edge_add_event_edge_ids] = edge_event_timestamps[
+            is_edge_add_event
+        ]
+
+        return expanded_last_update
+
+    @staticmethod
     def update_last_update(
-        self,
-        event_type_ids: torch.Tensor,
-        event_edge_ids: torch.Tensor,
-        event_timestamps: torch.Tensor,
-    ) -> None:
+        edge_last_update: torch.Tensor,
+        edge_event_type_ids: torch.Tensor,
+        edge_event_edge_ids: torch.Tensor,
+        edge_event_timestamps: torch.Tensor,
+    ) -> torch.Tensor:
         """
-        Update last update timestamps for edges.
+        Update last update timestamps for edges with the given graph event.
+        We assume that all the newly added edges already have up-to-date last updates
+        from expand_last_update(), so we don't touch them.
 
-        event_type_ids: (batch, event_seq_len)
-        event_edge_ids: (batch, event_seq_len)
-        event_timestamps: (batch, event_seq_len)
+        edge_last_update: (num_edge)
+        edge_event_type_ids: (num_event)
+        edge_event_edge_ids: (num_event)
+        edge_event_timestamps: (num_event)
+
+        output: (num_edge)
         """
-        # update last update timestamps using edge events
-        flat_event_type_ids = event_type_ids.flatten()
-        is_edge_event = torch.logical_or(
-            flat_event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            flat_event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
-        )
-        # (batch * event_seq_len)
+        is_edge_delete_event = edge_event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
+        # (num_edge_delete_event)
+        edge_delete_event_edge_ids = edge_event_edge_ids[is_edge_delete_event]
+        # (num_edge_add_event)
+        updated_last_update = edge_last_update.clone()
+        updated_last_update[edge_delete_event_edge_ids] = edge_event_timestamps[
+            is_edge_delete_event
+        ]
 
-        # Duplicates are possible here but it's OK, b/c PyTorch
-        # automatically assigns the latest last update value in the given batch.
-        edge_ids = event_edge_ids.flatten()[is_edge_event]
-        # (num_edge_event)
-        edge_timestamps = event_timestamps.flatten()[is_edge_event]
-        # (num_edge_event)
-        self.last_update[edge_ids] = edge_timestamps  # type: ignore
+        return updated_last_update
