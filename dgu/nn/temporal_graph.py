@@ -353,6 +353,39 @@ class TemporalGraphNetwork(nn.Module):
         return src_messages, dst_messages
 
     @staticmethod
+    def update_features_helper(
+        add_event_type_id: int,
+        features: torch.Tensor,
+        event_type_ids: torch.Tensor,
+        event_obj_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+    ) -> torch.Tensor:
+        # update node features using node-add event embeddings
+        is_add_event = event_type_ids == add_event_type_id
+        # (num_event)
+        add_event_obj_ids = event_obj_ids[is_add_event]
+        # (num_add_event)
+
+        if add_event_obj_ids.numel() == 0:
+            # nothing has been added, so nothing to do
+            return features.clone()
+
+        # expand the given features if a node/edge with a bigger id has been added
+        num_new_objs = int(add_event_obj_ids.max() + 1 - features.size(0))
+        if num_new_objs > 0:
+            new_features = F.pad(features, (0, 0, 0, num_new_objs))
+        else:
+            # no need to expand, just copy
+            new_features = features.clone()
+
+        # update features
+        add_event_embeddings = event_embeddings[is_add_event]
+        # (num_add_event, event_embedding_dim)
+        new_features[add_event_obj_ids] = add_event_embeddings
+
+        return new_features
+
+    @staticmethod
     def update_node_features(
         node_features: torch.Tensor,
         node_event_type_ids: torch.Tensor,
@@ -369,57 +402,38 @@ class TemporalGraphNetwork(nn.Module):
 
         output: (new_num_node, event_embedding_dim)
         """
-        # update node features using node-add event embeddings
-        is_node_add = node_event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
-        # (num_node_event)
-        node_add_node_ids = node_event_node_ids[is_node_add]
-        # (num_node_add)
+        return TemporalGraphNetwork.update_features_helper(
+            EVENT_TYPE_ID_MAP["node-add"],
+            node_features,
+            node_event_type_ids,
+            node_event_node_ids,
+            node_event_embeddings,
+        )
 
-        if node_add_node_ids.numel() == 0:
-            # no nodes have been added, so nothing to do
-            return node_features.clone()
-
-        # expand the given node_features if a node with a bigger id has been added
-        num_new_nodes = int(node_add_node_ids.max() + 1 - node_features.size(0))
-        if num_new_nodes > 0:
-            new_node_features = F.pad(node_features, (0, 0, 0, num_new_nodes))
-        else:
-            # no need to expand, just copy
-            new_node_features = node_features.clone()
-
-        # update node features
-        node_add_event_embeddings = node_event_embeddings[is_node_add]
-        # (num_node_add, event_embedding_dim)
-        new_node_features[node_add_node_ids] = node_add_event_embeddings
-
-        return new_node_features
-
+    @staticmethod
     def update_edge_features(
-        self,
-        event_type_ids: torch.Tensor,
-        event_edge_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-    ) -> None:
+        edge_features: torch.Tensor,
+        edge_event_type_ids: torch.Tensor,
+        edge_event_edge_ids: torch.Tensor,
+        edge_event_embeddings: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Update edge features using edge-add event embeddings.
 
-        event_type_ids: (batch, event_seq_len)
-        event_edge_ids: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        """
-        # update edge features using edge-add event embeddings
-        is_edge_add = event_type_ids.flatten() == EVENT_TYPE_ID_MAP["edge-add"]
-        # (batch * event_seq_len)
-        edge_add_edge_ids = event_edge_ids.flatten()[is_edge_add]
-        # (num_edge_add)
+        edge_features: (num_edge, event_embedding_dim)
+        event_type_ids: (num_edge_event)
+        event_edge_ids: (num_edge_event)
+        event_embeddings: (num_edge_event, event_embedding_dim)
 
-        # Duplicates are not possible because we generate a new ID for
-        # every added edge.
-        edge_add_event_embeddings = event_embeddings.flatten(end_dim=1)[is_edge_add]
-        # (num_edge_add, event_embedding_dim)
-        self.edge_features[  # type: ignore
-            edge_add_edge_ids
-        ] = edge_add_event_embeddings
+        output: (new_num_edge, event_embedding_dim)
+        """
+        return TemporalGraphNetwork.update_features_helper(
+            EVENT_TYPE_ID_MAP["edge-add"],
+            edge_features,
+            edge_event_type_ids,
+            edge_event_edge_ids,
+            edge_event_embeddings,
+        )
 
     def update_last_update(
         self,
