@@ -695,3 +695,49 @@ def test_transformer_conv_stack(
         ).size()
         == (num_node, output_dim)
     )
+
+
+@pytest.mark.parametrize(
+    "memory,node_event_type_ids,node_event_node_ids,expected",
+    [
+        (
+            torch.zeros(0, 4),
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([0]),
+            torch.zeros(1, 4),
+        ),
+        (
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4]).float(),
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([0]),
+            torch.tensor([[0] * 4, [2] * 4, [3] * 4]).float(),
+        ),
+        (
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4]).float(),
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([5]),
+            torch.tensor(
+                [[1] * 4, [2] * 4, [3] * 4, [0] * 4, [0] * 4, [0] * 4]
+            ).float(),
+        ),
+        (
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4]).float(),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([0, 0, 5]),
+            torch.tensor(
+                [[0] * 4, [2] * 4, [3] * 4, [0] * 4, [0] * 4, [0] * 4]
+            ).float(),
+        ),
+    ],
+)
+def test_tgn_expand_memory(memory, node_event_type_ids, node_event_node_ids, expected):
+    tgn = TemporalGraphNetwork(4, 4, 4, 4, 8, 1, 1)
+    assert tgn.expand_memory(memory, node_event_type_ids, node_event_node_ids).equal(
+        expected
+    )

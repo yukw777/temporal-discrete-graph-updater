@@ -509,3 +509,40 @@ class TemporalGraphNetwork(nn.Module):
         ]
 
         return updated_last_update
+
+    def expand_memory(
+        self,
+        memory: torch.Tensor,
+        node_event_type_ids: torch.Tensor,
+        node_event_node_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Expand memory for newly added nodes and initialize to be 0.
+
+        memory: (num_node, memory_dim)
+        node_event_type_ids: (num_node_event)
+        node_event_node_ids: (num_node_event)
+
+        output: (new_num_node, memory_dim)
+        """
+        is_node_add_event = node_event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        # (num_event)
+        node_add_event_node_ids = node_event_node_ids[is_node_add_event]
+        # (num_node_add_event)
+
+        if node_add_event_node_ids.numel() == 0:
+            # nothing has been added, so no need to expand
+            expanded_memory = memory.clone()
+        else:
+            num_new_nodes = int(node_add_event_node_ids.max() + 1 - memory.size(0))
+            if num_new_nodes > 0:
+                expanded_memory = F.pad(memory, (0, 0, 0, num_new_nodes))
+            else:
+                # no need to expand
+                expanded_memory = memory.clone()
+        # (new_num_edge)
+
+        # set the memory of new nodes to 0
+        expanded_memory.index_fill_(0, node_add_event_node_ids, 0)
+
+        return expanded_memory
