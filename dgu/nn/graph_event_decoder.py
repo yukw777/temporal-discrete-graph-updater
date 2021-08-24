@@ -151,9 +151,8 @@ class EventStaticLabelHead(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, key_query_dim),
         )
-        self.register_buffer(
-            "label_embeddings",
-            torch.cat([node_label_embeddings, edge_label_embeddings]),
+        self.label_embeddings = nn.Embedding.from_pretrained(
+            torch.cat([node_label_embeddings, edge_label_embeddings])
         )
 
     def forward(self, autoregressive_embedding: torch.Tensor) -> torch.Tensor:
@@ -164,7 +163,7 @@ class EventStaticLabelHead(nn.Module):
             label_logits: (batch, num_label), logits for nodes first, then edges
         """
         # calculate the key from label_embeddings
-        key = self.key_linear(self.label_embeddings)
+        key = self.key_linear(self.label_embeddings.weight)
         # (num_label, key_query_dim)
 
         # calculate the query from event_type and autoregressive_embedding
