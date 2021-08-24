@@ -642,39 +642,38 @@ def test_tgn_forward(
         transformer_conv_num_block,
         transformer_conv_num_heads,
     )
-    assert (
-        tgn(
-            torch.randint(len(EVENT_TYPES), (num_node_event,)),
-            torch.randint(num_node, (num_node_event,))
-            if num_node > 0
-            else torch.zeros(num_node_event).long(),
-            torch.rand(num_node_event, event_embedding_dim),
-            torch.randint(10, (num_node_event,)).float(),
-            torch.randint(2, (num_node_event,)).float(),
-            torch.randint(len(EVENT_TYPES), (num_edge_event,)),
-            torch.randint(num_node, (num_edge_event,))
-            if num_node > 0
-            else torch.zeros(num_edge_event).long(),
-            torch.randint(num_node, (num_edge_event,))
-            if num_node > 0
-            else torch.zeros(num_edge_event).long(),
-            torch.randint(num_edge, (num_edge_event,))
-            if num_edge > 0
-            else torch.zeros(num_edge_event).long(),
-            torch.rand(num_edge_event, event_embedding_dim),
-            torch.randint(10, (num_edge_event,)).float(),
-            torch.randint(2, (num_edge_event,)).float(),
-            torch.rand(num_node, memory_dim),
-            torch.rand(num_node, event_embedding_dim),
-            torch.randint(num_node, (2, num_edge))
-            if num_node > 0
-            else torch.zeros(2, num_edge).long(),
-            torch.rand(num_edge, event_embedding_dim),
-            torch.randint(10, (num_edge,)).float(),
-            torch.randint(10, (num_edge,)).float(),
-        ).size()
-        == (num_node, output_dim)
+    results = tgn(
+        torch.randint(len(EVENT_TYPES), (num_node_event,)),
+        torch.randint(num_node, (num_node_event,))
+        if num_node > 0
+        else torch.zeros(num_node_event).long(),
+        torch.rand(num_node_event, event_embedding_dim),
+        torch.randint(10, (num_node_event,)).float(),
+        torch.randint(2, (num_node_event,)).float(),
+        torch.randint(len(EVENT_TYPES), (num_edge_event,)),
+        torch.randint(num_node, (num_edge_event,))
+        if num_node > 0
+        else torch.zeros(num_edge_event).long(),
+        torch.randint(num_node, (num_edge_event,))
+        if num_node > 0
+        else torch.zeros(num_edge_event).long(),
+        torch.randint(num_edge, (num_edge_event,))
+        if num_edge > 0
+        else torch.zeros(num_edge_event).long(),
+        torch.rand(num_edge_event, event_embedding_dim),
+        torch.randint(10, (num_edge_event,)).float(),
+        torch.randint(2, (num_edge_event,)).float(),
+        torch.rand(num_node, memory_dim),
+        torch.rand(num_node, event_embedding_dim),
+        torch.randint(num_node, (2, num_edge))
+        if num_node > 0
+        else torch.zeros(2, num_edge).long(),
+        torch.rand(num_edge, event_embedding_dim),
+        torch.randint(10, (num_edge,)).float(),
+        torch.randint(10, (num_edge,)).float(),
     )
+    assert results["node_embeddings"].size() == (num_node, output_dim)
+    assert results["updated_memory"].size() == (num_node, memory_dim)
 
 
 @pytest.mark.parametrize(

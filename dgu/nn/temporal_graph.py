@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
@@ -125,7 +125,7 @@ class TemporalGraphNetwork(nn.Module):
         edge_features: torch.Tensor,
         edge_timestamps: torch.Tensor,
         edge_last_update: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> Dict[str, torch.Tensor]:
         """
         Calculate the updated node embeddings based on the given events. Node
         embeddings are calculated for nodes specified by node_ids.
@@ -155,7 +155,10 @@ class TemporalGraphNetwork(nn.Module):
         edge_last_update: (num_edge)
             These are last edge update timestamps before the given graph events.
 
-        output: (num_node, output_dim),
+        output: {
+            "node_embeddings": (num_node, output_dim),
+            "updated_memory": (num_node, memory_dim),
+        }
         """
         # calculate messages
         node_msgs = self.node_message(
@@ -192,7 +195,8 @@ class TemporalGraphNetwork(nn.Module):
 
         # update the memories
         unique_event_node_ids = event_node_ids.unique()
-        memory[unique_event_node_ids] = self.rnn(
+        updated_memory = memory.clone()
+        updated_memory[unique_event_node_ids] = self.rnn(
             agg_msgs[unique_event_node_ids], memory[unique_event_node_ids]
         )
 
@@ -202,7 +206,7 @@ class TemporalGraphNetwork(nn.Module):
             # (num_edge)
             rel_t_embs = self.time_encoder(rel_t)
             # (num_edge, time_enc_dim)
-            x = torch.cat([node_features, memory], dim=-1)
+            x = torch.cat([node_features, updated_memory], dim=-1)
             # (num_node, event_embedding_dim + memory_dim)
             edge_attr = torch.cat([rel_t_embs, edge_features], dim=-1)
             # (num_node, time_enc_dim + event_embedding_dim)
@@ -215,8 +219,12 @@ class TemporalGraphNetwork(nn.Module):
             )
             # (0, output_dim)
 
-        return node_embeddings
-        # (batch, num_node, output_dim)
+        return {
+            "node_embeddings": node_embeddings,
+            # (num_node, output_dim)
+            "updated_memory": updated_memory
+            # (num_node, memory_dim)
+        }
 
     def node_message(
         self,
