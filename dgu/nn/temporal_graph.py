@@ -8,6 +8,7 @@ from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.nn.utils import index_edge_attr
 
 
 class TransformerConvStack(nn.Module):
@@ -115,7 +116,6 @@ class TemporalGraphNetwork(nn.Module):
         edge_event_type_ids: torch.Tensor,
         edge_event_src_ids: torch.Tensor,
         edge_event_dst_ids: torch.Tensor,
-        edge_event_edge_ids: torch.Tensor,
         edge_event_embeddings: torch.Tensor,
         edge_event_timestamps: torch.Tensor,
         edge_event_mask: torch.Tensor,
@@ -138,7 +138,6 @@ class TemporalGraphNetwork(nn.Module):
         edge_event_type_ids: (num_edge_event)
         edge_event_src_ids: (num_edge_event)
         edge_event_dst_ids: (num_edge_event)
-        edge_event_edge_ids: (num_edge_event)
         edge_event_embeddings: (num_edge_event, event_embedding_dim)
         edge_event_timestamps: (num_edge_event)
         edge_event_mask: (num_edge_event)
@@ -174,11 +173,11 @@ class TemporalGraphNetwork(nn.Module):
             edge_event_type_ids,
             edge_event_src_ids,
             edge_event_dst_ids,
-            edge_event_edge_ids,
             edge_event_embeddings,
             edge_event_timestamps,
             edge_event_mask,
             memory,
+            edge_index,
             edge_last_update,
         )
         # src_msgs: (batch, message_dim)
@@ -209,7 +208,7 @@ class TemporalGraphNetwork(nn.Module):
             x = torch.cat([node_features, updated_memory], dim=-1)
             # (num_node, event_embedding_dim + memory_dim)
             edge_attr = torch.cat([rel_t_embs, edge_features], dim=-1)
-            # (num_node, time_enc_dim + event_embedding_dim)
+            # (num_edge, time_enc_dim + event_embedding_dim)
             node_embeddings = self.gnn(x, edge_index, edge_attr=edge_attr)
             # (num_node, output_dim)
         else:
@@ -283,11 +282,11 @@ class TemporalGraphNetwork(nn.Module):
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
-        event_edge_ids: torch.Tensor,
         event_embeddings: torch.Tensor,
         event_timestamps: torch.Tensor,
         event_mask: torch.Tensor,
         memory: torch.Tensor,
+        edge_index: torch.Tensor,
         last_update: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -299,11 +298,11 @@ class TemporalGraphNetwork(nn.Module):
         event_type_ids: (batch)
         src_ids: (batch)
         dst_ids: (batch)
-        event_edge_ids: (batch)
-        event_embeddings: (batch event_embedding_dim)
+        event_embeddings: (batch, event_embedding_dim)
         event_timestamps: (batch)
         event_mask: (batch)
         memory: (num_node, memory_dim)
+        edge_index: (2, num_edge)
         last_update: (num_edge)
 
         output:
@@ -319,7 +318,9 @@ class TemporalGraphNetwork(nn.Module):
         # (batch, memory_dim)
 
         # calculate relative timestamps for edge events
-        edge_last_update = last_update[event_edge_ids]
+        edge_last_update = index_edge_attr(
+            edge_index, last_update, torch.stack([src_ids, dst_ids])
+        )
         # (batch)
 
         rel_edge_timestamps = event_timestamps - edge_last_update

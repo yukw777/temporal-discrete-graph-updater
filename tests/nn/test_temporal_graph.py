@@ -137,20 +137,20 @@ def test_tgn_node_message(
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,event_type_emb,src_ids,dst_ids,event_edge_ids,event_embeddings,"
-    "event_timestamps,event_mask,memory,last_update,src_expected,dst_expected",
+    "event_type_ids,event_type_emb,src_ids,dst_ids,event_embeddings,event_timestamps,"
+    "event_mask,memory,edge_index,last_update,src_expected,dst_expected",
     [
         (
             torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
             torch.linspace(0, 6, 7).unsqueeze(-1).expand(-1, 4),
             torch.tensor([0]),
             torch.tensor([1]),
-            torch.tensor([0]),
             torch.tensor([[3] * 4]).float(),
             torch.tensor([2]),
             torch.tensor([1]).float(),
             torch.linspace(4, 7, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([1, 2, 3]),
+            torch.tensor([[7, 0, 8], [9, 1, 10]]),
+            torch.tensor([2, 1, 3]).float(),
             torch.tensor(
                 [
                     [5] * 4 + [4] * 4 + [5] * 4 + [4] * 4 + [3] * 4,
@@ -167,12 +167,12 @@ def test_tgn_node_message(
             torch.linspace(0, 6, 7).unsqueeze(-1).expand(-1, 4),
             torch.tensor([0]),
             torch.tensor([1]),
-            torch.tensor([0]),
             torch.tensor([[3] * 4]).float(),
             torch.tensor([2]),
             torch.tensor([1]).float(),
             torch.linspace(4, 7, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([1, 2, 3]),
+            torch.tensor([[7, 0, 8], [9, 1, 10]]),
+            torch.tensor([2, 1, 3]).float(),
             torch.tensor(
                 [
                     [6] * 4 + [4] * 4 + [5] * 4 + [4] * 4 + [3] * 4,
@@ -195,12 +195,12 @@ def test_tgn_node_message(
             torch.linspace(1, 7, 7).unsqueeze(-1).expand(-1, 4),
             torch.tensor([0, 2, 0]),
             torch.tensor([0, 3, 0]),
-            torch.tensor([0, 4, 0]),
             torch.tensor([[0] * 4, [8] * 4, [0] * 4]).float(),
             torch.tensor([0, 4, 0]),
             torch.tensor([0, 1, 0]).float(),
             torch.linspace(9, 12, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([3, 2, 4, 5, 3]),
+            torch.tensor([[4, 5, 8, 2, 4], [3, 7, 4, 3, 6]]),
+            torch.tensor([2, 4, 5, 3, 4]).float(),
             torch.tensor(
                 [
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
@@ -227,12 +227,12 @@ def test_tgn_node_message(
             torch.linspace(1, 7, 7).unsqueeze(-1).expand(-1, 4),
             torch.tensor([0, 2, 0]),
             torch.tensor([0, 3, 0]),
-            torch.tensor([0, 4, 0]),
             torch.tensor([[0] * 4, [8] * 4, [0] * 4]).float(),
             torch.tensor([0, 4, 0]),
             torch.tensor([0, 1, 0]).float(),
             torch.linspace(9, 12, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([3, 2, 4, 5, 3]),
+            torch.tensor([[4, 5, 8, 2, 4], [3, 7, 4, 3, 6]]),
+            torch.tensor([2, 4, 5, 3, 4]).float(),
             torch.tensor(
                 [
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
@@ -260,12 +260,12 @@ def test_tgn_node_message(
             torch.linspace(1, 7, 7).unsqueeze(-1).expand(-1, 4),
             torch.tensor([0, 1, 0, 0]),
             torch.tensor([0, 2, 0, 0]),
-            torch.tensor([0, 3, 0, 0]),
             torch.tensor([[0] * 4, [8] * 4, [0] * 4, [0] * 4]).float(),
             torch.tensor([0, 5, 0, 0]),
             torch.tensor([0, 1, 0, 0]).float(),
             torch.linspace(9, 12, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([3, 2, 4, 5, 3]),
+            torch.tensor([[4, 5, 8, 1, 4], [3, 7, 4, 2, 6]]),
+            torch.tensor([3, 2, 4, 5, 3]).float(),
             torch.tensor(
                 [
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
@@ -296,12 +296,12 @@ def test_tgn_node_message(
             torch.linspace(1, 7, 7).unsqueeze(-1).expand(-1, 4),
             torch.tensor([0, 1, 2, 3, 0]),
             torch.tensor([0, 3, 2, 1, 0]),
-            torch.tensor([0, 2, 3, 4, 0]),
             torch.tensor([[0] * 4, [8] * 4, [9] * 4, [10] * 4, [0] * 4]).float(),
             torch.tensor([0, 4, 5, 6, 0]),
             torch.tensor([0, 1, 1, 1, 0]).float(),
             torch.linspace(11, 14, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([3, 2, 4, 5, 3]),
+            torch.tensor([[4, 5, 1, 2, 3], [3, 7, 3, 2, 1]]),
+            torch.tensor([3, 2, 4, 5, 3]).float(),
             torch.tensor(
                 [
                     [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4 + [0] * 4,
@@ -328,11 +328,11 @@ def test_tgn_edge_message(
     event_type_emb,
     src_ids,
     dst_ids,
-    event_edge_ids,
     event_embeddings,
     event_timestamps,
     event_mask,
     memory,
+    edge_index,
     last_update,
     src_expected,
     dst_expected,
@@ -345,11 +345,11 @@ def test_tgn_edge_message(
         event_type_ids,
         src_ids,
         dst_ids,
-        event_edge_ids,
         event_embeddings,
         event_timestamps,
         event_mask,
         memory,
+        edge_index,
         last_update,
     )
     assert src_messages.equal(src_expected)
@@ -656,9 +656,6 @@ def test_tgn_forward(
         else torch.zeros(num_edge_event).long(),
         torch.randint(num_node, (num_edge_event,))
         if num_node > 0
-        else torch.zeros(num_edge_event).long(),
-        torch.randint(num_edge, (num_edge_event,))
-        if num_edge > 0
         else torch.zeros(num_edge_event).long(),
         torch.rand(num_edge_event, event_embedding_dim),
         torch.randint(10, (num_edge_event,)).float(),
