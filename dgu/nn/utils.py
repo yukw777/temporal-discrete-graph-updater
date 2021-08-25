@@ -140,3 +140,41 @@ def pad_batch_seq_of_seq(
             for seq_of_seq in batch_seq_of_seq
         ]
     )
+
+
+def index_edge_attr(
+    edge_index: torch.Tensor, edge_attr: torch.Tensor, indices: torch.Tensor
+) -> torch.Tensor:
+    """
+    Return edge attributes corresponding to the given indices. We assume that there are
+    no duplicate edges in edge_index. Attributes for non-existent edges are filled with
+    0.
+
+    edge_index: (2, num_edge)
+    edge_attr: (num_edge, *)
+    indices: (2, num_indexed_edge)
+
+    output: (num_indexed_edge, *)
+    """
+    # transpose the indices
+    transposed_indices = indices.t().unsqueeze(-1)
+    # (num_indexed_edge, 2, 1)
+
+    # calculate the mask of the matching indices
+    mask = torch.all(edge_index == transposed_indices, dim=1)
+    # (num_edge, num_indexed_edge)
+
+    # calculate positions of the matching indices
+    pos = mask.nonzero()[:, 1]
+    # (num_indexed_edge)
+
+    # create an empty
+    out = torch.zeros(
+        indices.size(1),
+        *edge_attr.size()[1:],
+        device=edge_attr.device,
+        dtype=edge_attr.dtype
+    )
+    out[mask.any(dim=1)] = edge_attr[pos]
+    return out
+    # (num_indexed_edge, *)

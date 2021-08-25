@@ -10,6 +10,7 @@ from dgu.nn.utils import (
     load_fasttext,
     find_indices,
     pad_batch_seq_of_seq,
+    index_edge_attr,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -324,3 +325,54 @@ def test_pad_batch_seq_of_seq(
         outer_padding_value,
         inner_padding_value,
     ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "edge_index,edge_attr,indices,expected",
+    [
+        (
+            torch.zeros(2, 0).long(),
+            torch.rand(0),
+            torch.zeros(2, 0).long(),
+            torch.zeros(0),
+        ),
+        (
+            torch.tensor([[0, 1, 3, 6], [0, 1, 3, 6]]),
+            torch.tensor([[0] * 4, [1] * 4, [2] * 4, [3] * 4]),
+            torch.tensor([[0, 3, 6, 6], [0, 3, 6, 6]]),
+            torch.tensor([[0] * 4, [2] * 4, [3] * 4, [3] * 4]),
+        ),
+        (
+            torch.tensor([[0, 1, 3, 6], [2, 5, 4, 6]]),
+            torch.tensor([[0] * 4, [1] * 4, [2] * 4, [3] * 4]),
+            torch.tensor([[3, 1, 3, 0, 0], [4, 5, 4, 2, 2]]),
+            torch.tensor([[2] * 4, [1] * 4, [2] * 4, [0] * 4, [0] * 4]),
+        ),
+        (
+            torch.tensor([[7, 0, 8], [9, 1, 10]]),
+            torch.tensor([2, 1, 3]),
+            torch.tensor([[0, 7], [1, 9]]),
+            torch.tensor([1, 2]),
+        ),
+        (
+            torch.zeros(2, 0).long(),
+            torch.rand(0),
+            torch.randint(5, (2, 4)).long(),
+            torch.zeros(4),
+        ),
+        (
+            torch.tensor([[0, 1, 3, 6], [0, 1, 3, 6]]),
+            torch.tensor([[0] * 4, [1] * 4, [2] * 4, [3] * 4]),
+            torch.tensor([[6, 8], [6, 4]]),
+            torch.tensor([[3] * 4, [0] * 4]),
+        ),
+        (
+            torch.tensor([[0, 1, 3, 6], [2, 5, 4, 6]]),
+            torch.tensor([[0] * 4, [1] * 4, [2] * 4, [3] * 4]),
+            torch.tensor([[8, 3], [4, 4]]),
+            torch.tensor([[0] * 4, [2] * 4]),
+        ),
+    ],
+)
+def test_index_edge_attr(edge_index, edge_attr, indices, expected):
+    assert index_edge_attr(edge_index, edge_attr, indices).equal(expected)
