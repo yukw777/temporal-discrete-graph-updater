@@ -10,7 +10,7 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
     assert not g._graph.nodes[node_id]["removed"]
-    assert g.get_node_labels() == ["", "n1"]
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == ["", "n1"]
 
     node_id = g.add_node("n2", game="game0", walkthrough_step=1)
     assert node_id == 2
@@ -19,7 +19,7 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["walkthrough_step"] == 1
     assert g._graph.nodes[node_id]["label"] == "n2"
     assert not g._graph.nodes[node_id]["removed"]
-    assert g.get_node_labels() == ["", "n1", "n2"]
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == ["", "n1", "n2"]
 
     node_id = g.add_node("n1", game="game1", walkthrough_step=0)
     assert node_id == 3
@@ -28,7 +28,12 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
     assert not g._graph.nodes[node_id]["removed"]
-    assert g.get_node_labels() == ["", "n1", "n2", "n1"]
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "n1",
+        "n2",
+        "n1",
+    ]
 
     g.remove_node(2)
     assert g._graph.order() == 4
@@ -36,7 +41,12 @@ def test_tw_graph_node():
     assert g._graph.nodes[2]["walkthrough_step"] == 1
     assert g._graph.nodes[2]["label"] == "n2"
     assert g._graph.nodes[2]["removed"]
-    assert g.get_node_labels() == ["", "n1", "n2", "n1"]
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "n1",
+        "n2",
+        "n1",
+    ]
 
     node_id = g.add_node("n1", game="game2", walkthrough_step=0)
     assert node_id == 4
@@ -44,7 +54,13 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["game"] == "game2"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n1"
-    assert g.get_node_labels() == ["", "n1", "n2", "n1", "n1"]
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "n1",
+        "n2",
+        "n1",
+        "n1",
+    ]
 
     node_id = g.add_node("n2", game="game2", walkthrough_step=0)
     assert node_id == 5
@@ -52,7 +68,14 @@ def test_tw_graph_node():
     assert g._graph.nodes[node_id]["game"] == "game2"
     assert g._graph.nodes[node_id]["walkthrough_step"] == 0
     assert g._graph.nodes[node_id]["label"] == "n2"
-    assert g.get_node_labels() == ["", "n1", "n2", "n1", "n1", "n2"]
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "n1",
+        "n2",
+        "n1",
+        "n1",
+        "n2",
+    ]
 
 
 def test_tw_graph_edge():
@@ -137,8 +160,15 @@ def test_tw_graph_triplet_cmd():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == ["", "player", "kitchen"]
-    assert set(g.get_edge_labels()) == {(0, 0, ""), (1, 2, "in")}
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "player",
+        "kitchen",
+    ]
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
+        (0, 0, ""),
+        (1, 2, "in"),
+    }
 
     # try adding two exits. they should all be added.
     events = g.process_triplet_cmd("game0", 0, 0, "add , exit , kitchen , east_of")
@@ -153,8 +183,17 @@ def test_tw_graph_triplet_cmd():
             "label": "east of",
         },
     ]
-    assert g.get_node_labels() == ["", "player", "kitchen", "exit"]
-    assert set(g.get_edge_labels()) == {(0, 0, ""), (1, 2, "in"), (3, 2, "east of")}
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "player",
+        "kitchen",
+        "exit",
+    ]
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
+        (0, 0, ""),
+        (1, 2, "in"),
+        (3, 2, "east of"),
+    }
     events = g.process_triplet_cmd("game0", 0, 0, "add , exit , kitchen , west_of")
     assert events == [
         {"type": "node-add", "node_id": 4, "timestamp": 0, "label": "exit"},
@@ -167,8 +206,14 @@ def test_tw_graph_triplet_cmd():
             "label": "west of",
         },
     ]
-    assert g.get_node_labels() == ["", "player", "kitchen", "exit", "exit"]
-    assert set(g.get_edge_labels()) == {
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "player",
+        "kitchen",
+        "exit",
+        "exit",
+    ]
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -187,8 +232,15 @@ def test_tw_graph_triplet_cmd():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == ["", "player", "kitchen", "exit", "exit", "apple"]
-    assert set(g.get_edge_labels()) == {
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
+        "",
+        "player",
+        "kitchen",
+        "exit",
+        "exit",
+        "apple",
+    ]
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -207,7 +259,7 @@ def test_tw_graph_triplet_cmd():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -216,7 +268,7 @@ def test_tw_graph_triplet_cmd():
         "apple",
         "pear",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -238,7 +290,7 @@ def test_tw_graph_triplet_cmd():
             "label": "is",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -248,7 +300,7 @@ def test_tw_graph_triplet_cmd():
         "pear",
         "cut",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -270,7 +322,7 @@ def test_tw_graph_triplet_cmd():
             "label": "is",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -281,7 +333,7 @@ def test_tw_graph_triplet_cmd():
         "cut",
         "cut",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -307,7 +359,7 @@ def test_tw_graph_triplet_cmd():
     assert events == []
     events = g.process_triplet_cmd("game0", 0, 4, "add , pear , cut , is")
     assert events == []
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -318,7 +370,7 @@ def test_tw_graph_triplet_cmd():
         "cut",
         "cut",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -343,7 +395,7 @@ def test_tw_graph_triplet_cmd():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -356,7 +408,7 @@ def test_tw_graph_triplet_cmd():
         "player",
         "kitchen",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -379,7 +431,7 @@ def test_tw_graph_triplet_cmd():
             "label": "east of",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -393,7 +445,7 @@ def test_tw_graph_triplet_cmd():
         "kitchen",
         "exit",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -420,7 +472,7 @@ def test_tw_graph_triplet_cmd():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -436,7 +488,7 @@ def test_tw_graph_triplet_cmd():
         "player",
         "living room",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -461,7 +513,7 @@ def test_tw_graph_triplet_cmd():
             "label": "east of",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -478,7 +530,7 @@ def test_tw_graph_triplet_cmd():
         "living room",
         "exit",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -506,7 +558,7 @@ def test_tw_graph_triplet_cmd():
         },
         {"type": "node-delete", "node_id": 7, "timestamp": 4, "label": "cut"},
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -523,7 +575,7 @@ def test_tw_graph_triplet_cmd():
         "living room",
         "exit",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -553,7 +605,7 @@ def test_tw_graph_triplet_cmd():
         },
         {"type": "node-delete", "node_id": 14, "timestamp": 4, "label": "exit"},
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -570,7 +622,7 @@ def test_tw_graph_triplet_cmd():
         "living room",
         "exit",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -598,7 +650,7 @@ def test_tw_graph_triplet_cmd():
             "label": "is",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -616,7 +668,7 @@ def test_tw_graph_triplet_cmd():
         "exit",
         "cooked",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -645,7 +697,7 @@ def test_tw_graph_triplet_cmd():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "player",
         "kitchen",
@@ -664,7 +716,7 @@ def test_tw_graph_triplet_cmd():
         "cooked",
         "apple",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (3, 2, "east of"),
@@ -704,7 +756,7 @@ def test_tw_graph_triplet_cmd_delete():
         },
         {"type": "node-delete", "node_id": 1, "timestamp": 1, "label": "apple"},
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -713,7 +765,7 @@ def test_tw_graph_triplet_cmd_delete():
         "closed",
         "living room",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -732,7 +784,7 @@ def test_tw_graph_triplet_cmd_delete():
             "label": "in",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -742,7 +794,7 @@ def test_tw_graph_triplet_cmd_delete():
         "living room",
         "apple",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -766,7 +818,7 @@ def test_tw_graph_triplet_cmd_delete():
         },
         {"type": "node-delete", "node_id": 6, "timestamp": 3, "label": "living room"},
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -776,7 +828,7 @@ def test_tw_graph_triplet_cmd_delete():
         "living room",
         "apple",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -798,7 +850,7 @@ def test_tw_graph_triplet_cmd_delete():
             "label": "east of",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -809,7 +861,7 @@ def test_tw_graph_triplet_cmd_delete():
         "apple",
         "living room",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -832,7 +884,7 @@ def test_tw_graph_triplet_cmd_delete():
         },
         {"type": "node-delete", "node_id": 5, "timestamp": 5, "label": "closed"},
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -843,7 +895,7 @@ def test_tw_graph_triplet_cmd_delete():
         "apple",
         "living room",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -864,7 +916,7 @@ def test_tw_graph_triplet_cmd_delete():
             "label": "is",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -876,7 +928,7 @@ def test_tw_graph_triplet_cmd_delete():
         "living room",
         "closed",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -902,7 +954,7 @@ def test_tw_graph_triplet_cmd_delete():
         },
         {"type": "node-delete", "node_id": 3, "timestamp": 7, "label": "exit"},
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -914,7 +966,7 @@ def test_tw_graph_triplet_cmd_delete():
         "living room",
         "closed",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),
@@ -936,7 +988,7 @@ def test_tw_graph_triplet_cmd_delete():
             "label": "east of",
         },
     ]
-    assert g.get_node_labels() == [
+    assert [data["label"] for _, data in sorted(g.get_nodes())] == [
         "",
         "apple",
         "kitchen",
@@ -949,7 +1001,7 @@ def test_tw_graph_triplet_cmd_delete():
         "closed",
         "exit",
     ]
-    assert set(g.get_edge_labels()) == {
+    assert set((src, dst, data["label"]) for src, dst, data in g.get_edges()) == {
         (0, 0, ""),
         (1, 2, "in"),
         (2, 6, "east of"),

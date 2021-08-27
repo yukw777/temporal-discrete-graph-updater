@@ -345,14 +345,11 @@ class TextWorldGraph:
         attrs["removed"] = True
         self._graph.add_node(node_id, **attrs)
 
-    def get_node_labels(self) -> List[str]:
+    def get_nodes(self) -> Dict[int, Any]:
         """
-        Return all the node labels.
+        Return all the nodes with their data.
         """
-        return [data["label"] for _, data in self._graph.nodes.data()]
+        return self._graph.nodes.data()
 
-    def get_edge_labels(self) -> List[Tuple[int, int, str]]:
-        return [
-            (src_id, dst_id, data["label"])
-            for src_id, dst_id, data in self._graph.edges.data()
-        ]
+    def get_edges(self) -> List[Tuple[int, int, Dict[str, Any]]]:
+        return self._graph.edges.data()
