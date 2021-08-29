@@ -303,8 +303,6 @@ def test_tw_cmd_gen_collator_collate_non_graphical_inputs(
         "tgt_event_type_ids",
         "groundtruth_event_type_ids",
         "tgt_event_timestamps",
-        "tgt_event_src_mask",
-        "tgt_event_dst_mask",
         "groundtruth_event_mask",
         "groundtruth_event_src_mask",
         "groundtruth_event_dst_mask",

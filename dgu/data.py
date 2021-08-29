@@ -481,15 +481,13 @@ class TWCmdGenTemporalDataCollator:
 
         output: {
             "tgt_event_type_ids": (batch, event_seq_len),
-            "tgt_event_timestamps": (batch, event_seq_len),
-            "tgt_event_src_mask": (batch, event_seq_len),
-            "tgt_event_dst_mask": (batch, event_seq_len),
             "tgt_event_label_ids": (batch, event_seq_len),
+            "tgt_event_timestamps": (batch, event_seq_len),
             "groundtruth_event_type_ids": (batch, event_seq_len),
-            "groundtruth_event_mask": (batch, event_seq_len),
             "groundtruth_event_src_mask": (batch, event_seq_len),
             "groundtruth_event_dst_mask": (batch, event_seq_len),
             "groundtruth_event_label_ids": (batch, event_seq_len),
+            "groundtruth_event_mask": (batch, event_seq_len),
         }
         """
         # event types
@@ -517,12 +515,6 @@ class TWCmdGenTemporalDataCollator:
             batch_first=True,
             padding_value=EVENT_TYPE_ID_MAP["pad"],
         )
-
-        (
-            _,
-            tgt_event_src_mask,
-            tgt_event_dst_mask,
-        ) = compute_masks_from_event_type_ids(tgt_event_type_ids)
 
         (
             groundtruth_event_mask,
@@ -570,15 +562,13 @@ class TWCmdGenTemporalDataCollator:
 
         return {
             "tgt_event_type_ids": tgt_event_type_ids,
-            "tgt_event_timestamps": tgt_event_timestamps,
-            "tgt_event_src_mask": tgt_event_src_mask,
-            "tgt_event_dst_mask": tgt_event_dst_mask,
             "tgt_event_label_ids": tgt_event_label_ids,
+            "tgt_event_timestamps": tgt_event_timestamps,
             "groundtruth_event_type_ids": groundtruth_event_type_ids,
-            "groundtruth_event_mask": groundtruth_event_mask,
             "groundtruth_event_src_mask": groundtruth_event_src_mask,
             "groundtruth_event_dst_mask": groundtruth_event_dst_mask,
             "groundtruth_event_label_ids": groundtruth_event_label_ids,
+            "groundtruth_event_mask": groundtruth_event_mask,
         }
 
     def collate_graphical_inputs(
