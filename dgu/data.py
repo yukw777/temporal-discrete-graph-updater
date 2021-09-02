@@ -162,20 +162,19 @@ class TWCmdGenTemporalTextualInput:
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalGraphicalInput:
-    node_ids: torch.Tensor = field(default_factory=empty_tensor)
-    node_labels: List[Dict[int, str]] = field(default_factory=list)
-    node_mask: torch.Tensor = field(default_factory=empty_tensor)
-    edge_ids: torch.Tensor = field(default_factory=empty_tensor)
+    node_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    node_memory_update_index: torch.Tensor = field(default_factory=empty_tensor)
+    node_memory_update_mask: torch.Tensor = field(default_factory=empty_tensor)
     edge_index: torch.Tensor = field(default_factory=empty_tensor)
-    edge_timestamps: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
+    edge_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    edge_last_update: torch.Tensor = field(default_factory=empty_tensor)
+    edge_timestamp: torch.Tensor = field(default_factory=empty_tensor)
+    batch: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_dst_mask: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_edge_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
@@ -187,90 +186,16 @@ class TWCmdGenTemporalGraphicalInput:
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalGraphicalInput):
             return False
-        return (
-            self.node_ids.equal(o.node_ids)
-            and self.node_labels == o.node_labels
-            and self.node_mask.equal(o.node_mask)
-            and self.edge_ids.equal(o.edge_ids)
-            and self.edge_index.equal(o.edge_index)
-            and self.edge_timestamps.equal(o.edge_timestamps)
-            and self.tgt_event_timestamps.equal(o.tgt_event_timestamps)
-            and self.tgt_event_type_ids.equal(o.tgt_event_type_ids)
-            and self.tgt_event_src_ids.equal(o.tgt_event_src_ids)
-            and self.tgt_event_src_mask.equal(o.tgt_event_src_mask)
-            and self.tgt_event_dst_ids.equal(o.tgt_event_dst_ids)
-            and self.tgt_event_dst_mask.equal(o.tgt_event_dst_mask)
-            and self.tgt_event_edge_ids.equal(o.tgt_event_edge_ids)
-            and self.tgt_event_label_ids.equal(o.tgt_event_label_ids)
-            and self.groundtruth_event_type_ids.equal(o.groundtruth_event_type_ids)
-            and self.groundtruth_event_src_ids.equal(o.groundtruth_event_src_ids)
-            and self.groundtruth_event_src_mask.equal(o.groundtruth_event_src_mask)
-            and self.groundtruth_event_dst_ids.equal(o.groundtruth_event_dst_ids)
-            and self.groundtruth_event_dst_mask.equal(o.groundtruth_event_dst_mask)
-            and self.groundtruth_event_label_ids.equal(o.groundtruth_event_label_ids)
-            and self.groundtruth_event_mask.equal(o.groundtruth_event_mask)
-        )
+        return all(getattr(self, f).equal(getattr(o, f)) for f in self.__annotations__)
 
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
-            node_ids=self.node_ids.to(*args, **kwargs),
-            node_labels=self.node_labels,
-            node_mask=self.node_mask.to(*args, **kwargs),
-            edge_ids=self.edge_ids.to(*args, **kwargs),
-            edge_index=self.edge_index.to(*args, **kwargs),
-            edge_timestamps=self.edge_timestamps.to(*args, **kwargs),
-            tgt_event_timestamps=self.tgt_event_timestamps.to(*args, **kwargs),
-            tgt_event_type_ids=self.tgt_event_type_ids.to(*args, **kwargs),
-            tgt_event_src_ids=self.tgt_event_src_ids.to(*args, **kwargs),
-            tgt_event_src_mask=self.tgt_event_src_mask.to(*args, **kwargs),
-            tgt_event_dst_ids=self.tgt_event_dst_ids.to(*args, **kwargs),
-            tgt_event_dst_mask=self.tgt_event_dst_mask.to(*args, **kwargs),
-            tgt_event_edge_ids=self.tgt_event_edge_ids.to(*args, **kwargs),
-            tgt_event_label_ids=self.tgt_event_label_ids.to(*args, **kwargs),
-            groundtruth_event_type_ids=self.groundtruth_event_type_ids.to(
-                *args, **kwargs
-            ),
-            groundtruth_event_src_ids=self.groundtruth_event_src_ids.to(
-                *args, **kwargs
-            ),
-            groundtruth_event_src_mask=self.groundtruth_event_src_mask.to(
-                *args, **kwargs
-            ),
-            groundtruth_event_dst_ids=self.groundtruth_event_dst_ids.to(
-                *args, **kwargs
-            ),
-            groundtruth_event_dst_mask=self.groundtruth_event_dst_mask.to(
-                *args, **kwargs
-            ),
-            groundtruth_event_label_ids=self.groundtruth_event_label_ids.to(
-                *args, **kwargs
-            ),
-            groundtruth_event_mask=self.groundtruth_event_mask.to(*args, **kwargs),
+            **{f: getattr(self, f).to(*args, **kwargs) for f in self.__annotations__}
         )
 
     def pin_memory(self) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
-            node_ids=self.node_ids.pin_memory(),
-            node_labels=self.node_labels,
-            node_mask=self.node_mask.pin_memory(),
-            edge_ids=self.edge_ids.pin_memory(),
-            edge_index=self.edge_index.pin_memory(),
-            edge_timestamps=self.edge_timestamps.pin_memory(),
-            tgt_event_timestamps=self.tgt_event_timestamps.pin_memory(),
-            tgt_event_type_ids=self.tgt_event_type_ids.pin_memory(),
-            tgt_event_src_ids=self.tgt_event_src_ids.pin_memory(),
-            tgt_event_src_mask=self.tgt_event_src_mask.pin_memory(),
-            tgt_event_dst_ids=self.tgt_event_dst_ids.pin_memory(),
-            tgt_event_dst_mask=self.tgt_event_dst_mask.pin_memory(),
-            tgt_event_edge_ids=self.tgt_event_edge_ids.pin_memory(),
-            tgt_event_label_ids=self.tgt_event_label_ids.pin_memory(),
-            groundtruth_event_type_ids=self.groundtruth_event_type_ids.pin_memory(),
-            groundtruth_event_src_ids=self.groundtruth_event_src_ids.pin_memory(),
-            groundtruth_event_src_mask=self.groundtruth_event_src_mask.pin_memory(),
-            groundtruth_event_dst_ids=self.groundtruth_event_dst_ids.pin_memory(),
-            groundtruth_event_dst_mask=self.groundtruth_event_dst_mask.pin_memory(),
-            groundtruth_event_label_ids=self.groundtruth_event_label_ids.pin_memory(),
-            groundtruth_event_mask=self.groundtruth_event_mask.pin_memory(),
+            **{f: getattr(self, f).pin_memory() for f in self.__annotations__}
         )
 
 
