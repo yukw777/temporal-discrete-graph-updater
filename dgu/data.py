@@ -62,29 +62,11 @@ class TWCmdGenTemporalDataset(Dataset):
                 "walkthrough_step": walkthrough step,
                 "observation": "observation...",
                 "previous_action": "previous action...",
-                "event_seq": [graph event, ...],
-                "commands": [graph commands, ...],
+                "timestamp": timestamp,
+                "target_commands": [graph commands, ...],
             },
             ...
         ]
-
-
-    There are four event types: node addtion/deletion and edge addition/deletion.
-    Each node event contains the following information:
-        {
-            "type": "node-{add,delete}",
-            "node_id": id for node to be added/deleted,
-            "timestamp": timestamp for the event,
-            "label": label for node to be added/deleted,
-        }
-    Each edge event contains the following information:
-        {
-            "type": "edge-{add,delete}",
-            "src_id": id for src node to be added/deleted,
-            "dst_id": id for dst node to be added/deleted,
-            "timestamp": timestamp for the event,
-            "label": label for edge to be added/deleted,
-        }
     """
 
     def __init__(self, path: str) -> None:
@@ -113,15 +95,8 @@ class TWCmdGenTemporalDataset(Dataset):
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
         random_examples = self.random_examples[(game, walkthrough_step)]
-        graph = TextWorldGraph()
         data: List[Dict[str, Any]] = []
         for timestamp, example in enumerate(walkthrough_examples + random_examples):
-            event_seq = list(
-                itertools.chain.from_iterable(
-                    graph.process_triplet_cmd(game, walkthrough_step, timestamp, cmd)
-                    for cmd in example["target_commands"]
-                )
-            )
             data.append(
                 {
                     "game": game,
@@ -129,8 +104,7 @@ class TWCmdGenTemporalDataset(Dataset):
                     "observation": example["observation"],
                     "previous_action": example["previous_action"],
                     "timestamp": timestamp,
-                    "event_seq": event_seq,
-                    "commands": example["target_commands"],
+                    "target_commands": example["target_commands"],
                 }
             )
         return data
