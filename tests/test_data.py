@@ -6,6 +6,7 @@ import os
 
 from dgu.data import (
     TemporalDataBatchSampler,
+    TWCmdGenTemporalGraphData,
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
     TWCmdGenTemporalDataCollator,
@@ -15,6 +16,9 @@ from dgu.data import (
     TWCmdGenTemporalGraphicalInput,
 )
 from dgu.preprocessor import SpacyPreprocessor
+from dgu.graph import Node, IsDstNode, ExitNode
+
+from utils import EqualityDiGraph
 
 
 @pytest.fixture
@@ -73,6 +77,296 @@ def test_tw_cmd_gen_dataset_init():
     assert len(dataset) == len(expected_dataset)
     for data, expected_data in zip(dataset, expected_dataset):
         assert data == expected_data
+
+
+@pytest.mark.parametrize(
+    "before_graph,after_graph,label_id_map,expected",
+    [
+        (
+            EqualityDiGraph(),
+            EqualityDiGraph(),
+            {},
+            TWCmdGenTemporalGraphData(
+                x=torch.empty(0, dtype=torch.long),
+                node_memory_update_index=torch.empty(0, dtype=torch.long),
+                node_memory_update_mask=torch.empty(0, dtype=torch.bool),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            EqualityDiGraph(),
+            EqualityDiGraph({Node("player"): {}}),
+            {"player": 5},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5]),
+                node_memory_update_index=torch.empty(0, dtype=torch.long),
+                node_memory_update_mask=torch.empty(0, dtype=torch.bool),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            EqualityDiGraph({Node("player"): {}}),
+            EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
+            {"player": 5, "kitchen": 1},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 1]),
+                node_memory_update_index=torch.tensor([0]),
+                node_memory_update_mask=torch.tensor([True]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
+            EqualityDiGraph(
+                {Node("player"): {Node("kitchen"): {"label": "in", "last_update": 0}}}
+            ),
+            {"player": 5, "kitchen": 1, "in": 2},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 1]),
+                node_memory_update_index=torch.tensor([0, 1]),
+                node_memory_update_mask=torch.tensor([True, True]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([2]),
+                edge_last_update=torch.tensor([0.0]),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 0}
+                    }
+                }
+            ),
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 0}
+                    },
+                    ExitNode("exit", "west of", "kitchen"): {},
+                }
+            ),
+            {"exit": 5, "kitchen": 1, "east of": 2},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 5, 1]),
+                node_memory_update_index=torch.tensor([0, 2]),
+                node_memory_update_mask=torch.tensor([True, True]),
+                edge_index=torch.tensor([[0], [2]]),
+                edge_attr=torch.tensor([2]),
+                edge_last_update=torch.tensor([0.0]),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 0}
+                    },
+                    ExitNode("exit", "west of", "kitchen"): {},
+                }
+            ),
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 0}
+                    },
+                    ExitNode("exit", "west of", "kitchen"): {
+                        Node("kitchen"): {"label": "west of", "last_update": 1}
+                    },
+                }
+            ),
+            {"exit": 5, "kitchen": 1, "east of": 2, "west of": 3},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 5, 1]),
+                node_memory_update_index=torch.tensor([0, 1, 2]),
+                node_memory_update_mask=torch.tensor([True, True, True]),
+                edge_index=torch.tensor([[0, 1], [2, 2]]),
+                edge_attr=torch.tensor([2, 3]),
+                edge_last_update=torch.tensor([0.0, 1.0]),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    Node("steak"): {
+                        IsDstNode("cooked", "steak"): {
+                            "label": "is",
+                            "last_update": 1,
+                        }
+                    }
+                }
+            ),
+            EqualityDiGraph(
+                {
+                    Node("steak"): {
+                        IsDstNode("cooked", "steak"): {
+                            "label": "is",
+                            "last_update": 1,
+                        }
+                    },
+                    IsDstNode("delicious", "steak"): {},
+                }
+            ),
+            {"steak": 5, "cooked": 1, "is": 2, "delicious": 3},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 3, 1]),
+                node_memory_update_index=torch.tensor([0, 2]),
+                node_memory_update_mask=torch.tensor([True, True]),
+                edge_index=torch.tensor([[0], [2]]),
+                edge_attr=torch.tensor([2]),
+                edge_last_update=torch.tensor([1.0]),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    Node("steak"): {
+                        IsDstNode("cooked", "steak"): {
+                            "label": "is",
+                            "last_update": 1,
+                        }
+                    },
+                    IsDstNode("delicious", "steak"): {},
+                }
+            ),
+            EqualityDiGraph(
+                {
+                    Node("steak"): {
+                        IsDstNode("cooked", "steak"): {
+                            "label": "is",
+                            "last_update": 1,
+                        },
+                        IsDstNode("delicious", "steak"): {
+                            "label": "is",
+                            "last_update": 2,
+                        },
+                    }
+                }
+            ),
+            {"steak": 5, "cooked": 1, "is": 2, "delicious": 3},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 1, 3]),
+                node_memory_update_index=torch.tensor([0, 2, 1]),
+                node_memory_update_mask=torch.tensor([True, True, True]),
+                edge_index=torch.tensor([[0, 0], [1, 2]]),
+                edge_attr=torch.tensor([2, 2]),
+                edge_last_update=torch.tensor([1.0, 2.0]),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {Node("player"): {Node("kitchen"): {"label": "in", "last_update": 2}}}
+            ),
+            EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
+            {"player": 5, "kitchen": 1, "in": 2},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 1]),
+                node_memory_update_index=torch.tensor([0, 1]),
+                node_memory_update_mask=torch.tensor([True, True]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
+            EqualityDiGraph({Node("player"): {}}),
+            {"player": 5, "kitchen": 1, "in": 2},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5]),
+                node_memory_update_index=torch.tensor([0, 0]),
+                node_memory_update_mask=torch.tensor([True, False]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            EqualityDiGraph({Node("player"): {}}),
+            EqualityDiGraph(),
+            {"player": 5, "kitchen": 1, "in": 2},
+            TWCmdGenTemporalGraphData(
+                x=torch.empty(0, dtype=torch.long),
+                node_memory_update_index=torch.tensor([0]),
+                node_memory_update_mask=torch.tensor([False]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 2}
+                    },
+                    ExitNode("exit", "west of", "kitchen"): {
+                        Node("kitchen"): {"label": "west of", "last_update": 2}
+                    },
+                }
+            ),
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 2}
+                    },
+                    ExitNode("exit", "west of", "kitchen"): {},
+                }
+            ),
+            {"exit": 5, "kitchen": 1, "east of": 2, "west of": 3},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 5, 1]),
+                node_memory_update_index=torch.tensor([0, 1, 2]),
+                node_memory_update_mask=torch.tensor([True, True, True]),
+                edge_index=torch.tensor([[0], [2]]),
+                edge_attr=torch.tensor([2]),
+                edge_last_update=torch.tensor([2.0]),
+            ),
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 2}
+                    },
+                    ExitNode("exit", "west of", "kitchen"): {},
+                }
+            ),
+            EqualityDiGraph(
+                {
+                    ExitNode("exit", "east of", "kitchen"): {
+                        Node("kitchen"): {"label": "east of", "last_update": 2}
+                    }
+                }
+            ),
+            {"exit": 5, "kitchen": 1, "east of": 2, "west of": 3},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([5, 1]),
+                node_memory_update_index=torch.tensor([0, 0, 1]),
+                node_memory_update_mask=torch.tensor([True, False, True]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([2]),
+                edge_last_update=torch.tensor([2.0]),
+            ),
+        ),
+    ],
+)
+def test_tw_cmd_gen_temporal_graph_data_from_graph(
+    before_graph, after_graph, label_id_map, expected
+):
+    data = TWCmdGenTemporalGraphData.from_graph(before_graph, after_graph, label_id_map)
+    assert data.x.equal(expected.x)
+    assert data.node_memory_update_index.equal(expected.node_memory_update_index)
+    assert data.node_memory_update_mask.equal(expected.node_memory_update_mask)
+    assert data.edge_index.equal(expected.edge_index)
+    assert data.edge_attr.equal(expected.edge_attr)
+    assert data.edge_last_update.equal(expected.edge_last_update)
 
 
 @pytest.mark.parametrize(

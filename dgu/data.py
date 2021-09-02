@@ -2,6 +2,7 @@ import itertools
 import json
 import pytorch_lightning as pl
 import torch
+import networkx as nx
 
 from typing import Deque, List, Iterator, Dict, Any, Optional, Tuple, Set
 from collections import defaultdict, deque
@@ -9,8 +10,8 @@ from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from torch.nn.utils.rnn import pad_sequence
 from dataclasses import dataclass, field
+from torch_geometric.data import Data
 
-from dgu.graph import TextWorldGraph
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.nn.utils import compute_masks_from_event_type_ids
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -344,6 +345,64 @@ class TWCmdGenTemporalBatch:
             )
             for ndx in range(0, len(self), split_size)
         ]
+
+
+class TWCmdGenTemporalGraphData(Data):
+    def __inc__(self, key: str, value: torch.Tensor) -> int:
+        if key == "node_update_index":
+            return self.node_memory_update_mask.sum()
+        return super().__inc__(key, value)
+
+    @classmethod
+    def from_graph(
+        cls,
+        before_graph: nx.DiGraph,
+        after_graph: nx.DiGraph,
+        label_id_map: Dict[str, int],
+    ) -> "TWCmdGenTemporalGraphData":
+        node_id_map = {node: node_id for node_id, node in enumerate(after_graph.nodes)}
+        node_memory_update_index: List[int] = []
+        node_memory_update_mask: List[bool] = []
+        for before_node in before_graph.nodes:
+            if before_node in node_id_map:
+                node_memory_update_index.append(node_id_map[before_node])
+                node_memory_update_mask.append(True)
+            else:
+                node_memory_update_index.append(0)
+                node_memory_update_mask.append(False)
+
+        return TWCmdGenTemporalGraphData(
+            # we set x for node_label_ids as that's how
+            # Data figures out how many nodes there are
+            x=torch.tensor([label_id_map[node.label] for node in after_graph.nodes])
+            if after_graph.order() > 0
+            else torch.empty(0, dtype=torch.long),
+            node_memory_update_index=torch.tensor(node_memory_update_index)
+            if node_memory_update_index
+            else torch.empty(0, dtype=torch.long),
+            node_memory_update_mask=torch.tensor(node_memory_update_mask)
+            if node_memory_update_mask
+            else torch.empty(0, dtype=torch.bool),
+            edge_index=torch.tensor(
+                [(node_id_map[src], node_id_map[dst]) for src, dst in after_graph.edges]
+            ).t()
+            if after_graph.number_of_edges() > 0
+            else torch.empty(2, 0, dtype=torch.long),
+            edge_attr=torch.tensor(
+                [label_id_map[label] for _, _, label in after_graph.edges.data("label")]
+            )
+            if after_graph.number_of_edges() > 0
+            else torch.empty(0, dtype=torch.long),
+            edge_last_update=torch.tensor(
+                [
+                    last_update
+                    for _, _, last_update in after_graph.edges.data("last_update")
+                ],
+                dtype=torch.float,
+            )
+            if after_graph.number_of_edges() > 0
+            else torch.empty(0),
+        )
 
 
 class TWCmdGenTemporalDataCollator:

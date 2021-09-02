@@ -1,4 +1,5 @@
 import torch
+import networkx as nx
 
 from typing import List
 
@@ -31,3 +32,15 @@ def increasing_mask(
         else:
             data.append([1] * seq_len)
     return torch.tensor(data, dtype=torch.float)
+
+
+class EqualityDiGraph(nx.DiGraph):
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, EqualityDiGraph):
+            return False
+        return nx.is_isomorphic(
+            self,
+            o,
+            node_match=lambda d1, d2: d1 == d2,
+            edge_match=lambda d1, d2: d1 == d2,
+        )
