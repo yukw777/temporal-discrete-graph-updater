@@ -255,6 +255,8 @@ class TWCmdGenTemporalGraphData(Data):
     @classmethod
     def from_graph(
         cls,
+        event_src_index: torch.Tensor,
+        event_dst_index: torch.Tensor,
         before_graph: nx.DiGraph,
         after_graph: nx.DiGraph,
         label_id_map: Dict[str, int],
@@ -301,6 +303,8 @@ class TWCmdGenTemporalGraphData(Data):
             )
             if after_graph.number_of_edges() > 0
             else torch.empty(0),
+            event_src_index=event_src_index,
+            event_dst_index=event_dst_index,
         )
 
 

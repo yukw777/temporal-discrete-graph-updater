@@ -80,9 +80,11 @@ def test_tw_cmd_gen_dataset_init():
 
 
 @pytest.mark.parametrize(
-    "before_graph,after_graph,label_id_map,expected",
+    "event_src_index,event_dst_index,before_graph,after_graph,label_id_map,expected",
     [
         (
+            torch.empty(0, dtype=torch.long),
+            torch.empty(0, dtype=torch.long),
             EqualityDiGraph(),
             EqualityDiGraph(),
             {},
@@ -93,9 +95,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
                 edge_last_update=torch.empty(0),
+                event_src_index=torch.empty(0, dtype=torch.long),
+                event_dst_index=torch.empty(0, dtype=torch.long),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(),
             EqualityDiGraph({Node("player"): {}}),
             {"player": 5},
@@ -106,9 +112,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
                 edge_last_update=torch.empty(0),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph({Node("player"): {}}),
             EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
             {"player": 5, "kitchen": 1},
@@ -119,9 +129,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
                 edge_last_update=torch.empty(0),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
             EqualityDiGraph(
                 {Node("player"): {Node("kitchen"): {"label": "in", "last_update": 0}}}
@@ -134,9 +148,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0], [1]]),
                 edge_attr=torch.tensor([2]),
                 edge_last_update=torch.tensor([0.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {
                     ExitNode("exit", "east of", "kitchen"): {
@@ -160,9 +178,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0], [2]]),
                 edge_attr=torch.tensor([2]),
                 edge_last_update=torch.tensor([0.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {
                     ExitNode("exit", "east of", "kitchen"): {
@@ -189,9 +211,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0, 1], [2, 2]]),
                 edge_attr=torch.tensor([2, 3]),
                 edge_last_update=torch.tensor([0.0, 1.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {
                     Node("steak"): {
@@ -221,9 +247,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0], [2]]),
                 edge_attr=torch.tensor([2]),
                 edge_last_update=torch.tensor([1.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {
                     Node("steak"): {
@@ -257,9 +287,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0, 0], [1, 2]]),
                 edge_attr=torch.tensor([2, 2]),
                 edge_last_update=torch.tensor([1.0, 2.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {Node("player"): {Node("kitchen"): {"label": "in", "last_update": 2}}}
             ),
@@ -272,9 +306,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
                 edge_last_update=torch.empty(0),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph({Node("player"): {}, Node("kitchen"): {}}),
             EqualityDiGraph({Node("player"): {}}),
             {"player": 5, "kitchen": 1, "in": 2},
@@ -285,9 +323,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
                 edge_last_update=torch.empty(0),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph({Node("player"): {}}),
             EqualityDiGraph(),
             {"player": 5, "kitchen": 1, "in": 2},
@@ -298,9 +340,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
                 edge_last_update=torch.empty(0),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {
                     ExitNode("exit", "east of", "kitchen"): {
@@ -327,9 +373,13 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0], [2]]),
                 edge_attr=torch.tensor([2]),
                 edge_last_update=torch.tensor([2.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
         (
+            torch.tensor([2, 3, 0]),
+            torch.tensor([0, 2, 1]),
             EqualityDiGraph(
                 {
                     ExitNode("exit", "east of", "kitchen"): {
@@ -353,20 +403,26 @@ def test_tw_cmd_gen_dataset_init():
                 edge_index=torch.tensor([[0], [1]]),
                 edge_attr=torch.tensor([2]),
                 edge_last_update=torch.tensor([2.0]),
+                event_src_index=torch.tensor([2, 3, 0]),
+                event_dst_index=torch.tensor([0, 2, 1]),
             ),
         ),
     ],
 )
 def test_tw_cmd_gen_temporal_graph_data_from_graph(
-    before_graph, after_graph, label_id_map, expected
+    event_src_index, event_dst_index, before_graph, after_graph, label_id_map, expected
 ):
-    data = TWCmdGenTemporalGraphData.from_graph(before_graph, after_graph, label_id_map)
+    data = TWCmdGenTemporalGraphData.from_graph(
+        event_src_index, event_dst_index, before_graph, after_graph, label_id_map
+    )
     assert data.x.equal(expected.x)
     assert data.node_memory_update_index.equal(expected.node_memory_update_index)
     assert data.node_memory_update_mask.equal(expected.node_memory_update_mask)
     assert data.edge_index.equal(expected.edge_index)
     assert data.edge_attr.equal(expected.edge_attr)
     assert data.edge_last_update.equal(expected.edge_last_update)
+    assert data.event_src_index.equal(expected.event_src_index)
+    assert data.event_dst_index.equal(expected.event_dst_index)
 
 
 @pytest.mark.parametrize(
