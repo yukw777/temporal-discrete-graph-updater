@@ -10,11 +10,12 @@ from torch.utils.data import Sampler, Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from torch.nn.utils.rnn import pad_sequence
 from dataclasses import dataclass, field
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Batch
 
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.nn.utils import compute_masks_from_event_type_ids
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.graph import process_triplet_cmd
 
 
 class TemporalDataBatchSampler(Sampler[List[int]]):
@@ -168,7 +169,7 @@ class TWCmdGenTemporalGraphicalInput:
     edge_index: torch.Tensor = field(default_factory=empty_tensor)
     edge_label_ids: torch.Tensor = field(default_factory=empty_tensor)
     edge_last_update: torch.Tensor = field(default_factory=empty_tensor)
-    edge_timestamp: torch.Tensor = field(default_factory=empty_tensor)
+    edge_timestamps: torch.Tensor = field(default_factory=empty_tensor)
     batch: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
@@ -538,248 +539,193 @@ class TWCmdGenTemporalDataCollator:
         }
 
     def collate_graphical_inputs(
-        self, batch_step: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        self, batch_graphs: List[nx.DiGraph], batch_step: List[Dict[str, Any]]
+    ) -> List[TWCmdGenTemporalGraphicalInput]:
         """
         Collate the graphical inputs of the given batch.
 
-        output: {
-            "node_ids": len({0: (batch, num_nodes), ...}) = event_seq_len,
-            "node_labels": len({0: {node_id: node_label, ...}, ...}) = event_seq_len,
-            "edge_ids": len({0: (batch, num_edges), ...}) = event_seq_len,
-            "edge_index": len({0: (batch, 2, num_edges), ...}) = event_seq_len,
-            "edge_timestamps": len({0: (batch, num_edges), ...}) = event_seq_len,
-            "tgt_event_src_ids": (batch, event_seq_len),
-            "tgt_event_dst_ids": (batch, event_seq_len),
-            "tgt_event_edge_ids": (batch, event_seq_len),
-            "groundtruth_event_src_ids": (batch, event_seq_len),
-            "groundtruth_event_dst_ids": (batch, event_seq_len),
-        }
+        output: len([TWCmdGenTemporalGraphicalInput(
+            node_label_ids: (num_nodes),
+            node_memory_update_index: (prev_num_nodes),
+            node_memory_update_mask: (prev_num_nodes),
+            edge_index: (2, num_edges),
+            edge_label_ids: (num_edges),
+            edge_last_update: (num_edges),
+            edge_timestamps: (num_edges),
+            batch: (num_nodes),
+            tgt_event_type_ids: (batch),
+            tgt_event_src_ids: (batch),
+            tgt_event_dst_ids: (batch),
+            tgt_event_label_ids: (batch),
+            tgt_event_timestamps: (batch),
+            groundtruth_event_type_ids: (batch),
+            groundtruth_event_src_ids: (batch),
+            groundtruth_event_src_mask: (batch),
+            groundtruth_event_dst_ids: (batch),
+            groundtruth_event_dst_mask: (batch),
+            groundtruth_event_label_ids: (batch),
+            groundtruth_event_mask: (batch),
+        ), ...]) = event_seq_len
         """
-        batch_event_src_ids: List[List[int]] = []
-        batch_event_dst_ids: List[List[int]] = []
-        batch_event_src_pos: List[List[int]] = []
-        batch_event_dst_pos: List[List[int]] = []
-        batch_event_edge_ids: List[List[int]] = []
-        event_seq_node_ids: Dict[int, List[List[int]]] = defaultdict(list)
-        event_seq_node_labels: Dict[int, List[Dict[int, str]]] = defaultdict(list)
-        event_seq_edge_ids: Dict[int, List[List[int]]] = defaultdict(list)
-        event_seq_edge_index: Dict[int, List[List[Tuple[int, int]]]] = defaultdict(list)
-        event_seq_edge_timestamps: Dict[int, List[List[float]]] = defaultdict(list)
-        max_event_seq_len = max(
-            len(step["event_seq"]) if step != {} else 0 for step in batch_step
-        )
-        for step in batch_step:
-            event_src_ids: List[int] = []
-            event_dst_ids: List[int] = []
-            event_src_pos: List[int] = []
-            event_dst_pos: List[int] = []
-            event_edge_ids: List[int] = []
-            if max_event_seq_len == 0:
-                # no event sequence in this batch_step
-                event_seq_node_ids[-1].append([0])
-                event_seq_node_labels[-1].append({0: "<pad>"})
-                event_seq_edge_ids[-1].append([0])
-                event_seq_edge_index[-1].append([(0, 0)])
-                event_seq_edge_timestamps[-1].append([0.0])
-            for i in range(max_event_seq_len):
-                if step == {} or i >= len(step["event_seq"]):
-                    # we've passed the last event, so just add padded lists and move on
-                    event_seq_node_ids[i].append([0])
-                    event_seq_node_labels[i].append({0: "<pad>"})
-                    event_seq_edge_ids[i].append([0])
-                    event_seq_edge_index[i].append([(0, 0)])
-                    event_seq_edge_timestamps[i].append([0.0])
-                    if i == 0:
-                        event_seq_node_ids[-1].append([0])
-                        event_seq_node_labels[-1].append({0: "<pad>"})
-                        event_seq_edge_ids[-1].append([0])
-                        event_seq_edge_index[-1].append([(0, 0)])
-                        event_seq_edge_timestamps[-1].append([0.0])
-                    continue
-                game = step["game"]
-                walkthrough_step = step["walkthrough_step"]
-                event = step["event_seq"][i]
-                if i == 0:
-                    # add the previous subgraph node/edge IDs
-                    # this is to support the initial event generation.
-                    node_id_map, edge_id_map = self.allocated_id_map[
-                        (game, walkthrough_step)
-                    ]
-                    event_seq_node_ids[-1].append(
-                        [
-                            node_id_map[nid]
-                            for nid in sorted(self.node_ids[(game, walkthrough_step)])
-                        ]
-                    )
-                    event_seq_node_labels[-1].append(
-                        {
-                            node_id_map[nid]: label
-                            for nid, label in self.node_labels[
-                                (game, walkthrough_step)
-                            ].items()
-                        }
-                    )
-                    edge_id_list: List[int] = []
-                    edge_index_list: List[Tuple[int, int]] = []
-                    for edge_id, edge_index in self.edges[
-                        (game, walkthrough_step)
-                    ].items():
-                        edge_id_list.append(edge_id)
-                        edge_index_list.append(edge_index)
-                    event_seq_edge_ids[-1].append(
-                        [edge_id_map[eid] for eid in edge_id_list]
-                    )
-                    event_seq_edge_index[-1].append(
-                        [
-                            (node_id_map[src], node_id_map[dst])
-                            for src, dst in edge_index_list
-                        ]
-                    )
-                    event_seq_edge_timestamps[-1].append(
-                        [float(event["timestamp"])] * len(edge_id_list)
-                    )
-
-                # update the graph with the graph events in the batch
-                self.update_subgraph(game, walkthrough_step, event)
-
-                # get the worker node/edge ID maps based on the updated graph
-                self.allocate_ids(game, walkthrough_step)
-                node_id_map, edge_id_map = self.allocated_id_map[
-                    (game, walkthrough_step)
-                ]
-
-                # collect all the allocated worker node IDs
-                event_node_ids = sorted(self.node_ids[(game, walkthrough_step)])
-                event_seq_node_ids[i].append(
-                    [node_id_map[nid] for nid in event_node_ids]
-                )
-                event_seq_node_labels[i].append(
-                    {
-                        node_id_map[nid]: label
-                        for nid, label in self.node_labels[
-                            (game, walkthrough_step)
-                        ].items()
-                    }
-                )
-
-                # create a map from global node ID => position in event_node_ids
-                # which will be used for edge indices and groundtruth node IDs
-                # this is necessary to calculate cross entropy losses
-                node_id_pos_map = {
-                    node_id: i for i, node_id in enumerate(event_node_ids)
-                }
-
-                edge_id_list = []
-                edge_index_list = []
-                for edge_id, edge_index in self.edges[(game, walkthrough_step)].items():
-                    edge_id_list.append(edge_id)
-                    edge_index_list.append(edge_index)
-                event_seq_edge_ids[i].append([edge_id_map[eid] for eid in edge_id_list])
-                event_seq_edge_index[i].append(
+        assert len(batch_graphs) == len(batch_step)
+        batch_event_seq: List[List[Dict[str, Any]]] = []
+        collated: List[TWCmdGenTemporalGraphicalInput] = []
+        for graph, step in zip(batch_graphs, batch_step):
+            if step == {}:
+                batch_event_seq.append(
                     [
-                        (node_id_map[src], node_id_map[dst])
-                        for src, dst in edge_index_list
+                        {
+                            "type": "end",
+                            "timestamp": 0,
+                            "label": "",
+                            # graphs don't change after this event
+                            "before_graph": graph,
+                            "after_graph": graph,
+                        }
                     ]
                 )
-                event_seq_edge_timestamps[i].append(
-                    [float(event["timestamp"])] * len(edge_id_list)
-                )
+                continue
+            curr_graph = graph
+            event_seq: List[Dict[str, Any]] = []
+            for cmd in step["target_commands"]:
+                sub_event_seq = process_triplet_cmd(curr_graph, step["timestamp"], cmd)
+                event_seq.extend(sub_event_seq)
+                curr_graph = sub_event_seq[-1]["after_graph"]
+            # add an end event
+            event_seq += [
+                {
+                    "type": "end",
+                    "timestamp": step["timestamp"],
+                    "label": "",
+                    # graphs don't change after this event
+                    "before_graph": event_seq[-1]["after_graph"]
+                    if event_seq
+                    else nx.DiGraph(),
+                    "after_graph": event_seq[-1]["after_graph"]
+                    if event_seq
+                    else nx.DiGraph(),
+                }
+            ]
+            batch_event_seq.append(event_seq)
 
-                # collect event worker node/edge IDs
-                if event["type"] in {"node-add", "node-delete"}:
-                    event_src_ids.append(node_id_map[event["node_id"]])
-                    # 0 if node-add as the node hasn't been added and does not have
-                    # the correct position. Ultimately it's going to be masked.
-                    if event["type"] == "node-add":
-                        event_src_pos.append(0)
-                    else:
-                        event_src_pos.append(node_id_pos_map[event["node_id"]])
-                    # used the placeholder node and edge
-                    event_dst_ids.append(0)
-                    event_dst_pos.append(0)
-                    event_edge_ids.append(0)
-                else:
-                    event_src_ids.append(node_id_map[event["src_id"]])
-                    event_src_pos.append(node_id_pos_map[event["src_id"]])
-                    event_dst_ids.append(node_id_map[event["dst_id"]])
-                    event_dst_pos.append(node_id_pos_map[event["dst_id"]])
-                    event_edge_ids.append(edge_id_map[event["edge_id"]])
-            batch_event_src_ids.append(event_src_ids)
-            batch_event_src_pos.append(event_src_pos)
-            batch_event_dst_ids.append(event_dst_ids)
-            batch_event_dst_pos.append(event_dst_pos)
-            batch_event_edge_ids.append(event_edge_ids)
+        max_event_seq_len = max(len(event_seq) for event_seq in batch_event_seq)
+        batch_size = len(batch_step)
 
-        # placeholder node id for the start event
-        tgt_event_src_ids = pad_sequence(
-            [torch.tensor([0] + ids) for ids in batch_event_src_ids], batch_first=True
-        )
-        tgt_event_dst_ids = pad_sequence(
-            [torch.tensor([0] + ids) for ids in batch_event_dst_ids], batch_first=True
-        )
-        # placeholder edge id for the start event
-        tgt_event_edge_ids = pad_sequence(
-            [torch.tensor([0] + ids) for ids in batch_event_edge_ids], batch_first=True
-        )
-        # placeholder node id for the end event
-        groundtruth_event_src_ids = pad_sequence(
-            [torch.tensor(pos + [0]) for pos in batch_event_src_pos], batch_first=True
-        )
-        groundtruth_event_dst_ids = pad_sequence(
-            [torch.tensor(pos + [0]) for pos in batch_event_dst_pos], batch_first=True
-        )
-
-        node_ids: List[torch.Tensor] = [
-            pad_sequence(
-                [torch.tensor(step_nids) for step_nids in event_seq_node_ids[i]],
-                batch_first=True,
-            )
-            for i in range(-1, max_event_seq_len)
-        ]
-        node_labels: List[List[Dict[int, str]]] = [
-            event_seq_node_labels[i] for i in range(-1, max_event_seq_len)
-        ]
-        node_masks = [(nids != 0).float() for nids in node_ids]
-        edge_ids: List[torch.Tensor] = [
-            pad_sequence(
-                [torch.tensor(step_eids) for step_eids in event_seq_edge_ids[i]],
-                batch_first=True,
-            )
-            for i in range(-1, max_event_seq_len)
-        ]
-        edge_index_tensor: List[torch.Tensor] = [
-            pad_sequence(
-                [torch.tensor(step_eindex) for step_eindex in event_seq_edge_index[i]],
-                batch_first=True,
-            ).transpose(1, 2)
-            for i in range(-1, max_event_seq_len)
-        ]
-        edge_timestamps: List[torch.Tensor] = [
-            pad_sequence(
-                [
-                    torch.tensor(step_ets)
-                    for step_ets in event_seq_edge_timestamps.get(
-                        i, [[0.0] * len(batch_step)]
+        # left shifted target events
+        tgt_event_type_ids = torch.tensor([EVENT_TYPE_ID_MAP["start"]] * batch_size)
+        tgt_event_src_ids = torch.tensor([0] * batch_size)
+        tgt_event_dst_ids = torch.tensor([0] * batch_size)
+        tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
+        tgt_event_timestamps = torch.tensor([0.0] * batch_size)
+        for seq_step_num in range(max_event_seq_len):
+            batch_event_type_ids: List[int] = []
+            batch_event_src_ids: List[int] = []
+            batch_event_dst_ids: List[int] = []
+            batch_event_label_ids: List[int] = []
+            batch_event_timestamps: List[int] = []
+            batch_graph_data: List[TWCmdGenTemporalGraphData] = []
+            for batch_item_num, event_seq in enumerate(batch_event_seq):
+                # collect event data for all the items in the batch at event i
+                if seq_step_num < len(event_seq):
+                    event = event_seq[seq_step_num]
+                    batch_event_type_ids.append(EVENT_TYPE_ID_MAP[event["type"]])
+                    batch_event_src_ids.append(
+                        event.get("src_id", event.get("node_id", 0))
                     )
-                ],
-                batch_first=True,
+                    batch_event_dst_ids.append(event.get("dst_id", 0))
+                    batch_event_label_ids.append(self.label_id_map[event["label"]])
+                    batch_event_timestamps.append(event["timestamp"])
+                    batch_graph_data.append(
+                        TWCmdGenTemporalGraphData.from_graph_event(
+                            tgt_event_src_ids[batch_item_num],
+                            tgt_event_dst_ids[batch_item_num],
+                            event["timestamp"],
+                            event["before_graph"],
+                            event["after_graph"],
+                            self.label_id_map,
+                        )
+                    )
+                else:
+                    batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
+                    batch_event_src_ids.append(0)
+                    batch_event_dst_ids.append(0)
+                    batch_event_label_ids.append(self.label_id_map[""])
+                    batch_event_timestamps.append(0)
+                    if seq_step_num == len(event_seq):
+                        # we need to generate graph data to get rid of the sub graph
+                        # for this batch item.
+                        batch_graph_data.append(
+                            TWCmdGenTemporalGraphData.from_graph_event(
+                                torch.tensor(0),
+                                torch.tensor(0),
+                                0,
+                                event_seq[-1]["after_graph"],
+                                nx.DiGraph(),
+                                self.label_id_map,
+                            )
+                        )
+                    else:
+                        batch_graph_data.append(
+                            TWCmdGenTemporalGraphData(
+                                x=torch.empty(0, dtype=torch.long),
+                                node_memory_update_index=torch.empty(
+                                    0, dtype=torch.long
+                                ),
+                                node_memory_update_mask=torch.empty(
+                                    0, dtype=torch.bool
+                                ),
+                                edge_index=torch.empty(2, 0, dtype=torch.long),
+                                edge_attr=torch.empty(0, dtype=torch.long),
+                                edge_last_update=torch.empty(0),
+                                edge_timestamps=torch.empty(0),
+                                event_src_index=torch.tensor(0),
+                                event_dst_index=torch.tensor(0),
+                            )
+                        )
+            groundtruth_event_type_ids = torch.tensor(batch_event_type_ids)
+            groundtruth_event_src_ids = torch.tensor(batch_event_src_ids)
+            groundtruth_event_dst_ids = torch.tensor(batch_event_dst_ids)
+            groundtruth_event_label_ids = torch.tensor(batch_event_label_ids)
+            (
+                groundtruth_event_mask,
+                groundtruth_event_src_mask,
+                groundtruth_event_dst_mask,
+            ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
+            graph_batch = Batch.from_data_list(batch_graph_data)
+            collated.append(
+                TWCmdGenTemporalGraphicalInput(
+                    node_label_ids=graph_batch.x,
+                    node_memory_update_index=graph_batch.node_memory_update_index,
+                    node_memory_update_mask=graph_batch.node_memory_update_mask,
+                    edge_index=graph_batch.edge_index,
+                    edge_label_ids=graph_batch.edge_attr,
+                    edge_last_update=graph_batch.edge_last_update,
+                    edge_timestamps=graph_batch.edge_timestamps,
+                    batch=graph_batch.batch,
+                    tgt_event_type_ids=tgt_event_type_ids,
+                    tgt_event_src_ids=graph_batch.event_src_index,
+                    tgt_event_dst_ids=graph_batch.event_dst_index,
+                    tgt_event_label_ids=tgt_event_label_ids,
+                    tgt_event_timestamps=tgt_event_timestamps,
+                    groundtruth_event_type_ids=groundtruth_event_type_ids,
+                    groundtruth_event_src_ids=groundtruth_event_src_ids,
+                    groundtruth_event_src_mask=groundtruth_event_src_mask,
+                    groundtruth_event_dst_ids=groundtruth_event_dst_ids,
+                    groundtruth_event_dst_mask=groundtruth_event_dst_mask,
+                    groundtruth_event_label_ids=groundtruth_event_label_ids,
+                    groundtruth_event_mask=groundtruth_event_mask,
+                )
             )
-            for i in range(-1, max_event_seq_len)
-        ]
-        return {
-            "node_ids": node_ids,
-            "node_labels": node_labels,
-            "node_masks": node_masks,
-            "edge_ids": edge_ids,
-            "edge_index": edge_index_tensor,
-            "edge_timestamps": edge_timestamps,
-            "tgt_event_src_ids": tgt_event_src_ids,
-            "tgt_event_dst_ids": tgt_event_dst_ids,
-            "tgt_event_edge_ids": tgt_event_edge_ids,
-            "groundtruth_event_src_ids": groundtruth_event_src_ids,
-            "groundtruth_event_dst_ids": groundtruth_event_dst_ids,
-        }
+
+            # the current groundtruth events become the next target events
+            tgt_event_type_ids = groundtruth_event_type_ids
+            tgt_event_src_ids = groundtruth_event_src_ids
+            tgt_event_dst_ids = groundtruth_event_dst_ids
+            tgt_event_label_ids = groundtruth_event_label_ids
+            tgt_event_timestamps = torch.tensor(
+                batch_event_timestamps, dtype=torch.float
+            )
+        return collated
 
     def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
         """
