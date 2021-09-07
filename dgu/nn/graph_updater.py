@@ -672,3 +672,58 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self, batch: TWCmdGenTemporalBatch, split_size: int
     ) -> List[TWCmdGenTemporalBatch]:
         return batch.split(split_size)
+
+    @staticmethod
+    def get_node_edge_events(
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        dst_ids: torch.Tensor,
+        event_label_ids: torch.Tensor,
+        event_timestamps: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Get flattened node and edge events from batched graph events. Used
+        to generate inputs for the TGN.
+
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        event_label_ids: (batch)
+        event_timestamps: (batch) or scalar
+
+        output:
+        {
+            "node_event_type_ids": (num_node_event),
+            "node_event_node_ids": (num_node_event),
+            "node_event_label_ids": (num_node_event),
+            "node_event_timestamps": (num_node_event) or scalar,
+            "edge_event_type_ids": (num_edge_event),
+            "edge_event_src_ids": (num_edge_event),
+            "edge_event_dst_ids": (num_edge_event),
+            "edge_event_label_ids": (num_edge_event),
+            "edge_event_timestamps": (num_edge_event) or scalar,
+        }
+        """
+        is_node_event = torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
+            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
+        )
+        is_edge_event = torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+        )
+        return {
+            "node_event_type_ids": event_type_ids[is_node_event],
+            "node_event_node_ids": src_ids[is_node_event],
+            "node_event_label_ids": event_label_ids[is_node_event],
+            "node_event_timestamps": event_timestamps
+            if event_timestamps.size() == tuple()
+            else event_timestamps[is_node_event],
+            "edge_event_type_ids": event_type_ids[is_edge_event],
+            "edge_event_src_ids": src_ids[is_edge_event],
+            "edge_event_dst_ids": dst_ids[is_edge_event],
+            "edge_event_label_ids": event_label_ids[is_edge_event],
+            "edge_event_timestamps": event_timestamps
+            if event_timestamps.size() == tuple()
+            else event_timestamps[is_edge_event],
+        }
