@@ -193,19 +193,20 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         obs_mask: torch.Tensor,
         prev_action_mask: torch.Tensor,
-        prev_event_type_ids: torch.Tensor,
-        prev_event_src_ids: torch.Tensor,
-        prev_event_src_mask: torch.Tensor,
-        prev_event_dst_ids: torch.Tensor,
-        prev_event_dst_mask: torch.Tensor,
-        prev_event_edge_ids: torch.Tensor,
-        prev_event_label_ids: torch.Tensor,
-        prev_event_timestamps: torch.Tensor,
-        prev_node_ids: torch.Tensor,
-        prev_node_mask: torch.Tensor,
-        prev_edge_ids: torch.Tensor,
-        prev_edge_index: torch.Tensor,
-        prev_edge_timestamps: torch.Tensor,
+        event_type_ids: torch.Tensor,
+        event_src_ids: torch.Tensor,
+        event_dst_ids: torch.Tensor,
+        event_label_ids: torch.Tensor,
+        event_timestamps: torch.Tensor,
+        memory: torch.Tensor,
+        node_features: torch.Tensor,
+        node_memory_update_index: torch.Tensor,
+        node_memory_update_mask: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_features: torch.Tensor,
+        edge_last_update: torch.Tensor,
+        edge_timestamps: torch.Tensor,
+        batch: torch.Tensor,
         decoder_hidden: Optional[torch.Tensor] = None,
         obs_word_ids: Optional[torch.Tensor] = None,
         prev_action_word_ids: Optional[torch.Tensor] = None,
@@ -213,79 +214,100 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         encoded_prev_action: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
-        input:
-            obs_mask: (batch, obs_len)
-            prev_action_mask: (batch, prev_action_len)
-            prev_event_type_ids: (batch, prev_event_seq_len)
-            prev_event_src_ids: (batch, prev_event_seq_len)
-            prev_event_src_mask: (batch, prev_event_seq_len)
-            prev_event_dst_ids: (batch, prev_event_seq_len)
-            prev_event_dst_mask: (batch, prev_event_seq_len)
-            prev_event_edge_ids: (batch, prev_event_seq_len)
-            prev_event_label_ids: (batch, prev_event_seq_len)
-            prev_event_mask: (batch, prev_event_seq_len)
-            prev_event_timestamps: (batch, prev_event_seq_len)
-            prev_node_ids: (batch, prev_num_node)
-            prev_node_mask: (batch, prev_num_node)
-            prev_edge_ids: (batch, prev_num_edge)
-            prev_edge_index: (batch, 2, prev_num_edge)
-            prev_edge_timestamps: (batch, prev_num_edge)
-            decoder_hidden: (batch, hidden_dim)
+        obs_mask: (batch, obs_len)
+        prev_action_mask: (batch, prev_action_len)
+        event_type_ids: (batch)
+        event_src_ids: (batch)
+        event_dst_ids: (batch)
+        event_label_ids: (batch)
+        event_timestamps: (batch) or scalar
+        memory: (prev_num_node, memory_dim)
+        node_features: (num_node, event_embedding_dim)
+        node_memory_update_index: (prev_num_node)
+        node_memory_update_mask: (prev_num_node)
+        edge_index: (2, num_edge)
+        edge_features: (num_edge, event_embedding_dim)
+        edge_last_update: (num_edge)
+        edge_timestamps: (num_edge) or scalar
+        batch: (num_node)
+        decoder_hidden: (batch, hidden_dim)
 
-            If encoded_obs and encoded_prev_action are given, they're used
-            Otherwise, they are calculated from obs_word_ids, obs_mask,
-            prev_action_word_ids and prev_action_mask.
+        If encoded_obs and encoded_prev_action are given, they're used
+        Otherwise, they are calculated from obs_word_ids, obs_mask,
+        prev_action_word_ids and prev_action_mask.
 
-            obs_word_ids: (batch, obs_len)
-            prev_action_word_ids: (batch, prev_action_len)
-            encoded_obs: (batch, obs_len, hidden_dim)
-            encoded_prev_action: (batch, prev_action_len, hidden_dim)
+        obs_word_ids: (batch, obs_len)
+        prev_action_word_ids: (batch, prev_action_len)
+        encoded_obs: (batch, obs_len, hidden_dim)
+        encoded_prev_action: (batch, prev_action_len, hidden_dim)
 
         output:
         {
             event_type_logits: (batch, num_event_type)
-            src_logits: (batch, num_node)
-            dst_logits: (batch, num_node)
+            src_logits: (batch, max_sub_graph_num_node)
+            dst_logits: (batch, max_sub_graph_num_node)
             label_logits: (batch, num_label)
             new_decoder_hidden: (batch, hidden_dim)
             encoded_obs: (batch, obs_len, hidden_dim)
             encoded_prev_action: (batch, prev_action_len, hidden_dim)
+            updated_memory: (num_node, hidden_dim)
         }
         """
-        if encoded_obs is None and encoded_prev_action is None:
+        if encoded_obs is None:
             assert obs_word_ids is not None
-            assert prev_action_word_ids is not None
             encoded_obs = self.encode_text(obs_word_ids, obs_mask)
             # (batch, obs_len, hidden_dim)
+        if encoded_prev_action is None:
+            assert prev_action_word_ids is not None
             encoded_prev_action = self.encode_text(
                 prev_action_word_ids, prev_action_mask
             )
             # (batch, prev_action_len, hidden_dim)
-        assert encoded_obs is not None
-        assert encoded_prev_action is not None
+
+        # separate graph events into node and edge events
+        node_edge_events = self.get_node_edge_events(
+            event_type_ids,
+            event_src_ids,
+            event_dst_ids,
+            event_label_ids,
+            event_timestamps,
+        )
 
         label_embeddings = (
             self.decoder.graph_event_decoder.event_label_head.label_embeddings
         )
-        prev_node_embeddings = self.tgn(
-            prev_event_type_ids,
-            prev_event_src_ids,
-            prev_event_src_mask,
-            prev_event_dst_ids,
-            prev_event_dst_mask,
-            prev_event_edge_ids,
-            label_embeddings[prev_event_label_ids],  # type: ignore
-            prev_event_timestamps,
-            prev_node_ids,
-            prev_edge_ids,
-            prev_edge_index,
-            prev_edge_timestamps,
+        tgn_results = self.tgn(
+            node_edge_events["node_event_type_ids"],
+            node_edge_events["node_event_node_ids"],
+            label_embeddings(node_edge_events["node_event_label_ids"]),
+            node_edge_events["node_event_timestamps"],
+            node_edge_events["edge_event_type_ids"],
+            node_edge_events["edge_event_src_ids"],
+            node_edge_events["edge_event_dst_ids"],
+            label_embeddings(node_edge_events["edge_event_label_ids"]),
+            node_edge_events["edge_event_timestamps"],
+            memory,
+            node_memory_update_index,
+            node_memory_update_mask,
+            node_features,
+            edge_index,
+            edge_features,
+            edge_timestamps,
+            edge_last_update,
         )
-        # (batch, prev_num_node, hidden_dim)
+        # node_embeddings: (num_node, hidden_dim)
+        # updated_memory: (num_node, hidden_dim)
+
+        # batchify node_embeddings
+        batch_node_embeddings, batch_node_mask = self.batchify_node_embeddings(
+            tgn_results["node_embeddings"], batch
+        )
+        # batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
+        # batch_node_mask: (batch, max_sub_graph_num_node)
 
         delta_g = self.f_delta(
-            prev_node_embeddings,
-            prev_node_mask,
+            batch_node_embeddings,
+            batch_node_mask,
             encoded_obs,
             obs_mask,
             encoded_prev_action,
@@ -293,15 +315,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         # (batch, 4 * hidden_dim)
 
-        results = self.decoder(
-            delta_g,
-            prev_node_embeddings * prev_node_mask.unsqueeze(-1),
-            hidden=decoder_hidden,
-        )
+        results = self.decoder(delta_g, batch_node_embeddings, hidden=decoder_hidden)
         results["new_decoder_hidden"] = results["new_hidden"]
         del results["new_hidden"]
         results["encoded_obs"] = encoded_obs
         results["encoded_prev_action"] = encoded_prev_action
+        results["updated_memory"] = tgn_results["updated_memory"]
 
         return results
 
