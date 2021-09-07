@@ -265,7 +265,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # (batch, prev_action_len, hidden_dim)
 
         # separate graph events into node and edge events
-        node_edge_events = self.get_node_edge_events(
+        edge_events = self.get_edge_events(
             event_type_ids,
             event_src_ids,
             event_dst_ids,
@@ -277,15 +277,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             self.decoder.graph_event_decoder.event_label_head.label_embeddings
         )
         tgn_results = self.tgn(
-            node_edge_events["node_event_type_ids"],
-            node_edge_events["node_event_node_ids"],
-            label_embeddings(node_edge_events["node_event_label_ids"]),
-            node_edge_events["node_event_timestamps"],
-            node_edge_events["edge_event_type_ids"],
-            node_edge_events["edge_event_src_ids"],
-            node_edge_events["edge_event_dst_ids"],
-            label_embeddings(node_edge_events["edge_event_label_ids"]),
-            node_edge_events["edge_event_timestamps"],
+            edge_events["edge_event_type_ids"],
+            edge_events["edge_event_src_ids"],
+            edge_events["edge_event_dst_ids"],
+            label_embeddings(edge_events["edge_event_label_ids"]),
+            edge_events["edge_event_timestamps"],
             memory,
             node_memory_update_index,
             node_memory_update_mask,
@@ -728,7 +724,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return batch_node_embeddings, batch_node_mask
 
     @staticmethod
-    def get_node_edge_events(
+    def get_edge_events(
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
@@ -736,8 +732,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         event_timestamps: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
-        Get flattened node and edge events from batched graph events. Used
-        to generate inputs for the TGN.
+        Get flattened edge events from batched graph events. Used to generate
+        inputs for the TGN.
 
         event_type_ids: (batch)
         src_ids: (batch)
@@ -747,10 +743,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         output:
         {
-            "node_event_type_ids": (num_node_event),
-            "node_event_node_ids": (num_node_event),
-            "node_event_label_ids": (num_node_event),
-            "node_event_timestamps": (num_node_event) or scalar,
             "edge_event_type_ids": (num_edge_event),
             "edge_event_src_ids": (num_edge_event),
             "edge_event_dst_ids": (num_edge_event),
@@ -758,21 +750,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "edge_event_timestamps": (num_edge_event) or scalar,
         }
         """
-        is_node_event = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
-        )
         is_edge_event = torch.logical_or(
             event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
             event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
         )
         return {
-            "node_event_type_ids": event_type_ids[is_node_event],
-            "node_event_node_ids": src_ids[is_node_event],
-            "node_event_label_ids": event_label_ids[is_node_event],
-            "node_event_timestamps": event_timestamps
-            if event_timestamps.size() == tuple()
-            else event_timestamps[is_node_event],
             "edge_event_type_ids": event_type_ids[is_edge_event],
             "edge_event_src_ids": src_ids[is_edge_event],
             "edge_event_dst_ids": dst_ids[is_edge_event],

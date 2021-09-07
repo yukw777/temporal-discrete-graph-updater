@@ -107,10 +107,6 @@ class TemporalGraphNetwork(nn.Module):
 
     def forward(
         self,
-        node_event_type_ids: torch.Tensor,
-        node_event_node_ids: torch.Tensor,
-        node_event_embeddings: torch.Tensor,
-        node_event_timestamps: torch.Tensor,
         edge_event_type_ids: torch.Tensor,
         edge_event_src_ids: torch.Tensor,
         edge_event_dst_ids: torch.Tensor,
@@ -128,10 +124,6 @@ class TemporalGraphNetwork(nn.Module):
         """
         Calculate the updated node embeddings based on the given events.
 
-        node_event_type_ids: (num_node_event)
-        node_event_node_ids: (num_node_event)
-        node_event_embeddings: (num_node_event, event_embedding_dim)
-        node_event_timestamps: (num_node_event)
         edge_event_type_ids: (num_edge_event)
         edge_event_src_ids: (num_edge_event)
         edge_event_dst_ids: (num_edge_event)
@@ -158,15 +150,6 @@ class TemporalGraphNetwork(nn.Module):
             "updated_memory": (num_node, memory_dim),
         }
         """
-        # calculate messages
-        node_msgs = self.node_message(
-            node_event_type_ids,
-            node_event_node_ids,
-            node_event_embeddings,
-            node_event_timestamps,
-            memory,
-        )
-        # (num_node_event, message_dim)
         src_msgs, dst_msgs = self.edge_message(
             edge_event_type_ids,
             edge_event_src_ids,
@@ -181,13 +164,9 @@ class TemporalGraphNetwork(nn.Module):
         # dst_msgs: (num_edge_event, message_dim)
 
         # aggregate messages
-        event_node_ids = torch.cat(
-            [node_event_node_ids, edge_event_src_ids, edge_event_dst_ids]
-        )
-        # (num_node_event + 2 * num_edge_event)
-        agg_msgs = scatter(
-            torch.cat([node_msgs, src_msgs, dst_msgs]), event_node_ids, dim=0
-        )
+        event_node_ids = torch.cat([edge_event_src_ids, edge_event_dst_ids])
+        # (2 * num_edge_event)
+        agg_msgs = scatter(torch.cat([src_msgs, dst_msgs]), event_node_ids, dim=0)
         # (max_event_node_id, message_dim)
 
         # update the memories
@@ -268,52 +247,6 @@ class TemporalGraphNetwork(nn.Module):
         # (num_node, memory_dim)
 
         return updated_memory
-
-    def node_message(
-        self,
-        event_type_ids: torch.Tensor,
-        node_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-        event_timestamps: torch.Tensor,
-        memory: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Calculate node event messages. We concatenate the event type,
-        node memory, time embedding and event embedding. Note that node messages
-        created here do contain placeholder zeros for the destination node in
-        order to keep the same dimension as edge messages.
-
-        Special events like pad, start, end are masked out to be zeros, which means
-        these will go away when messages are aggregated.
-
-        event_type_ids: (batch)
-        node_ids: (batch)
-        event_embeddings: (batch event_embedding_dim)
-        event_timestamps: (batch)
-        memory: (num_node, memory_dim)
-
-        output: (batch, message_dim)
-        """
-        event_type_embs = self.event_type_emb(event_type_ids)
-        # (batch, event_type_emb_dim)
-
-        node_memory = memory[node_ids]
-        # (batch, memory_dim)
-
-        timestamp_emb = self.time_encoder(event_timestamps)
-        # (batch, time_enc_dim)
-
-        return torch.cat(
-            [
-                event_type_embs,
-                node_memory,
-                torch.zeros_like(node_memory),
-                timestamp_emb,
-                event_embeddings,
-            ],
-            dim=-1,
-        )
-        # (batch, message_dim)
 
     def edge_message(
         self,

@@ -257,10 +257,6 @@ def test_sldgu_forward(
             torch.tensor([0, 0]),
             torch.tensor([0, 0]).float(),
             {
-                "node_event_type_ids": torch.empty(0).long(),
-                "node_event_node_ids": torch.empty(0).long(),
-                "node_event_label_ids": torch.empty(0).long(),
-                "node_event_timestamps": torch.empty(0),
                 "edge_event_type_ids": torch.empty(0).long(),
                 "edge_event_src_ids": torch.empty(0).long(),
                 "edge_event_dst_ids": torch.empty(0).long(),
@@ -284,12 +280,6 @@ def test_sldgu_forward(
             torch.tensor([0, 2, 4, 2, 6, 0]),
             torch.tensor([0, 4, 6, 2, 4, 0]).float(),
             {
-                "node_event_type_ids": torch.tensor(
-                    [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-delete"]]
-                ),
-                "node_event_node_ids": torch.tensor([0, 2]),
-                "node_event_label_ids": torch.tensor([2, 2]),
-                "node_event_timestamps": torch.tensor([4.0, 2.0]),
                 "edge_event_type_ids": torch.tensor(
                     [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
                 ),
@@ -301,17 +291,13 @@ def test_sldgu_forward(
         ),
     ],
 )
-def test_sldgu_get_node_edge_events(
+def test_sldgu_get_edge_events(
     event_type_ids, src_ids, dst_ids, event_label_ids, event_timestamps, expected
 ):
-    results = StaticLabelDiscreteGraphUpdater.get_node_edge_events(
+    results = StaticLabelDiscreteGraphUpdater.get_edge_events(
         event_type_ids, src_ids, dst_ids, event_label_ids, event_timestamps
     )
     for k in [
-        "node_event_type_ids",
-        "node_event_node_ids",
-        "node_event_label_ids",
-        "node_event_timestamps",
         "edge_event_type_ids",
         "edge_event_src_ids",
         "edge_event_dst_ids",

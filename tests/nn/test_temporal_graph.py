@@ -12,77 +12,6 @@ class MockTimeEncoder(nn.Module):
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,event_type_emb,node_ids,event_embeddings,event_timestamps,"
-    "memory,expected",
-    [
-        (
-            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-            torch.linspace(0, 6, 7).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([0]),
-            torch.tensor([[3] * 4]).float(),
-            torch.tensor([0]),
-            torch.linspace(4, 7, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor(
-                [
-                    [3] * 4 + [4] * 4 + [0] * 4 + [3] * 4 + [3] * 4,
-                ]
-            ).float(),
-        ),
-        (
-            torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
-            torch.linspace(0, 6, 7).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([0]),
-            torch.tensor([[3] * 4]).float(),
-            torch.tensor([0]),
-            torch.linspace(4, 7, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor(
-                [
-                    [4] * 4 + [4] * 4 + [0] * 4 + [3] * 4 + [3] * 4,
-                ]
-            ).float(),
-        ),
-        (
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                ]
-            ),
-            torch.linspace(1, 7, 7).unsqueeze(-1).expand(-1, 4),
-            torch.tensor([1, 2, 3]),
-            torch.tensor([[8] * 4, [9] * 4, [10] * 4]).float(),
-            torch.tensor([1, 2, 3]),
-            torch.linspace(11, 14, 4).unsqueeze(-1).expand(-1, 4),
-            torch.tensor(
-                [
-                    [4] * 4 + [12] * 4 + [0] * 4 + [4] * 4 + [8] * 4,
-                    [5] * 4 + [13] * 4 + [0] * 4 + [5] * 4 + [9] * 4,
-                    [4] * 4 + [14] * 4 + [0] * 4 + [6] * 4 + [10] * 4,
-                ]
-            ).float(),
-        ),
-    ],
-)
-def test_tgn_node_message(
-    event_type_ids,
-    event_type_emb,
-    node_ids,
-    event_embeddings,
-    event_timestamps,
-    memory,
-    expected,
-):
-    tgn = TemporalGraphNetwork(4, 4, 4, 4, 8, 1, 1)
-    tgn.time_encoder = MockTimeEncoder()
-    tgn.event_type_emb = nn.Embedding.from_pretrained(event_type_emb)
-
-    assert tgn.node_message(
-        event_type_ids, node_ids, event_embeddings, event_timestamps, memory
-    ).equal(expected)
-
-
-@pytest.mark.parametrize(
     "event_type_ids,event_type_emb,src_ids,dst_ids,event_embeddings,event_timestamps,"
     "memory,edge_index,last_update,src_expected,dst_expected",
     [
@@ -194,16 +123,16 @@ def test_tgn_edge_message(
 
 @pytest.mark.parametrize(
     "event_type_dim,memory_dim,time_enc_dim,event_embedding_dim,output_dim,"
-    "num_node_event,num_edge_event,prev_num_node,num_node,num_edge,"
+    "num_edge_event,prev_num_node,num_node,num_edge,"
     "transformer_conv_num_block,transformer_conv_num_heads",
     [
-        (4, 8, 16, 20, 12, 0, 0, 0, 0, 0, 1, 1),
-        (4, 8, 16, 20, 12, 1, 0, 1, 1, 0, 1, 1),
-        (4, 8, 16, 20, 12, 0, 1, 2, 2, 1, 1, 1),
-        (4, 8, 16, 20, 12, 8, 4, 8, 5, 10, 4, 4),
-        (8, 16, 32, 48, 24, 16, 10, 10, 8, 10, 6, 6),
-        (8, 16, 32, 48, 24, 16, 10, 6, 8, 10, 6, 6),
-        (8, 16, 32, 48, 24, 16, 10, 12, 8, 10, 8, 8),
+        (4, 8, 16, 20, 12, 0, 0, 0, 0, 1, 1),
+        (4, 8, 16, 20, 12, 0, 1, 1, 0, 1, 1),
+        (4, 8, 16, 20, 12, 1, 2, 2, 1, 1, 1),
+        (4, 8, 16, 20, 12, 4, 8, 5, 10, 4, 4),
+        (8, 16, 32, 48, 24, 10, 10, 8, 10, 6, 6),
+        (8, 16, 32, 48, 24, 10, 6, 8, 10, 6, 6),
+        (8, 16, 32, 48, 24, 10, 12, 8, 10, 8, 8),
     ],
 )
 def test_tgn_forward(
@@ -212,7 +141,6 @@ def test_tgn_forward(
     time_enc_dim,
     event_embedding_dim,
     output_dim,
-    num_node_event,
     num_edge_event,
     prev_num_node,
     num_node,
@@ -235,12 +163,6 @@ def test_tgn_forward(
         else torch.zeros(2, num_edge).long()
     )
     results = tgn(
-        torch.randint(len(EVENT_TYPES), (num_node_event,)),
-        torch.randint(prev_num_node, (num_node_event,))
-        if prev_num_node > 0
-        else torch.zeros(num_node_event).long(),
-        torch.rand(num_node_event, event_embedding_dim),
-        torch.randint(10, (num_node_event,)).float(),
         torch.randint(len(EVENT_TYPES), (num_edge_event,)),
         torch.randint(prev_num_node, (num_edge_event,))
         if prev_num_node > 0
