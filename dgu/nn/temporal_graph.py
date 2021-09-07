@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from typing import Tuple, Optional, Dict
 from torch_geometric.nn import TransformerConv
@@ -167,7 +166,7 @@ class TemporalGraphNetwork(nn.Module):
             node_event_timestamps,
             memory,
         )
-        # (batch, message_dim)
+        # (num_node_event, message_dim)
         src_msgs, dst_msgs = self.edge_message(
             edge_event_type_ids,
             edge_event_src_ids,
@@ -178,31 +177,28 @@ class TemporalGraphNetwork(nn.Module):
             edge_index,
             edge_last_update,
         )
-        # src_msgs: (batch, message_dim)
-        # dst_msgs: (batch, message_dim)
+        # src_msgs: (num_edge_event, message_dim)
+        # dst_msgs: (num_edge_event, message_dim)
 
         # aggregate messages
         event_node_ids = torch.cat(
             [node_event_node_ids, edge_event_src_ids, edge_event_dst_ids]
         )
+        # (num_node_event + 2 * num_edge_event)
         agg_msgs = scatter(
             torch.cat([node_msgs, src_msgs, dst_msgs]), event_node_ids, dim=0
         )
         # (max_event_node_id, message_dim)
 
         # update the memories
-        unique_event_node_ids = event_node_ids.unique()
-        updated_prev_memory = memory.clone()
-        updated_prev_memory[unique_event_node_ids] = self.rnn(
-            agg_msgs[unique_event_node_ids], memory[unique_event_node_ids]
+        updated_memory = self.update_memory(
+            memory,
+            node_memory_update_index,
+            node_memory_update_mask,
+            node_features,
+            event_node_ids,
+            agg_msgs,
         )
-        # (num_unique_event_nodes, memory_dim)
-        updated_memory = torch.zeros(
-            node_features.size(0), self.memory_dim, device=updated_prev_memory.device
-        )
-        updated_memory[
-            node_memory_update_index[node_memory_update_mask]
-        ] = updated_prev_memory[node_memory_update_mask]
         # (num_node, memory_dim)
 
         # calculate the node embeddings
@@ -230,6 +226,48 @@ class TemporalGraphNetwork(nn.Module):
             "updated_memory": updated_memory
             # (num_node, memory_dim)
         }
+
+    def update_memory(
+        self,
+        memory: torch.Tensor,
+        node_memory_update_index: torch.Tensor,
+        node_memory_update_mask: torch.Tensor,
+        node_features: torch.Tensor,
+        event_node_ids: torch.Tensor,
+        agg_msgs: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Update the memory by resizing and setting new memories.
+
+        memory: (prev_num_node, memory_dim)
+            Node memories before the given graph events.
+        node_memory_update_index: (prev_num_node)
+            New indices for nodes in the previous memory.
+        node_memory_update_mask: (prev_num_node)
+            Mask for nodes that have not been deleted in the previous memory.
+        node_features: (num_node, event_embedding_dim)
+            Node features after the given graph events.
+        event_node_ids: (num_node_event + 2 * num_edge_event)
+        agg_msgs: (max_event_node_id, message_dim)
+
+        output: (num_node, memory_dim)
+        """
+        # update the memories
+        updated_prev_memory = memory.clone()
+        if event_node_ids.numel() > 0:
+            unique_event_node_ids = event_node_ids.unique()
+            updated_prev_memory[unique_event_node_ids] = self.rnn(
+                agg_msgs[unique_event_node_ids], memory[unique_event_node_ids]
+            )
+        updated_memory = torch.zeros(
+            node_features.size(0), self.memory_dim, device=updated_prev_memory.device
+        )
+        updated_memory[
+            node_memory_update_index[node_memory_update_mask]
+        ] = updated_prev_memory[node_memory_update_mask]
+        # (num_node, memory_dim)
+
+        return updated_memory
 
     def node_message(
         self,
@@ -350,198 +388,3 @@ class TemporalGraphNetwork(nn.Module):
         )
         # (batch, message_dim)
         return src_messages, dst_messages
-
-    @staticmethod
-    def update_features_helper(
-        add_event_type_id: int,
-        features: torch.Tensor,
-        event_type_ids: torch.Tensor,
-        event_obj_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-    ) -> torch.Tensor:
-        # update node features using node-add event embeddings
-        is_add_event = event_type_ids == add_event_type_id
-        # (num_event)
-        add_event_obj_ids = event_obj_ids[is_add_event]
-        # (num_add_event)
-
-        if add_event_obj_ids.numel() == 0:
-            # nothing has been added, so nothing to do
-            return features.clone()
-
-        # expand the given features if a node/edge with a bigger id has been added
-        num_new_objs = int(add_event_obj_ids.max() + 1 - features.size(0))
-        if num_new_objs > 0:
-            new_features = F.pad(features, (0, 0, 0, num_new_objs))
-        else:
-            # no need to expand, just copy
-            new_features = features.clone()
-
-        # update features
-        add_event_embeddings = event_embeddings[is_add_event]
-        # (num_add_event, event_embedding_dim)
-        new_features[add_event_obj_ids] = add_event_embeddings
-
-        return new_features
-
-    @staticmethod
-    def update_node_features(
-        node_features: torch.Tensor,
-        node_event_type_ids: torch.Tensor,
-        node_event_node_ids: torch.Tensor,
-        node_event_embeddings: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Update node features using node-add event embeddings.
-
-        node_features: (num_node, event_embedding_dim)
-        node_event_type_ids: (num_node_event)
-        node_event_node_ids: (num_node_event)
-        node_event_embeddings: (num_node_event, event_embedding_dim)
-
-        output: (new_num_node, event_embedding_dim)
-        """
-        return TemporalGraphNetwork.update_features_helper(
-            EVENT_TYPE_ID_MAP["node-add"],
-            node_features,
-            node_event_type_ids,
-            node_event_node_ids,
-            node_event_embeddings,
-        )
-
-    @staticmethod
-    def update_edge_features(
-        edge_features: torch.Tensor,
-        edge_event_type_ids: torch.Tensor,
-        edge_event_edge_ids: torch.Tensor,
-        edge_event_embeddings: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Update edge features using edge-add event embeddings.
-
-        edge_features: (num_edge, event_embedding_dim)
-        event_type_ids: (num_edge_event)
-        event_edge_ids: (num_edge_event)
-        event_embeddings: (num_edge_event, event_embedding_dim)
-
-        output: (new_num_edge, event_embedding_dim)
-        """
-        return TemporalGraphNetwork.update_features_helper(
-            EVENT_TYPE_ID_MAP["edge-add"],
-            edge_features,
-            edge_event_type_ids,
-            edge_event_edge_ids,
-            edge_event_embeddings,
-        )
-
-    @staticmethod
-    def expand_last_update(
-        edge_last_update: torch.Tensor,
-        edge_event_type_ids: torch.Tensor,
-        edge_event_edge_ids: torch.Tensor,
-        edge_event_timestamps: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Expand last update timestamps for edges with last updates for new edges added.
-        The last updates for new edges are initialized to be the given event timestamps
-        so that the relative timestamps would be 0.
-
-        edge_last_update: (num_edge)
-        edge_event_type_ids: (num_event)
-        edge_event_edge_ids: (num_event)
-        edge_event_timestamps: (num_event)
-
-        output: (new_num_edge)
-        """
-        is_edge_add_event = edge_event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
-        # (num_event)
-        edge_add_event_edge_ids = edge_event_edge_ids[is_edge_add_event]
-        # (num_edge_add_event)
-
-        if edge_add_event_edge_ids.numel() == 0:
-            # nothing has been added, so no need to expand
-            expanded_last_update = edge_last_update.clone()
-        else:
-            num_new_edges = int(
-                edge_add_event_edge_ids.max() + 1 - edge_last_update.size(0)
-            )
-            if num_new_edges > 0:
-                expanded_last_update = F.pad(edge_last_update, (0, num_new_edges))
-            else:
-                # no need to expand
-                expanded_last_update = edge_last_update.clone()
-        # (new_num_edge)
-
-        # set the last updates of the new edges as their event timestamps
-        expanded_last_update[edge_add_event_edge_ids] = edge_event_timestamps[
-            is_edge_add_event
-        ]
-
-        return expanded_last_update
-
-    @staticmethod
-    def update_last_update(
-        edge_last_update: torch.Tensor,
-        edge_event_type_ids: torch.Tensor,
-        edge_event_edge_ids: torch.Tensor,
-        edge_event_timestamps: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Update last update timestamps for edges with the given graph event.
-        We assume that all the newly added edges already have up-to-date last updates
-        from expand_last_update(), so we don't touch them.
-
-        edge_last_update: (num_edge)
-        edge_event_type_ids: (num_event)
-        edge_event_edge_ids: (num_event)
-        edge_event_timestamps: (num_event)
-
-        output: (num_edge)
-        """
-        is_edge_delete_event = edge_event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
-        # (num_edge_delete_event)
-        edge_delete_event_edge_ids = edge_event_edge_ids[is_edge_delete_event]
-        # (num_edge_add_event)
-        updated_last_update = edge_last_update.clone()
-        updated_last_update[edge_delete_event_edge_ids] = edge_event_timestamps[
-            is_edge_delete_event
-        ]
-
-        return updated_last_update
-
-    def expand_memory(
-        self,
-        memory: torch.Tensor,
-        node_event_type_ids: torch.Tensor,
-        node_event_node_ids: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Expand memory for newly added nodes and initialize to be 0.
-
-        memory: (num_node, memory_dim)
-        node_event_type_ids: (num_node_event)
-        node_event_node_ids: (num_node_event)
-
-        output: (new_num_node, memory_dim)
-        """
-        is_node_add_event = node_event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
-        # (num_event)
-        node_add_event_node_ids = node_event_node_ids[is_node_add_event]
-        # (num_node_add_event)
-
-        if node_add_event_node_ids.numel() == 0:
-            # nothing has been added, so no need to expand
-            expanded_memory = memory.clone()
-        else:
-            num_new_nodes = int(node_add_event_node_ids.max() + 1 - memory.size(0))
-            if num_new_nodes > 0:
-                expanded_memory = F.pad(memory, (0, 0, 0, num_new_nodes))
-            else:
-                # no need to expand
-                expanded_memory = memory.clone()
-        # (new_num_edge)
-
-        # set the memory of new nodes to 0
-        expanded_memory.index_fill_(0, node_add_event_node_ids, 0)
-
-        return expanded_memory
