@@ -5,9 +5,6 @@ from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-from dgu.data import TWCmdGenTemporalDataModule
-from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
-
 
 @hydra.main(config_path="train_static_label_dgu_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
@@ -27,19 +24,15 @@ def main(cfg: DictConfig) -> None:
     )
 
     # data module
-    dm = TWCmdGenTemporalDataModule(
-        **cfg.data,
-        max_num_nodes=cfg.model.max_num_nodes,
-        max_num_edges=cfg.model.max_num_edges,
-    )
+    dm = instantiate(cfg.data_module)
 
     # lightning module
-    lm = StaticLabelDiscreteGraphUpdater(
-        **cfg.model,
+    lm = instantiate(
+        cfg.model,
         **cfg.train,
-        word_vocab_path=cfg.data.word_vocab_file,
-        node_vocab_path=cfg.data.node_vocab_file,
-        relation_vocab_path=cfg.data.relation_vocab_file,
+        word_vocab_path=cfg.data_module.word_vocab_file,
+        node_vocab_path=cfg.data_module.node_vocab_file,
+        relation_vocab_path=cfg.data_module.relation_vocab_file,
     )
 
     # fit

@@ -37,8 +37,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def __init__(
         self,
         hidden_dim: int = 8,
-        max_num_nodes: int = 100,
-        max_num_edges: int = 200,
         word_emb_dim: int = 300,
         tgn_event_type_emb_dim: int = 8,
         tgn_memory_dim: int = 8,
@@ -62,8 +60,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(
             "hidden_dim",
-            "max_num_nodes",
-            "max_num_edges",
             "word_emb_dim",
             "tgn_event_type_emb_dim",
             "tgn_memory_dim",
@@ -139,7 +135,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_label_embeddings = masked_mean(
             pretrained_word_embeddings(edge_label_word_ids), edge_label_mask
         )
-        self.label_id_map: List[str] = node_vocab + relation_vocab
+        self.labels: List[str] = node_vocab + relation_vocab
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -152,8 +148,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # temporal graph network
         self.tgn = TemporalGraphNetwork(
-            max_num_nodes,
-            max_num_edges,
             tgn_event_type_emb_dim,
             tgn_memory_dim,
             tgn_time_enc_dim,
@@ -383,31 +377,46 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         batch: TWCmdGenTemporalBatch,
         batch_idx: int,
-        _hiddens: Optional[torch.Tensor],  # not used since it's tracked in self.memory
-    ) -> torch.Tensor:
+        hiddens: Optional[torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        batch: the batch data
+        batch_idx: the batch id, unused for now
+        hiddens: (num_node, memory_dim), memory from the last step
+        """
+        if hiddens is None:
+            hiddens = torch.zeros(0, self.tgn.memory_dim, device=self.device)
+        label_embeddings = (
+            self.decoder.graph_event_decoder.event_label_head.label_embeddings
+        )
         losses: List[torch.Tensor] = []
         for textual_inputs, graph_event_inputs, _ in batch.data:
             decoder_hidden: Optional[torch.Tensor] = None
+            encoded_obs: Optional[torch.Tensor] = None
+            encoded_prev_action: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
                     textual_inputs.prev_action_mask,
                     graph_event.tgt_event_type_ids,
                     graph_event.tgt_event_src_ids,
-                    graph_event.tgt_event_src_mask,
                     graph_event.tgt_event_dst_ids,
-                    graph_event.tgt_event_dst_mask,
-                    graph_event.tgt_event_edge_ids,
                     graph_event.tgt_event_label_ids,
                     graph_event.tgt_event_timestamps,
-                    graph_event.node_ids,
-                    graph_event.node_mask,
-                    graph_event.edge_ids,
+                    hiddens,
+                    label_embeddings(graph_event.node_label_ids),
+                    graph_event.node_memory_update_index,
+                    graph_event.node_memory_update_mask,
                     graph_event.edge_index,
+                    label_embeddings(graph_event.edge_label_ids),
+                    graph_event.edge_last_update,
                     graph_event.edge_timestamps,
+                    graph_event.batch,
                     decoder_hidden=decoder_hidden,
                     obs_word_ids=textual_inputs.obs_word_ids,
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
+                    encoded_obs=encoded_obs,
+                    encoded_prev_action=encoded_prev_action,
                 )
 
                 # calculate losses
@@ -441,15 +450,20 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
                 losses.append(event_type_loss + src_loss + dst_loss + label_loss)
 
+                # save the encoded obs and prev action
+                encoded_obs = results["encoded_obs"]
+                encoded_prev_action = results["encoded_prev_action"]
+
                 # update decoder hidden
                 decoder_hidden = results["new_decoder_hidden"]
 
-                # detach memory
-                self.tgn.memory.detach_()  # type: ignore
+                # update memory or "hiddens"
+                hiddens = results["updated_memory"]
 
         loss = torch.stack(losses).mean()
         self.log("train_loss", loss, prog_bar=True)
-        return loss
+        assert hiddens is not None
+        return {"loss": loss, "hiddens": hiddens}
 
     def eval_step(
         self, batch: TWCmdGenTemporalBatch, log_prefix: str
@@ -457,6 +471,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         batch_size = batch.data[0][0].obs_word_ids.size(0)
         table_data: List[Tuple[str, str]] = []
 
+        memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
+        label_embeddings = (
+            self.decoder.graph_event_decoder.event_label_head.label_embeddings
+        )
         losses: List[torch.Tensor] = []
         for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
             step_groundtruth_cmds: List[List[str]] = [[]] * batch_size
@@ -472,26 +490,31 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
 
             decoder_hidden: Optional[torch.Tensor] = None
+            encoded_obs: Optional[torch.Tensor] = None
+            encoded_prev_action: Optional[torch.Tensor] = None
             for graph_event in graph_event_inputs:
                 results = self(
                     textual_inputs.obs_mask,
                     textual_inputs.prev_action_mask,
                     graph_event.tgt_event_type_ids,
                     graph_event.tgt_event_src_ids,
-                    graph_event.tgt_event_src_mask,
                     graph_event.tgt_event_dst_ids,
-                    graph_event.tgt_event_dst_mask,
-                    graph_event.tgt_event_edge_ids,
                     graph_event.tgt_event_label_ids,
                     graph_event.tgt_event_timestamps,
-                    graph_event.node_ids,
-                    graph_event.node_mask,
-                    graph_event.edge_ids,
+                    memory,
+                    label_embeddings(graph_event.node_label_ids),
+                    graph_event.node_memory_update_index,
+                    graph_event.node_memory_update_mask,
                     graph_event.edge_index,
+                    label_embeddings(graph_event.edge_label_ids),
+                    graph_event.edge_last_update,
                     graph_event.edge_timestamps,
+                    graph_event.batch,
                     decoder_hidden=decoder_hidden,
                     obs_word_ids=textual_inputs.obs_word_ids,
                     prev_action_word_ids=textual_inputs.prev_action_word_ids,
+                    encoded_obs=encoded_obs,
+                    encoded_prev_action=encoded_prev_action,
                 )
 
                 # calculate losses
@@ -560,7 +583,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
 
                 # calculate graph tuples from predicted graph events (teacher forcing)
-                for i, (event_type_id, src_pos_id, dst_pos_id, label_id) in enumerate(
+                for i, (event_type_id, src_id, dst_id, label_id) in enumerate(
                     zip(
                         results["event_type_logits"].argmax(dim=1).tolist(),
                         results["src_logits"].argmax(dim=1).tolist(),
@@ -577,15 +600,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                             if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
                             else "delete"
                         )
-                        src_label = graph_event.node_labels[i][
-                            graph_event.node_ids[i, src_pos_id].item()  # type: ignore
-                        ]
-                        dst_label = graph_event.node_labels[i][
-                            graph_event.node_ids[i, dst_pos_id].item()  # type: ignore
-                        ]
+                        src_label = self.labels[graph_event.node_label_ids[src_id]]
+                        dst_label = self.labels[graph_event.node_label_ids[dst_id]]
                         # in the original dataset, multi-word edge labels are joined by
                         # an underscore
-                        edge_label = "_".join(self.label_id_map[label_id].split())
+                        edge_label = "_".join(self.labels[label_id].split())
                         predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
                         step_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
                         step_predicted_tokens[i].extend(predicted_cmd_tokens)
@@ -618,8 +637,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 )
 
+                # save the encoded obs and prev action
+                encoded_obs = results["encoded_obs"]
+                encoded_prev_action = results["encoded_prev_action"]
+
                 # update decoder hidden
                 decoder_hidden = results["new_decoder_hidden"]
+
+                # update memory
+                memory = results["updated_memory"]
+
         loss = torch.stack(losses).mean()
         self.log(log_prefix + "_loss", loss, prog_bar=True)
         return table_data
@@ -665,24 +692,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
-
-    def on_train_batch_start(
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
-    ) -> None:
-        # reset tgn
-        self.tgn.reset()
-
-    def on_validation_batch_start(
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
-    ) -> None:
-        # reset tgn
-        self.tgn.reset()
-
-    def on_test_batch_start(
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int, dataloader_idx: int
-    ) -> None:
-        # reset tgn
-        self.tgn.reset()
 
     def tbptt_split_batch(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, split_size: int
