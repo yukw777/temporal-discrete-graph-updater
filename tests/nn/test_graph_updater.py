@@ -218,3 +218,47 @@ def test_sldgu_get_node_edge_events(
         "edge_event_timestamps",
     ]:
         assert results[k].equal(expected[k])
+
+
+@pytest.mark.parametrize(
+    "node_embeddings,batch,expected_batch_node_embeddings,expected_batch_mask",
+    [
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([0, 1, 1, 2, 2, 2]),
+            torch.tensor(
+                [
+                    [[2] * 4, [0] * 4, [0] * 4],
+                    [[3] * 4, [4] * 4, [0] * 4],
+                    [[5] * 4, [6] * 4, [7] * 4],
+                ]
+            ).float(),
+            torch.tensor([[1, 0, 0], [1, 1, 0], [1, 1, 1]]).float(),
+        ),
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([0, 0, 0, 1, 2, 2]),
+            torch.tensor(
+                [
+                    [[2] * 4, [3] * 4, [4] * 4],
+                    [[5] * 4, [0] * 4, [0] * 4],
+                    [[6] * 4, [7] * 4, [0] * 4],
+                ]
+            ).float(),
+            torch.tensor([[1, 1, 1], [1, 0, 0], [1, 1, 0]]).float(),
+        ),
+    ],
+)
+def test_batchify_node_embeddings(
+    node_embeddings, batch, expected_batch_node_embeddings, expected_batch_mask
+):
+    (
+        batch_node_embeddings,
+        batch_mask,
+    ) = StaticLabelDiscreteGraphUpdater.batchify_node_embeddings(node_embeddings, batch)
+    assert batch_node_embeddings.equal(expected_batch_node_embeddings)
+    assert batch_mask.equal(expected_batch_mask)

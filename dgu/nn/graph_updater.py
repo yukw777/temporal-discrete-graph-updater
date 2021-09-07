@@ -12,6 +12,7 @@ from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
+from torch.nn.utils.rnn import pad_sequence
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
@@ -672,6 +673,40 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self, batch: TWCmdGenTemporalBatch, split_size: int
     ) -> List[TWCmdGenTemporalBatch]:
         return batch.split(split_size)
+
+    @staticmethod
+    def batchify_node_embeddings(
+        node_embeddings: torch.Tensor, batch: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Batchify node embeddings from the mini-batched global graph so that
+        they can be used to calculate delta_g. It also calculates the corresponding
+        node mask. "batch" is assumed to be ascending order, which is what pytorch
+        geometric's Batch produces.
+
+        node_embeddings: (num_node, hidden_dim)
+        batch: (num_node)
+
+        output:
+            batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
+            batch_node_mask: (batch, max_sub_graph_num_node)
+        """
+        # batchify node_embeddings based on batch
+        bincount = batch.bincount()
+        splits = bincount[:-1].cumsum(0).cpu()
+        batch_node_embeddings = pad_sequence(
+            node_embeddings.tensor_split(splits), batch_first=True  # type: ignore
+        )
+        # (batch, num_node, hidden_dim)
+
+        # calculate node_mask
+        batch_node_mask = pad_sequence(
+            torch.ones(  # type: ignore
+                bincount.sum(), device=batch_node_embeddings.device
+            ).tensor_split(splits),
+            batch_first=True,
+        )
+        return batch_node_embeddings, batch_node_mask
 
     @staticmethod
     def get_node_edge_events(
