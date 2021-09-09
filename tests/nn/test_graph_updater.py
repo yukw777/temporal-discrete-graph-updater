@@ -340,7 +340,7 @@ def test_sldgu_get_edge_events(
         ),
     ],
 )
-def test_batchify_node_embeddings(
+def test_sldgu_batchify_node_embeddings(
     node_embeddings, batch, expected_batch_node_embeddings, expected_batch_mask
 ):
     (
@@ -349,3 +349,323 @@ def test_batchify_node_embeddings(
     ) = StaticLabelDiscreteGraphUpdater.batchify_node_embeddings(node_embeddings, batch)
     assert batch_node_embeddings.equal(expected_batch_node_embeddings)
     assert batch_mask.equal(expected_batch_mask)
+
+
+@pytest.mark.parametrize("batch,num_node", [(1, 5), (8, 12)])
+def test_sldgu_calculate_loss(sldgu, batch, num_node):
+    assert (
+        sldgu.calculate_loss(
+            torch.rand(batch, len(EVENT_TYPES)),
+            torch.randint(len(EVENT_TYPES), (batch,)),
+            torch.rand(batch, num_node),
+            torch.randint(num_node, (batch,)),
+            torch.rand(batch, num_node),
+            torch.randint(num_node, (batch,)),
+            torch.rand(batch, len(sldgu.labels)),
+            torch.randint(len(sldgu.labels), (batch,)),
+            torch.randint(2, (batch,)),
+            torch.randint(2, (batch,)),
+            torch.randint(2, (batch,)),
+        ).size()
+        == tuple()
+    )
+
+
+@pytest.mark.parametrize("batch,num_node", [(1, 5), (8, 12)])
+def test_sldgu_calculate_f1s(sldgu, batch, num_node):
+    results = sldgu.calculate_f1s(
+        torch.rand(batch, len(EVENT_TYPES)),
+        torch.randint(len(EVENT_TYPES), (batch,)),
+        torch.rand(batch, num_node),
+        torch.randint(num_node, (batch,)),
+        torch.rand(batch, num_node),
+        torch.randint(num_node, (batch,)),
+        torch.rand(batch, len(sldgu.labels)),
+        torch.randint(len(sldgu.labels), (batch,)),
+        torch.randint(2, (batch,)),
+        torch.randint(2, (batch,)),
+    )
+    assert results["event_type_f1"].size() == tuple()
+    if "src_node_f1" in results:
+        assert results["src_node_f1"].size() == tuple()
+    if "dst_node_f1" in results:
+        assert results["dst_node_f1"].size() == tuple()
+    assert results["label_f1"].size() == tuple()
+
+
+@pytest.mark.parametrize(
+    "event_type_ids,src_ids,dst_ids,label_ids,node_label_ids,batch,expected",
+    [
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([0]),
+            torch.tensor([0]),
+            torch.tensor([0]),  # player
+            torch.tensor([0]),
+            torch.tensor([0]),
+            ([], []),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
+            torch.tensor([0]),
+            torch.tensor([0]),
+            torch.tensor([0]),  # player
+            torch.tensor([0]),
+            torch.tensor([0]),
+            ([], []),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+            torch.tensor([1]),
+            torch.tensor([0]),
+            torch.tensor([4]),  # is
+            torch.tensor([2, 0]),
+            torch.tensor([0, 0]),
+            (["add , player , chopped , is"], [["add", "player", "chopped", "is"]]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
+            torch.tensor([1]),
+            torch.tensor([0]),
+            torch.tensor([4]),  # is
+            torch.tensor([2, 0]),
+            torch.tensor([0, 0]),
+            (
+                ["delete , player , chopped , is"],
+                [["delete", "player", "chopped", "is"]],
+            ),
+        ),
+        (
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+            ),
+            torch.tensor([1, 0]),
+            torch.tensor([0, 1]),
+            torch.tensor([4, 3]),  # [is, in]
+            torch.tensor([2, 0, 0, 1, 0, 1]),
+            torch.tensor([0, 0, 0, 0, 1, 1]),
+            (
+                ["add , player , chopped , is", "delete , player , inventory , in"],
+                [
+                    ["add", "player", "chopped", "is"],
+                    ["delete", "player", "inventory", "in"],
+                ],
+            ),
+        ),
+    ],
+)
+def test_sldgu_generate_graph_triples(
+    sldgu,
+    event_type_ids,
+    src_ids,
+    dst_ids,
+    label_ids,
+    node_label_ids,
+    batch,
+    expected,
+):
+    assert (
+        sldgu.generate_graph_triples(
+            event_type_ids,
+            src_ids,
+            dst_ids,
+            label_ids,
+            node_label_ids,
+            batch,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "event_type_id_seq,src_id_seq,dst_id_seq,label_id_seq,node_label_id_seq,batch_seq,"
+    "expected",
+    [
+        (
+            [torch.tensor([EVENT_TYPE_ID_MAP["node-add"]])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            ([[]], [[]]),
+        ),
+        (
+            [torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            [torch.tensor([0])],
+            ([[]], [[]]),
+        ),
+        (
+            [torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]])],
+            [torch.tensor([1])],
+            [torch.tensor([0])],
+            [torch.tensor([4])],
+            [torch.tensor([2, 0])],
+            [torch.tensor([0, 0])],
+            (
+                [["add , player , chopped , is"]],
+                [["add", "player", "chopped", "is"]],
+            ),
+        ),
+        (
+            [torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]])],
+            [torch.tensor([1])],
+            [torch.tensor([0])],
+            [torch.tensor([4])],
+            [torch.tensor([2, 0])],
+            [torch.tensor([0, 0])],
+            (
+                [["delete , player , chopped , is"]],
+                [["delete", "player", "chopped", "is"]],
+            ),
+        ),
+        (
+            [
+                torch.tensor(
+                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+                ),
+                torch.tensor(
+                    [EVENT_TYPE_ID_MAP["edge-delete"], EVENT_TYPE_ID_MAP["edge-add"]]
+                ),
+            ],
+            [torch.tensor([1, 0]), torch.tensor([0, 2])],
+            [torch.tensor([0, 1]), torch.tensor([1, 3])],
+            [torch.tensor([4, 3]), torch.tensor([4, 3])],
+            [torch.tensor([2, 0, 0, 1, 0, 1]), torch.tensor([0, 2, 0, 1, 0, 1])],
+            [torch.tensor([0, 0, 0, 0, 1, 1]), torch.tensor([0, 0, 1, 1, 1, 1])],
+            (
+                [
+                    ["add , player , chopped , is", "delete , player , chopped , is"],
+                    [
+                        "delete , player , inventory , in",
+                        "add , player , inventory , in",
+                    ],
+                ],
+                [
+                    [
+                        "add",
+                        "player",
+                        "chopped",
+                        "is",
+                        "<sep>",
+                        "delete",
+                        "player",
+                        "chopped",
+                        "is",
+                    ],
+                    [
+                        "delete",
+                        "player",
+                        "inventory",
+                        "in",
+                        "<sep>",
+                        "add",
+                        "player",
+                        "inventory",
+                        "in",
+                    ],
+                ],
+            ),
+        ),
+    ],
+)
+def test_sldgu_generate_batch_graph_triples_seq(
+    sldgu,
+    event_type_id_seq,
+    src_id_seq,
+    dst_id_seq,
+    label_id_seq,
+    node_label_id_seq,
+    batch_seq,
+    expected,
+):
+    assert (
+        sldgu.generate_batch_graph_triples_seq(
+            event_type_id_seq,
+            src_id_seq,
+            dst_id_seq,
+            label_id_seq,
+            node_label_id_seq,
+            batch_seq,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "groundtruth_cmd_seq,expected",
+    [
+        (
+            (("add , player , kitchen , in",),),
+            [["add", "player", "kitchen", "in"]],
+        ),
+        (
+            (("add , player , kitchen , in", "delete , player , kitchen , in"),),
+            [
+                [
+                    "add",
+                    "player",
+                    "kitchen",
+                    "in",
+                    "<sep>",
+                    "delete",
+                    "player",
+                    "kitchen",
+                    "in",
+                ]
+            ],
+        ),
+        (
+            (
+                ("add , player , kitchen , in", "delete , player , kitchen , in"),
+                (
+                    "add , player , kitchen , in",
+                    "add , table , kitchen , in",
+                    "delete , player , kitchen , in",
+                ),
+            ),
+            [
+                [
+                    "add",
+                    "player",
+                    "kitchen",
+                    "in",
+                    "<sep>",
+                    "delete",
+                    "player",
+                    "kitchen",
+                    "in",
+                ],
+                [
+                    "add",
+                    "player",
+                    "kitchen",
+                    "in",
+                    "<sep>",
+                    "add",
+                    "table",
+                    "kitchen",
+                    "in",
+                    "<sep>",
+                    "delete",
+                    "player",
+                    "kitchen",
+                    "in",
+                ],
+            ],
+        ),
+    ],
+)
+def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
+    groundtruth_cmd_seq, expected
+):
+    assert (
+        StaticLabelDiscreteGraphUpdater.generate_batch_groundtruth_graph_triple_tokens(
+            groundtruth_cmd_seq
+        )
+        == expected
+    )

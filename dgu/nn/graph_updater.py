@@ -2,12 +2,11 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import torchmetrics
-import itertools
 import random
 import wandb
 import dgu.metrics
 
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Sequence, Tuple
 from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
@@ -23,7 +22,11 @@ from dgu.nn.graph_event_decoder import (
 )
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
-from dgu.data import TWCmdGenTemporalBatch
+from dgu.data import (
+    TWCmdGenTemporalBatch,
+    TWCmdGenTemporalGraphicalInput,
+    TWCmdGenTemporalTextualInput,
+)
 from dgu.constants import EVENT_TYPE_ID_MAP
 
 
@@ -373,6 +376,280 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return torch.cat([mean_h_og, mean_h_go, mean_h_ag, mean_h_ga], dim=1)
         # (batch, 4 * hidden_dim)
 
+    def teacher_force(
+        self,
+        textual_input: TWCmdGenTemporalTextualInput,
+        graphical_input_seq: Sequence[TWCmdGenTemporalGraphicalInput],
+        memory: torch.Tensor,
+    ) -> List[Dict[str, torch.Tensor]]:
+        label_embeddings = (
+            self.decoder.graph_event_decoder.event_label_head.label_embeddings
+        )
+        decoder_hidden: Optional[torch.Tensor] = None
+        encoded_obs: Optional[torch.Tensor] = None
+        encoded_prev_action: Optional[torch.Tensor] = None
+        results_list: List[Dict[str, torch.Tensor]] = []
+        for graphical_input in graphical_input_seq:
+            results = self(
+                textual_input.obs_mask,
+                textual_input.prev_action_mask,
+                graphical_input.tgt_event_type_ids,
+                graphical_input.tgt_event_src_ids,
+                graphical_input.tgt_event_dst_ids,
+                graphical_input.tgt_event_label_ids,
+                graphical_input.tgt_event_timestamps,
+                memory,
+                label_embeddings(graphical_input.node_label_ids),
+                graphical_input.node_memory_update_index,
+                graphical_input.node_memory_update_mask,
+                graphical_input.edge_index,
+                label_embeddings(graphical_input.edge_label_ids),
+                graphical_input.edge_last_update,
+                graphical_input.edge_timestamps,
+                graphical_input.batch,
+                decoder_hidden=decoder_hidden,
+                obs_word_ids=textual_input.obs_word_ids,
+                prev_action_word_ids=textual_input.prev_action_word_ids,
+                encoded_obs=encoded_obs,
+                encoded_prev_action=encoded_prev_action,
+            )
+
+            # save the encoded obs and prev action
+            encoded_obs = results["encoded_obs"]
+            encoded_prev_action = results["encoded_prev_action"]
+
+            # update decoder hidden
+            decoder_hidden = results["new_decoder_hidden"]
+
+            # update memory
+            memory = results["updated_memory"]
+
+            # add results to the list
+            results_list.append(results)
+
+        return results_list
+
+    def calculate_loss(
+        self,
+        event_type_logits: torch.Tensor,
+        groundtruth_event_type_ids: torch.Tensor,
+        src_logits: torch.Tensor,
+        groundtruth_event_src_ids: torch.Tensor,
+        dst_logits: torch.Tensor,
+        groundtruth_event_dst_ids: torch.Tensor,
+        label_logits: torch.Tensor,
+        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_mask: torch.Tensor,
+        groundtruth_event_src_mask: torch.Tensor,
+        groundtruth_event_dst_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Calculate the loss.
+
+        event_type_logits: (batch, num_event_type)
+        groundtruth_event_type_ids: (batch)
+        src_logits: (batch, num_node)
+        groundtruth_event_src_ids: (batch)
+        dst_logits: (batch, num_node)
+        groundtruth_event_dst_ids: (batch)
+        label_logits: (batch, num_label)
+        groundtruth_event_label_ids: (batch)
+        groundtruth_event_mask: (batch)
+        groundtruth_event_src_mask: (batch)
+        groundtruth_event_dst_mask: (batch)
+
+        output: (batch)
+        """
+        event_type_loss = torch.sum(
+            self.criterion(event_type_logits, groundtruth_event_type_ids)
+            * groundtruth_event_mask
+        )
+        src_loss = torch.sum(
+            self.criterion(src_logits, groundtruth_event_src_ids)
+            * groundtruth_event_src_mask
+        )
+        dst_loss = torch.sum(
+            self.criterion(dst_logits, groundtruth_event_dst_ids)
+            * groundtruth_event_dst_mask
+        )
+        label_loss = torch.sum(
+            self.criterion(label_logits, groundtruth_event_label_ids)
+            * groundtruth_event_mask
+        )
+        return event_type_loss + src_loss + dst_loss + label_loss
+
+    def calculate_f1s(
+        self,
+        event_type_logits: torch.Tensor,
+        groundtruth_event_type_ids: torch.Tensor,
+        src_logits: torch.Tensor,
+        groundtruth_event_src_ids: torch.Tensor,
+        dst_logits: torch.Tensor,
+        groundtruth_event_dst_ids: torch.Tensor,
+        label_logits: torch.Tensor,
+        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_src_mask: torch.Tensor,
+        groundtruth_event_dst_mask: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Calculate various F1 scores.
+
+        event_type_logits: (batch, num_event_type)
+        groundtruth_event_type_ids: (batch)
+        src_logits: (batch, num_node)
+        groundtruth_event_src_ids: (batch)
+        dst_logits: (batch, num_node)
+        groundtruth_event_dst_ids: (batch)
+        label_logits: (batch, num_label)
+        groundtruth_event_label_ids: (batch)
+        groundtruth_event_src_mask: (batch)
+        groundtruth_event_dst_mask: (batch)
+
+        output: {
+            'event_type_f1': scalar,
+            'src_node_f1': optional, scalar,
+            'dst_node_f1': optional, scalar,
+            'label_f1': scalar,
+        }
+        """
+        f1s: Dict[str, torch.Tensor] = {}
+        f1s["event_type_f1"] = self.event_type_f1(
+            event_type_logits.softmax(dim=1), groundtruth_event_type_ids
+        )
+        src_mask = groundtruth_event_src_mask.bool()
+        if src_mask.any():
+            f1s["src_node_f1"] = self.src_node_f1(
+                src_logits[src_mask].softmax(dim=1), groundtruth_event_src_ids[src_mask]
+            )
+        dst_mask = groundtruth_event_dst_mask.bool()
+        if dst_mask.any():
+            f1s["dst_node_f1"] = self.dst_node_f1(
+                dst_logits[dst_mask].softmax(dim=1), groundtruth_event_dst_ids[dst_mask]
+            )
+        f1s["label_f1"] = self.label_f1(
+            label_logits.softmax(dim=1), groundtruth_event_label_ids
+        )
+
+        return f1s
+
+    def generate_graph_triples(
+        self,
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        dst_ids: torch.Tensor,
+        label_ids: torch.Tensor,
+        node_label_ids: torch.Tensor,
+        batch: torch.Tensor,
+    ) -> Tuple[List[str], List[List[str]]]:
+        """
+        Generate graph triplets based on the given batch of graph events.
+
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        label_ids: (batch)
+        node_label_ids: (num_node)
+        batch: (num_node)
+
+        output: (
+            cmds: len([commands, ...]) = batch
+            tokens: len([[token, ...], ...]) = batch
+        )
+        """
+        cmds: List[str] = []
+        tokens: List[List[str]] = []
+        # calculate graph tuples from predicted graph events (teacher forcing)
+        for event_type_id, src_id, dst_id, label_id, subgraph_num_node_offset in zip(
+            event_type_ids.tolist(),
+            src_ids.tolist(),
+            dst_ids.tolist(),
+            label_ids.tolist(),
+            [0] + batch.bincount().tolist()[:-1],
+        ):
+            if event_type_id in {
+                EVENT_TYPE_ID_MAP["edge-add"],
+                EVENT_TYPE_ID_MAP["edge-delete"],
+            }:
+                cmd = (
+                    "add"
+                    if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
+                    else "delete"
+                )
+                src_label = self.labels[
+                    node_label_ids[src_id + subgraph_num_node_offset]
+                ]
+                dst_label = self.labels[
+                    node_label_ids[dst_id + subgraph_num_node_offset]
+                ]
+                # in the original dataset, multi-word edge labels are joined by
+                # an underscore
+                edge_label = "_".join(self.labels[label_id].split())
+                predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
+                cmds.append(" , ".join(predicted_cmd_tokens))
+                tokens.append(predicted_cmd_tokens)
+        return cmds, tokens
+
+    def generate_batch_graph_triples_seq(
+        self,
+        event_type_id_seq: Sequence[torch.Tensor],
+        src_id_seq: Sequence[torch.Tensor],
+        dst_id_seq: Sequence[torch.Tensor],
+        label_id_seq: Sequence[torch.Tensor],
+        node_label_id_seq: Sequence[torch.Tensor],
+        batch_seq: Sequence[torch.Tensor],
+    ) -> Tuple[List[List[str]], List[List[str]]]:
+        batch_size = event_type_id_seq[0].size(0)
+
+        # (batch, event_seq_len, cmd_len)
+        batch_cmds: List[List[str]] = [[] for _ in range(batch_size)]
+        # (batch, event_seq_len, token_len)
+        batch_tokens: List[List[str]] = [[] for _ in range(batch_size)]
+        for step_id, (
+            event_type_ids,
+            src_ids,
+            dst_ids,
+            label_ids,
+            node_label_ids,
+            batch,
+        ) in enumerate(
+            zip(
+                event_type_id_seq,
+                src_id_seq,
+                dst_id_seq,
+                label_id_seq,
+                node_label_id_seq,
+                batch_seq,
+            )
+        ):
+            for batch_id, (cmd, tokens) in enumerate(
+                zip(
+                    *self.generate_graph_triples(
+                        event_type_ids,
+                        src_ids,
+                        dst_ids,
+                        label_ids,
+                        node_label_ids,
+                        batch,
+                    )
+                )
+            ):
+                batch_cmds[batch_id].append(cmd)
+                if step_id != 0:
+                    batch_tokens[batch_id].append("<sep>")
+                batch_tokens[batch_id].extend(tokens)
+        return batch_cmds, batch_tokens
+
+    @staticmethod
+    def generate_batch_groundtruth_graph_triple_tokens(
+        groundtruth_cmd_seq: Sequence[Sequence[str]],
+    ) -> List[List[str]]:
+        batch_groundtruth_tokens: List[List[str]] = []
+        for groundtruth_cmds in groundtruth_cmd_seq:
+            batch_groundtruth_tokens.append(
+                " , <sep> , ".join(groundtruth_cmds).split(" , ")
+            )
+        return batch_groundtruth_tokens
+
     def training_step(  # type: ignore
         self,
         batch: TWCmdGenTemporalBatch,
@@ -386,266 +663,146 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         """
         if hiddens is None:
             hiddens = torch.zeros(0, self.tgn.memory_dim, device=self.device)
-        label_embeddings = (
-            self.decoder.graph_event_decoder.event_label_head.label_embeddings
-        )
         losses: List[torch.Tensor] = []
-        for textual_inputs, graph_event_inputs, _ in batch.data:
-            decoder_hidden: Optional[torch.Tensor] = None
-            encoded_obs: Optional[torch.Tensor] = None
-            encoded_prev_action: Optional[torch.Tensor] = None
-            for graph_event in graph_event_inputs:
-                results = self(
-                    textual_inputs.obs_mask,
-                    textual_inputs.prev_action_mask,
-                    graph_event.tgt_event_type_ids,
-                    graph_event.tgt_event_src_ids,
-                    graph_event.tgt_event_dst_ids,
-                    graph_event.tgt_event_label_ids,
-                    graph_event.tgt_event_timestamps,
-                    hiddens,
-                    label_embeddings(graph_event.node_label_ids),
-                    graph_event.node_memory_update_index,
-                    graph_event.node_memory_update_mask,
-                    graph_event.edge_index,
-                    label_embeddings(graph_event.edge_label_ids),
-                    graph_event.edge_last_update,
-                    graph_event.edge_timestamps,
-                    graph_event.batch,
-                    decoder_hidden=decoder_hidden,
-                    obs_word_ids=textual_inputs.obs_word_ids,
-                    prev_action_word_ids=textual_inputs.prev_action_word_ids,
-                    encoded_obs=encoded_obs,
-                    encoded_prev_action=encoded_prev_action,
+        for textual_input, graphical_input_seq, _ in batch.data:
+            results_list = self.teacher_force(
+                textual_input, graphical_input_seq, hiddens  # type: ignore
+            )
+            losses.extend(
+                self.calculate_loss(
+                    results["event_type_logits"],
+                    graphical_input.groundtruth_event_type_ids,
+                    results["src_logits"],
+                    graphical_input.groundtruth_event_src_ids,
+                    results["dst_logits"],
+                    graphical_input.groundtruth_event_dst_ids,
+                    results["label_logits"],
+                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_mask,
+                    graphical_input.groundtruth_event_src_mask,
+                    graphical_input.groundtruth_event_dst_mask,
                 )
-
-                # calculate losses
-                event_type_loss = torch.sum(
-                    self.criterion(
-                        results["event_type_logits"],
-                        graph_event.groundtruth_event_type_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_mask
-                )
-                src_loss = torch.sum(
-                    self.criterion(
-                        results["src_logits"],
-                        graph_event.groundtruth_event_src_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_src_mask
-                )
-                dst_loss = torch.sum(
-                    self.criterion(
-                        results["dst_logits"],
-                        graph_event.groundtruth_event_dst_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_dst_mask
-                )
-                label_loss = torch.sum(
-                    self.criterion(
-                        results["label_logits"],
-                        graph_event.groundtruth_event_label_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_mask
-                )
-                losses.append(event_type_loss + src_loss + dst_loss + label_loss)
-
-                # save the encoded obs and prev action
-                encoded_obs = results["encoded_obs"]
-                encoded_prev_action = results["encoded_prev_action"]
-
-                # update decoder hidden
-                decoder_hidden = results["new_decoder_hidden"]
-
-                # update memory or "hiddens"
-                hiddens = results["updated_memory"]
+                for results, graphical_input in zip(results_list, graphical_input_seq)
+            )
+            hiddens = results_list[-1]["updated_memory"]
 
         loss = torch.stack(losses).mean()
         self.log("train_loss", loss, prog_bar=True)
-        assert hiddens is not None
         return {"loss": loss, "hiddens": hiddens}
 
     def eval_step(
         self, batch: TWCmdGenTemporalBatch, log_prefix: str
     ) -> List[Tuple[str, str]]:
-        batch_size = batch.data[0][0].obs_word_ids.size(0)
+        # [(groundtruth commands, predicted commands)]
         table_data: List[Tuple[str, str]] = []
 
         memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
-        label_embeddings = (
-            self.decoder.graph_event_decoder.event_label_head.label_embeddings
-        )
         losses: List[torch.Tensor] = []
-        for textual_inputs, graph_event_inputs, groundtruth_cmds in batch.data:
-            step_groundtruth_cmds: List[List[str]] = [[]] * batch_size
-            step_groundtruth_tokens: List[List[str]] = [[]] * batch_size
-            step_predicted_cmds: List[List[str]] = [[]] * batch_size
-            step_predicted_tokens: List[List[str]] = [[]] * batch_size
+        for textual_input, graphical_input_seq, step_groundtruth_cmds in batch.data:
+            # calculate losses from teacher forcing
+            results_list = self.teacher_force(
+                textual_input, graphical_input_seq, memory
+            )
+            losses.extend(
+                self.calculate_loss(
+                    results["event_type_logits"],
+                    graphical_input.groundtruth_event_type_ids,
+                    results["src_logits"],
+                    graphical_input.groundtruth_event_src_ids,
+                    results["dst_logits"],
+                    graphical_input.groundtruth_event_dst_ids,
+                    results["label_logits"],
+                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_mask,
+                    graphical_input.groundtruth_event_src_mask,
+                    graphical_input.groundtruth_event_dst_mask,
+                )
+                for results, graphical_input in zip(results_list, graphical_input_seq)
+            )
 
-            # collect groundtruth commands
-            for i, cmds in enumerate(groundtruth_cmds):
-                step_groundtruth_cmds[i].extend(cmds)
-                step_groundtruth_tokens[i].extend(
-                    itertools.chain.from_iterable(cmd.split(" , ") for cmd in cmds)
+            # log classification F1s from teacher forcing
+            for results, graphical_input in zip(results_list, graphical_input_seq):
+                f1s = self.calculate_f1s(
+                    results["event_type_logits"],
+                    graphical_input.groundtruth_event_type_ids,
+                    results["src_logits"],
+                    graphical_input.groundtruth_event_src_ids,
+                    results["dst_logits"],
+                    graphical_input.groundtruth_event_dst_ids,
+                    results["label_logits"],
+                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_src_mask,
+                    graphical_input.groundtruth_event_dst_mask,
                 )
+                self.log(log_prefix + "_event_type_f1", f1s["event_type_f1"])
+                if "src_node_f1" in f1s:
+                    self.log(log_prefix + "_src_node_f1", f1s["src_node_f1"])
+                if "dst_node_f1" in f1s:
+                    self.log(log_prefix + "_dst_node_f1", f1s["dst_node_f1"])
+                self.log(log_prefix + "_label_f1", f1s["label_f1"])
 
-            decoder_hidden: Optional[torch.Tensor] = None
-            encoded_obs: Optional[torch.Tensor] = None
-            encoded_prev_action: Optional[torch.Tensor] = None
-            for graph_event in graph_event_inputs:
-                results = self(
-                    textual_inputs.obs_mask,
-                    textual_inputs.prev_action_mask,
-                    graph_event.tgt_event_type_ids,
-                    graph_event.tgt_event_src_ids,
-                    graph_event.tgt_event_dst_ids,
-                    graph_event.tgt_event_label_ids,
-                    graph_event.tgt_event_timestamps,
-                    memory,
-                    label_embeddings(graph_event.node_label_ids),
-                    graph_event.node_memory_update_index,
-                    graph_event.node_memory_update_mask,
-                    graph_event.edge_index,
-                    label_embeddings(graph_event.edge_label_ids),
-                    graph_event.edge_last_update,
-                    graph_event.edge_timestamps,
-                    graph_event.batch,
-                    decoder_hidden=decoder_hidden,
-                    obs_word_ids=textual_inputs.obs_word_ids,
-                    prev_action_word_ids=textual_inputs.prev_action_word_ids,
-                    encoded_obs=encoded_obs,
-                    encoded_prev_action=encoded_prev_action,
-                )
+            # calculate graph tuples from predicted (teacher forcing) graph events
+            (
+                batch_predicted_cmds,
+                batch_predicted_tokens,
+            ) = self.generate_batch_graph_triples_seq(
+                [
+                    results["event_type_logits"].argmax(dim=1)
+                    for results in results_list
+                ],
+                [results["src_logits"].argmax(dim=1) for results in results_list],
+                [results["dst_logits"].argmax(dim=1) for results in results_list],
+                [results["label_logits"].argmax(dim=1) for results in results_list],
+                [
+                    graphical_input.node_label_ids
+                    for graphical_input in graphical_input_seq
+                ],
+                [graphical_input.batch for graphical_input in graphical_input_seq],
+            )
 
-                # calculate losses
-                event_type_loss = torch.sum(
-                    self.criterion(
-                        results["event_type_logits"],
-                        graph_event.groundtruth_event_type_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_mask
+            # collect groundtruth command tokens
+            batch_groundtruth_tokens = (
+                self.generate_batch_groundtruth_graph_triple_tokens(
+                    step_groundtruth_cmds
                 )
-                src_loss = torch.sum(
-                    self.criterion(
-                        results["src_logits"],
-                        graph_event.groundtruth_event_src_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_src_mask
-                )
-                dst_loss = torch.sum(
-                    self.criterion(
-                        results["dst_logits"],
-                        graph_event.groundtruth_event_dst_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_dst_mask
-                )
-                label_loss = torch.sum(
-                    self.criterion(
-                        results["label_logits"],
-                        graph_event.groundtruth_event_label_ids.flatten(),
-                    )
-                    * graph_event.groundtruth_event_mask
-                )
-                losses.append(event_type_loss + src_loss + dst_loss + label_loss)
+            )
 
-                # calculate classification F1s
-                self.log(
-                    log_prefix + "_event_type_f1",
-                    self.event_type_f1(
-                        results["event_type_logits"].softmax(dim=1),
-                        graph_event.groundtruth_event_type_ids.flatten(),
-                    ),
+            # add graph triples
+            table_data.extend(
+                zip(
+                    [" | ".join(cmds) for cmds in step_groundtruth_cmds],
+                    [" | ".join(cmds) for cmds in batch_predicted_cmds],
                 )
-                src_mask = graph_event.groundtruth_event_src_mask.flatten().bool()
-                if torch.any(src_mask):
-                    self.log(
-                        log_prefix + "_src_node_f1",
-                        self.src_node_f1(
-                            results["src_logits"][src_mask].softmax(dim=1),
-                            graph_event.groundtruth_event_src_ids[src_mask].flatten(),
-                        ),
-                    )
-                dst_mask = graph_event.groundtruth_event_dst_mask.flatten().bool()
-                if torch.any(dst_mask):
-                    self.log(
-                        log_prefix + "_dst_node_f1",
-                        self.dst_node_f1(
-                            results["dst_logits"][dst_mask].softmax(dim=1),
-                            graph_event.groundtruth_event_dst_ids[dst_mask].flatten(),
-                        ),
-                    )
-                self.log(
-                    log_prefix + "_label_f1",
-                    self.label_f1(
-                        results["label_logits"].softmax(dim=1),
-                        graph_event.groundtruth_event_label_ids.flatten(),
-                    ),
-                )
+            )
 
-                # calculate graph tuples from predicted graph events (teacher forcing)
-                for i, (event_type_id, src_id, dst_id, label_id) in enumerate(
-                    zip(
-                        results["event_type_logits"].argmax(dim=1).tolist(),
-                        results["src_logits"].argmax(dim=1).tolist(),
-                        results["dst_logits"].argmax(dim=1).tolist(),
-                        results["label_logits"].argmax(dim=1).tolist(),
-                    )
-                ):
-                    if event_type_id in {
-                        EVENT_TYPE_ID_MAP["edge-add"],
-                        EVENT_TYPE_ID_MAP["edge-delete"],
-                    }:
-                        cmd = (
-                            "add"
-                            if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
-                            else "delete"
-                        )
-                        src_label = self.labels[graph_event.node_label_ids[src_id]]
-                        dst_label = self.labels[graph_event.node_label_ids[dst_id]]
-                        # in the original dataset, multi-word edge labels are joined by
-                        # an underscore
-                        edge_label = "_".join(self.labels[label_id].split())
-                        predicted_cmd_tokens = [cmd, src_label, dst_label, edge_label]
-                        step_predicted_cmds[i].append(" , ".join(predicted_cmd_tokens))
-                        step_predicted_tokens[i].extend(predicted_cmd_tokens)
-                table_data.extend(
-                    zip(
-                        [" | ".join(cmds) for cmds in step_groundtruth_cmds],
-                        [" | ".join(cmds) for cmds in step_predicted_cmds],
-                    )
-                )
-                self.log(
-                    log_prefix + "_graph_predicted_em",
-                    self.graph_predicted_exact_match(
-                        step_predicted_cmds, step_groundtruth_cmds
-                    ),
-                )
-                self.log(
-                    log_prefix + "_token_predicted_em",
-                    self.token_predicted_exact_match(
-                        step_predicted_tokens, step_groundtruth_tokens
-                    ),
-                )
-                self.log(
-                    log_prefix + "_graph_predicted_f1",
-                    self.graph_predicted_f1(step_predicted_cmds, step_groundtruth_cmds),
-                )
-                self.log(
-                    log_prefix + "_token_predicted_f1",
-                    self.token_predicted_f1(
-                        step_predicted_tokens, step_groundtruth_tokens
-                    ),
-                )
+            # log graph based metrics
+            self.log(
+                log_prefix + "_graph_predicted_em",
+                self.graph_predicted_exact_match(
+                    batch_predicted_cmds, step_groundtruth_cmds
+                ),
+            )
+            self.log(
+                log_prefix + "_graph_predicted_f1",
+                self.graph_predicted_f1(batch_predicted_cmds, step_groundtruth_cmds),
+            )
 
-                # save the encoded obs and prev action
-                encoded_obs = results["encoded_obs"]
-                encoded_prev_action = results["encoded_prev_action"]
+            # log token based metrics
+            self.log(
+                log_prefix + "_token_predicted_em",
+                self.token_predicted_exact_match(
+                    batch_predicted_tokens, batch_groundtruth_tokens
+                ),
+            )
+            self.log(
+                log_prefix + "_token_predicted_f1",
+                self.token_predicted_f1(
+                    batch_predicted_tokens, batch_groundtruth_tokens
+                ),
+            )
 
-                # update decoder hidden
-                decoder_hidden = results["new_decoder_hidden"]
-
-                # update memory
-                memory = results["updated_memory"]
+            # update memory for the next step
+            memory = results_list[-1]["updated_memory"]
 
         loss = torch.stack(losses).mean()
         self.log(log_prefix + "_loss", loss, prog_bar=True)
