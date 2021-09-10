@@ -417,8 +417,8 @@ class TWCmdGenTemporalDataCollator:
                     batch_event_timestamps.append(event["timestamp"])
                     batch_graph_data.append(
                         TWCmdGenTemporalGraphData.from_graph_event(
-                            torch.tensor([event_src_id]),
-                            torch.tensor([event_dst_id]),
+                            torch.tensor(event_src_id),
+                            torch.tensor(event_dst_id),
                             event["timestamp"],
                             event["before_graph"],
                             event["after_graph"],
