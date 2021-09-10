@@ -25,7 +25,7 @@ from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import (
     TWCmdGenTemporalBatch,
     TWCmdGenTemporalGraphicalInput,
-    TWCmdGenTemporalTextualInput,
+    TWCmdGenTemporalStepInput,
     read_label_vocab_files,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -176,11 +176,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         obs_mask: torch.Tensor,
         prev_action_mask: torch.Tensor,
+        timestamps: torch.Tensor,
         event_type_ids: torch.Tensor,
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
         event_label_ids: torch.Tensor,
-        event_timestamps: torch.Tensor,
         memory: torch.Tensor,
         node_features: torch.Tensor,
         node_memory_update_index: torch.Tensor,
@@ -188,7 +188,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_index: torch.Tensor,
         edge_features: torch.Tensor,
         edge_last_update: torch.Tensor,
-        edge_timestamps: torch.Tensor,
         batch: torch.Tensor,
         decoder_hidden: Optional[torch.Tensor] = None,
         obs_word_ids: Optional[torch.Tensor] = None,
@@ -199,11 +198,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         """
         obs_mask: (batch, obs_len)
         prev_action_mask: (batch, prev_action_len)
+        timestamps: (batch)
         event_type_ids: (batch)
         event_src_ids: (batch)
         event_dst_ids: (batch)
         event_label_ids: (batch)
-        event_timestamps: (batch) or scalar
         memory: (prev_num_node, memory_dim)
         node_features: (num_node, event_embedding_dim)
         node_memory_update_index: (prev_num_node)
@@ -211,7 +210,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_index: (2, num_edge)
         edge_features: (num_edge, event_embedding_dim)
         edge_last_update: (num_edge)
-        edge_timestamps: (num_edge) or scalar
         batch: (num_node)
         decoder_hidden: (batch, hidden_dim)
 
@@ -249,11 +247,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # separate graph events into node and edge events
         edge_events = self.get_edge_events(
-            event_type_ids,
-            event_src_ids,
-            event_dst_ids,
-            event_label_ids,
-            event_timestamps,
+            event_type_ids, event_src_ids, event_dst_ids, event_label_ids, timestamps
         )
 
         label_embeddings = (
@@ -271,7 +265,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             node_features,
             edge_index,
             edge_features,
-            edge_timestamps,
+            self.get_edge_timestamps(timestamps, batch, edge_index),
             edge_last_update,
         )
         # node_embeddings: (num_node, hidden_dim)
@@ -364,7 +358,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def teacher_force(
         self,
-        textual_input: TWCmdGenTemporalTextualInput,
+        step_input: TWCmdGenTemporalStepInput,
         graphical_input_seq: Sequence[TWCmdGenTemporalGraphicalInput],
         memory: torch.Tensor,
     ) -> List[Dict[str, torch.Tensor]]:
@@ -377,13 +371,13 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         results_list: List[Dict[str, torch.Tensor]] = []
         for graphical_input in graphical_input_seq:
             results = self(
-                textual_input.obs_mask,
-                textual_input.prev_action_mask,
+                step_input.obs_mask,
+                step_input.prev_action_mask,
+                step_input.timestamps,
                 graphical_input.tgt_event_type_ids,
                 graphical_input.tgt_event_src_ids,
                 graphical_input.tgt_event_dst_ids,
                 graphical_input.tgt_event_label_ids,
-                graphical_input.tgt_event_timestamps,
                 memory,
                 label_embeddings(graphical_input.node_label_ids),
                 graphical_input.node_memory_update_index,
@@ -391,11 +385,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.edge_index,
                 label_embeddings(graphical_input.edge_label_ids),
                 graphical_input.edge_last_update,
-                graphical_input.edge_timestamps,
                 graphical_input.batch,
                 decoder_hidden=decoder_hidden,
-                obs_word_ids=textual_input.obs_word_ids,
-                prev_action_word_ids=textual_input.prev_action_word_ids,
+                obs_word_ids=step_input.obs_word_ids,
+                prev_action_word_ids=step_input.prev_action_word_ids,
                 encoded_obs=encoded_obs,
                 encoded_prev_action=encoded_prev_action,
             )
@@ -650,9 +643,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         if hiddens is None:
             hiddens = torch.zeros(0, self.tgn.memory_dim, device=self.device)
         losses: List[torch.Tensor] = []
-        for textual_input, graphical_input_seq, _ in batch.data:
+        for step_input, graphical_input_seq, _ in batch.data:
             results_list = self.teacher_force(
-                textual_input, graphical_input_seq, hiddens  # type: ignore
+                step_input, graphical_input_seq, hiddens  # type: ignore
             )
             losses.extend(
                 self.calculate_loss(
@@ -684,11 +677,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
         losses: List[torch.Tensor] = []
-        for textual_input, graphical_input_seq, step_groundtruth_cmds in batch.data:
+        for step_input, graphical_input_seq, step_groundtruth_cmds in batch.data:
             # calculate losses from teacher forcing
-            results_list = self.teacher_force(
-                textual_input, graphical_input_seq, memory
-            )
+            results_list = self.teacher_force(step_input, graphical_input_seq, memory)
             losses.extend(
                 self.calculate_loss(
                     results["event_type_logits"],
@@ -842,6 +833,23 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return batch.split(split_size)
 
     @staticmethod
+    def get_edge_timestamps(
+        timestamps: torch.Tensor, batch: torch.Tensor, edge_index: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Assign an appropriate timestamp for each edge.
+
+        timestamps: (batch)
+        batch: (num_node)
+        edge_index: (2, num_edge)
+
+        output: (num_edge)
+        """
+        # figure out which batch element the source node belongs to
+        # then get the timestamps
+        return timestamps[batch[edge_index[0]]]
+
+    @staticmethod
     def batchify_node_embeddings(
         node_embeddings: torch.Tensor, batch: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -881,7 +889,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
         event_label_ids: torch.Tensor,
-        event_timestamps: torch.Tensor,
+        timestamps: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
         Get flattened edge events from batched graph events. Used to generate
@@ -891,7 +899,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_ids: (batch)
         dst_ids: (batch)
         event_label_ids: (batch)
-        event_timestamps: (batch) or scalar
+        timestamps: (batch)
 
         output:
         {
@@ -899,7 +907,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "edge_event_src_ids": (num_edge_event),
             "edge_event_dst_ids": (num_edge_event),
             "edge_event_label_ids": (num_edge_event),
-            "edge_event_timestamps": (num_edge_event) or scalar,
+            "edge_event_timestamps": (num_edge_event),
         }
         """
         is_edge_event = torch.logical_or(
@@ -911,7 +919,5 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "edge_event_src_ids": src_ids[is_edge_event],
             "edge_event_dst_ids": dst_ids[is_edge_event],
             "edge_event_label_ids": event_label_ids[is_edge_event],
-            "edge_event_timestamps": event_timestamps
-            if event_timestamps.size() == tuple()
-            else event_timestamps[is_edge_event],
+            "edge_event_timestamps": timestamps[is_edge_event],
         }

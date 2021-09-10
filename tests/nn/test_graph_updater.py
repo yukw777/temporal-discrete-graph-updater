@@ -189,22 +189,27 @@ def test_sldgu_forward(
         if encoded_textual_input
         else None
     )
+    if num_edge > 0:
+        edge_index = torch.randint(num_node, (2, num_edge)).unique(dim=1)
+        actual_num_edge = edge_index.size(1)
+    else:
+        edge_index = torch.empty(2, 0).long()
+        actual_num_edge = num_edge
     results = sldgu(
         torch.randint(2, (batch_size, obs_len)).float(),
         torch.randint(2, (batch_size, prev_action_len)).float(),
+        torch.randint(10, (batch_size,)).float(),
         event_type_ids,
         event_src_ids,
         event_dst_ids,
         torch.randint(len(sldgu.labels), (batch_size,)),
-        torch.randint(10, (batch_size,)).float(),
         torch.rand(prev_num_node, sldgu.tgn.memory_dim),
         torch.rand(num_node, sldgu.tgn.event_embedding_dim),
         torch.randint(num_node, (prev_num_node,)),
         torch.randint(2, (prev_num_node,)),
-        torch.randint(num_node, (2, num_edge)),
-        torch.rand(num_edge, sldgu.tgn.event_embedding_dim),
-        torch.randint(10, (num_edge,)),
-        torch.randint(10, (num_edge,)).float(),
+        edge_index,
+        torch.rand(actual_num_edge, sldgu.tgn.event_embedding_dim),
+        torch.randint(10, (actual_num_edge,)),
         batch,
         decoder_hidden=torch.rand(batch_size, sldgu.hparams.hidden_dim)
         if decoder_hidden
@@ -305,6 +310,41 @@ def test_sldgu_get_edge_events(
         "edge_event_timestamps",
     ]:
         assert results[k].equal(expected[k])
+
+
+@pytest.mark.parametrize(
+    "timestamps,batch,edge_index,expected",
+    [
+        (
+            torch.tensor([2.0]),
+            torch.empty(0).long(),
+            torch.empty(2, 0).long(),
+            torch.empty(0),
+        ),
+        (
+            torch.tensor([2.0, 3.0, 4.0]),
+            torch.empty(0).long(),
+            torch.empty(2, 0).long(),
+            torch.empty(0),
+        ),
+        (
+            torch.tensor([2.0]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([[0, 2], [1, 1]]),
+            torch.tensor([2.0, 2.0]),
+        ),
+        (
+            torch.tensor([2.0, 3.0, 4.0]),
+            torch.tensor([0, 0, 0, 1, 1, 2, 2, 2, 2]),
+            torch.tensor([[0, 2, 4, 6, 8], [1, 1, 3, 7, 5]]),
+            torch.tensor([2.0, 2.0, 3.0, 4.0, 4.0]),
+        ),
+    ],
+)
+def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
+    assert StaticLabelDiscreteGraphUpdater.get_edge_timestamps(
+        timestamps, batch, edge_index
+    ).equal(expected)
 
 
 @pytest.mark.parametrize(
