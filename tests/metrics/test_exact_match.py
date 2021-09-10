@@ -1,76 +1,110 @@
+import torch
 import pytest
 
 from dgu.metrics import ExactMatch
 
 
 @pytest.mark.parametrize(
-    "batch_preds,batch_targets,batch_expected",
+    "batch_preds,batch_targets,expected",
     [
-        ([[[]]], [[[]]], [1]),
-        ([[["add , n0 , n1 , r"]]], [[[]]], [0]),
-        ([[[]]], [[["add , n0 , n1 , r"]]], [0]),
-        ([[["add , n0 , n1 , r"]]], [[["add , n0 , n1 , r"]]], [1]),
-        ([[["add", "n0", "n1", "r"]]], [[["add", "n0", "n1", "r"]]], [1]),
-        ([[["add , n0 , n1 , r"]]], [[["delete , n0 , n1 , r"]]], [0]),
-        ([[["add", "n0", "n1", "r"]]], [[["delete", "n2", "n3", "r0"]]], [0]),
+        ([[]], [[]], torch.tensor(1.0)),
+        ([["add , n0 , n1 , r"]], [[]], torch.tensor(0.0)),
+        ([[]], [["add , n0 , n1 , r"]], torch.tensor(0.0)),
+        ([["add , n0 , n1 , r"]], [["add , n0 , n1 , r"]], torch.tensor(1.0)),
+        ([["add", "n0", "n1", "r"]], [["add", "n0", "n1", "r"]], torch.tensor(1.0)),
+        ([["add , n0 , n1 , r"]], [["delete , n0 , n1 , r"]], torch.tensor(0.0)),
+        ([["add", "n0", "n1", "r"]], [["delete", "n2", "n3", "r0"]], torch.tensor(0.0)),
         (
             [
                 [
-                    ["add , n0 , n1 , r0", "delete , n2 , n3 , r1"],
-                    ["delete , n0 , n1 , r0"],
+                    "add , n0 , n1 , r0",
+                    "delete , n2 , n3 , r1",
+                    "delete , n0 , n1 , r0",
                 ],
                 [
-                    ["add , n0 , n1 , r0", "delete , n2 , n3 , r1"],
-                    ["delete , n0 , n1 , r0"],
-                    [],
-                    ["add , n0 , n1 , r0", "delete , n2 , n3 , r1"],
+                    "add , n0 , n1 , r0",
+                    "delete , n2 , n3 , r1",
+                    "delete , n0 , n1 , r0",
+                    "add , n0 , n1 , r0",
+                    "delete , n2 , n3 , r1",
                 ],
             ],
             [
+                ["add , n0 , n1 , r0", "delete , n2 , n3 , r1", "add , n4 , n5 , r2"],
                 [
-                    ["add , n0 , n1 , r0", "delete , n2 , n3 , r1"],
-                    ["add , n4 , n5 , r2"],
-                ],
-                [
-                    ["delete , n2 , n3 , r1", "add , n0 , n1 , r0"],
-                    ["delete , n0 , n1 , r2"],
-                    [],
-                    ["add , n0 , n1 , r0", "delete , n2 , n3 , r2"],
+                    "delete , n2 , n3 , r1",
+                    "add , n0 , n1 , r0",
+                    "delete , n0 , n1 , r2",
+                    "add , n0 , n1 , r0",
+                    "delete , n2 , n3 , r2",
                 ],
             ],
-            [0.5, 3.5 / 6],
+            torch.tensor((2 / 3 + 4 / 5) / 2),
         ),
         (
             [
+                ["a", "b", "c", "d", "<sep>", "e", "f", "g", "h"],
                 [
-                    ["add", "n0", "n1", "r0", "add", "n2", "n3", "r1"],
-                    ["delete", "n0", "n1", "r0"],
-                ],
-                [
-                    ["add", "n0", "n1", "r0", "add", "n2", "n3", "r1"],
-                    ["delete", "n0", "n1", "r0"],
-                    [],
-                    ["add", "n0", "n1", "r0", "delete", "n2", "n3", "r1"],
+                    "add",
+                    "n0",
+                    "n1",
+                    "r0",
+                    "<sep>",
+                    "add",
+                    "n2",
+                    "n3",
+                    "r1",
+                    "<sep>",
+                    "delete",
+                    "n0",
+                    "n1",
+                    "r0",
+                    "<sep>",
+                    "add",
+                    "n0",
+                    "n1",
+                    "r0",
+                    "<sep>",
+                    "delete",
+                    "n2",
+                    "n3",
+                    "r1",
                 ],
             ],
             [
+                ["c", "d", "b", "a", "<sep>", "g", "h", "i", "j"],
                 [
-                    ["add", "n0", "n1", "r0", "delete", "n2", "n3", "r1"],
-                    ["add", "n4", "n5", "r2"],
-                ],
-                [
-                    ["delete", "n2", "n3", "r1", "add", "n0", "n1", "r0"],
-                    ["delete", "n0", "n1", "r2"],
-                    [],
-                    ["add", "n0", "n1", "r0", "add", "n2", "n3", "r2"],
+                    "delete",
+                    "n2",
+                    "n3",
+                    "r1",
+                    "<sep>",
+                    "add",
+                    "n0",
+                    "n1",
+                    "r0",
+                    "<sep>",
+                    "delete",
+                    "n0",
+                    "n1",
+                    "r2",
+                    "<sep",
+                    "add",
+                    "n0",
+                    "n1",
+                    "r0",
+                    "<sep>",
+                    "add",
+                    "n2",
+                    "n3",
+                    "r2",
                 ],
             ],
-            [0.5, (1 + 0 + 1 + 3 / 4 + 1 + 6 / 8) / 6],
+            torch.tensor((7 / 9 + 24 / 24) / 2),
         ),
     ],
 )
-def test_exact_match(batch_preds, batch_targets, batch_expected):
+def test_exact_match(batch_preds, batch_targets, expected):
     em = ExactMatch()
-    for preds, targets, expected in zip(batch_preds, batch_targets, batch_expected):
-        em.update(preds, targets)
-        assert em.compute() == expected
+    em.update(batch_preds, batch_targets)
+    assert em.compute().equal(expected)

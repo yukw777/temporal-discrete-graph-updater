@@ -1,6 +1,7 @@
 seed: 42
 
-data:
+data_module:
+  _target_: dgu.data.TWCmdGenTemporalDataModule
   train_path: data/cmd_gen.0.2/train.json
   train_batch_size: 32
   train_num_worker: 4
@@ -10,14 +11,13 @@ data:
   test_path: data/cmd_gen.0.2/test.json
   test_batch_size: 8
   test_num_worker: 4
-  word_vocab_file: vocabs/word_vocab.txt
-  node_vocab_file: vocabs/node_vocab.txt
-  relation_vocab_file: vocabs/relation_vocab.txt
+  word_vocab_path: vocabs/word_vocab.txt
+  node_vocab_path: vocabs/node_vocab.txt
+  relation_vocab_path: vocabs/relation_vocab.txt
 
 model:
+  _target_: dgu.nn.graph_updater.StaticLabelDiscreteGraphUpdater
   hidden_dim: 64
-  max_num_nodes: 1000
-  max_num_edges: 1000
   word_emb_dim: 300
   tgn_event_type_emb_dim: 64
   tgn_memory_dim: 64

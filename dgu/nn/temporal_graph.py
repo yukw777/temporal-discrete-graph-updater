@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_scatter import scatter
 
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.nn.utils import index_edge_attr
 
 
 class TransformerConvStack(nn.Module):
@@ -65,8 +66,6 @@ class TransformerConvStack(nn.Module):
 class TemporalGraphNetwork(nn.Module):
     def __init__(
         self,
-        max_num_nodes: int,
-        max_num_edges: int,
         event_type_emb_dim: int,
         memory_dim: int,
         time_enc_dim: int,
@@ -76,43 +75,17 @@ class TemporalGraphNetwork(nn.Module):
         transformer_conv_num_heads: int,
     ) -> None:
         super().__init__()
-        self.max_num_nodes = max_num_nodes
-        self.max_num_edges = max_num_edges
         self.event_type_emb_dim = event_type_emb_dim
         self.memory_dim = memory_dim
         self.time_enc_dim = time_enc_dim
         self.event_embedding_dim = event_embedding_dim
         self.output_dim = output_dim
+        self.message_dim = (
+            event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
+        )
 
         # event type embedding
         self.event_type_emb = nn.Embedding(len(EVENT_TYPE_ID_MAP), event_type_emb_dim)
-
-        # memory, not persistent as we shouldn't save memories from one game to another
-        self.register_buffer(
-            "memory", torch.zeros(max_num_nodes, memory_dim), persistent=False
-        )
-
-        # last updated timestamp for edges, not persistent as we shouldn't save last
-        # updated timestamps from one game to another
-        self.register_buffer(
-            "last_update", torch.zeros(max_num_edges), persistent=False
-        )
-
-        # node features, not persistent as we shouldn't save node features
-        # from one game to another
-        self.register_buffer(
-            "node_features",
-            torch.zeros(max_num_nodes, event_embedding_dim),
-            persistent=False,
-        )
-
-        # edge features, not persistent as we shouldn't save edge features
-        # from one game to another
-        self.register_buffer(
-            "edge_features",
-            torch.zeros(max_num_edges, event_embedding_dim),
-            persistent=False,
-        )
 
         # time encoder
         self.time_encoder = TimeEncoder(time_enc_dim)
@@ -134,387 +107,217 @@ class TemporalGraphNetwork(nn.Module):
 
     def forward(
         self,
-        event_type_ids: torch.Tensor,
-        src_ids: torch.Tensor,
-        src_mask: torch.Tensor,
-        dst_ids: torch.Tensor,
-        dst_mask: torch.Tensor,
-        event_edge_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-        event_timestamps: torch.Tensor,
-        node_ids: torch.Tensor,
-        edge_ids: torch.Tensor,
+        edge_event_type_ids: torch.Tensor,
+        edge_event_src_ids: torch.Tensor,
+        edge_event_dst_ids: torch.Tensor,
+        edge_event_embeddings: torch.Tensor,
+        edge_event_timestamps: torch.Tensor,
+        memory: torch.Tensor,
+        node_memory_update_index: torch.Tensor,
+        node_memory_update_mask: torch.Tensor,
+        node_features: torch.Tensor,
         edge_index: torch.Tensor,
+        edge_features: torch.Tensor,
         edge_timestamps: torch.Tensor,
-    ) -> torch.Tensor:
+        edge_last_update: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
         """
-        Calculate the updated node embeddings based on the given events. Node
-        embeddings are calculated for nodes specified by node_ids.
+        Calculate the updated node embeddings based on the given events.
 
-        event_type_ids: (batch, event_seq_len)
-        src_ids: (batch, event_seq_len)
-        src_mask: (batch, event_seq_len)
-        dst_ids: (batch, event_seq_len)
-        dst_mask: (batch, event_seq_len)
-        event_edge_ids: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        event_timestamps: (batch, event_seq_len)
-        node_ids: (batch, num_node)
-        edge_ids: (batch, num_edge)
-        edge_index: (batch, 2, num_edge)
-        edge_timestamps: (batch, num_edge)
+        edge_event_type_ids: (num_edge_event)
+        edge_event_src_ids: (num_edge_event)
+        edge_event_dst_ids: (num_edge_event)
+        edge_event_embeddings: (num_edge_event, event_embedding_dim)
+        edge_event_timestamps: (num_edge_event)
+        memory: (prev_num_node, memory_dim)
+            Node memories before the given graph events.
+        node_memory_update_index: (prev_num_node)
+            New indices for nodes in the previous memory.
+        node_memory_update_mask: (prev_num_node)
+            Mask for nodes that have not been deleted in the previous memory.
+        node_features: (num_node, event_embedding_dim)
+            Node features after the given graph events.
+        edge_index: (2, num_edge)
+            Edge indices after the given graph events.
+        edge_features: (num_edge, event_embedding_dim)
+            Edge features after the given graph events.
+        edge_timestamps: (num_edge) or scalar
+        edge_last_update: (num_edge)
+            Last edge update timestamps before the given graph events.
 
-        output: (batch, num_node, hidden_dim)
+        output: {
+            "node_embeddings": (num_node, output_dim),
+            "updated_memory": (num_node, memory_dim),
+        }
         """
-        # calculate messages
-        src_msgs, dst_msgs = self.message(
-            event_type_ids,
-            src_ids,
-            src_mask,
-            dst_ids,
-            dst_mask,
-            event_embeddings,
-            event_edge_ids,
-            event_timestamps,
+        src_msgs, dst_msgs = self.edge_message(
+            edge_event_type_ids,
+            edge_event_src_ids,
+            edge_event_dst_ids,
+            edge_event_embeddings,
+            edge_event_timestamps,
+            memory,
+            edge_index,
+            edge_last_update,
         )
-        # src_msgs: (
-        #     batch,
-        #     event_seq_len,
-        #     event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        # )
-        # dst_msgs: (
-        #     batch,
-        #     event_seq_len,
-        #     event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        # )
+        # src_msgs: (num_edge_event, message_dim)
+        # dst_msgs: (num_edge_event, message_dim)
 
         # aggregate messages
-        event_node_ids = torch.cat([src_ids, dst_ids])
-        agg_msgs = self.agg_message(torch.cat([src_msgs, dst_msgs]), event_node_ids)
-        # (max_event_node_id,
-        #  event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim)
+        event_node_ids = torch.cat([edge_event_src_ids, edge_event_dst_ids])
+        # (2 * num_edge_event)
+        agg_msgs = scatter(torch.cat([src_msgs, dst_msgs]), event_node_ids, dim=0)
+        # (max_event_node_id, message_dim)
 
         # update the memories
-        # note that source IDs and destination IDs never overlap as we don't have
-        # self-loops in our graphs (except for the pad edge, but that doesn't matter).
-        unique_event_node_ids = event_node_ids.unique()
-        self.memory[unique_event_node_ids] = self.rnn(  # type: ignore
-            agg_msgs[unique_event_node_ids],
-            self.memory[unique_event_node_ids],  # type: ignore
+        updated_memory = self.update_memory(
+            memory,
+            node_memory_update_index,
+            node_memory_update_mask,
+            node_features,
+            event_node_ids,
+            agg_msgs,
         )
-
-        # update node features
-        self.update_node_features(event_type_ids, src_ids, event_embeddings)
-
-        # update edge features
-        self.update_edge_features(event_type_ids, event_edge_ids, event_embeddings)
+        # (num_node, memory_dim)
 
         # calculate the node embeddings
-        if node_ids.size(1) != 0:
-            rel_t = edge_timestamps - self.last_update[edge_ids]  # type: ignore
-            # (batch, num_edge)
-            rel_t_embs = self.time_encoder(rel_t).view(
-                rel_t.size(0), -1, self.time_enc_dim
-            )
-            # (batch, num_edge, time_enc_dim)
-            x = torch.cat(
-                [
-                    self.node_features[node_ids],  # type: ignore
-                    # (batch, num_node, event_embedding_dim)
-                    self.memory[node_ids],  # type: ignore
-                    # (batch, num_node, memory_dim)
-                ],
-                dim=-1,
-            ).flatten(end_dim=1)
-            # (batch * num_node, event_embedding_dim + memory_dim)
-            edge_attr = torch.cat(
-                [
-                    rel_t_embs,
-                    self.edge_features[edge_ids],  # type: ignore
-                ],
-                dim=-1,
-            ).flatten(end_dim=1)
-            # (batch * num_node, time_enc_dim + event_embedding_dim)
-            localized_edge_index = (
-                self.localize_edge_index(edge_index, node_ids)
-                .transpose(0, 1)
-                .flatten(start_dim=1)
-            )
-            # (2, batch * num_node)
-            node_embeddings = self.gnn(x, localized_edge_index, edge_attr=edge_attr)
-            # (batch * num_node, output_dim)
+        if node_features.size(0) != 0:
+            rel_t = edge_timestamps - edge_last_update
+            # (num_edge)
+            rel_t_embs = self.time_encoder(rel_t)
+            # (num_edge, time_enc_dim)
+            x = torch.cat([node_features, updated_memory], dim=-1)
+            # (num_node, event_embedding_dim + memory_dim)
+            edge_attr = torch.cat([rel_t_embs, edge_features], dim=-1)
+            # (num_edge, time_enc_dim + event_embedding_dim)
+            node_embeddings = self.gnn(x, edge_index, edge_attr=edge_attr)
+            # (num_node, output_dim)
         else:
             # no nodes, so no node embeddings either
-            node_embeddings = torch.zeros(0, self.output_dim, device=node_ids.device)
+            node_embeddings = torch.zeros(
+                0, self.output_dim, device=node_features.device
+            )
             # (0, output_dim)
 
-        # update last updated timestamps
-        self.update_last_update(event_type_ids, event_edge_ids, event_timestamps)
+        return {
+            "node_embeddings": node_embeddings,
+            # (num_node, output_dim)
+            "updated_memory": updated_memory
+            # (num_node, memory_dim)
+        }
 
-        return node_embeddings.view(node_ids.size(0), -1, self.output_dim)
-        # (batch, num_node, output_dim)
-
-    @staticmethod
-    def localize_edge_index(
-        edge_index: torch.Tensor, node_ids: torch.Tensor
+    def update_memory(
+        self,
+        memory: torch.Tensor,
+        node_memory_update_index: torch.Tensor,
+        node_memory_update_mask: torch.Tensor,
+        node_features: torch.Tensor,
+        event_node_ids: torch.Tensor,
+        agg_msgs: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Translate edge_index into indices based on the local node_ids.
+        Update the memory by resizing and setting new memories.
 
-        edge_index: (batch, 2, num_edge)
-        node_ids: (batch, num_node)
+        memory: (prev_num_node, memory_dim)
+            Node memories before the given graph events.
+        node_memory_update_index: (prev_num_node)
+            New indices for nodes in the previous memory.
+        node_memory_update_mask: (prev_num_node)
+            Mask for nodes that have not been deleted in the previous memory.
+        node_features: (num_node, event_embedding_dim)
+            Node features after the given graph events.
+        event_node_ids: (num_node_event + 2 * num_edge_event)
+        agg_msgs: (max_event_node_id, message_dim)
 
-        output: (batch, 2, num_edge)
+        output: (num_node, memory_dim)
         """
-        flat_node_ids = node_ids.flatten()
-        # (batch * num_node)
-        flat_edge_index = edge_index.flatten()
-        # (batch * 2 * num_edge)
-        matches = flat_node_ids.unsqueeze(-1) == flat_edge_index
-        # (batch * num_node, batch * 2 * num_edge)
+        # update the memories
+        updated_prev_memory = memory.clone()
+        if event_node_ids.numel() > 0:
+            unique_event_node_ids = event_node_ids.unique()
+            updated_prev_memory[unique_event_node_ids] = self.rnn(
+                agg_msgs[unique_event_node_ids], memory[unique_event_node_ids]
+            )
+        updated_memory = torch.zeros(
+            node_features.size(0), self.memory_dim, device=updated_prev_memory.device
+        )
+        updated_memory[
+            node_memory_update_index[node_memory_update_mask]
+        ] = updated_prev_memory[node_memory_update_mask]
+        # (num_node, memory_dim)
 
-        # now find the index for the first True (or nonzero) element from (flat) matches
-        # by looking for an element that is nonzero and the cumulative sum of the
-        # matches is 1.
-        # this means that if there are overlaps in the elements in the batch
-        # (e.g. node 0 for padding), the index of the first occurrence would be used.
-        # this is OK as the only overlap should be the pdding node 0.
-        nonzero = matches > 0
-        # (batch * num_node, batch * 2 * num_edge)
-        nonzero_and_cumsum_zero = (nonzero.cumsum(0) == 1) & nonzero
-        # (batch * num_node, batch * 2 * num_edge)
-        # find indices of True by taking the max
-        _, indices = torch.max(nonzero_and_cumsum_zero, dim=0)
-        # (batch * 2 * num_edge)
+        return updated_memory
 
-        return indices.view_as(edge_index)
-        # (batch, 2, num_edge)
-
-    def message(
+    def edge_message(
         self,
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
-        src_mask: torch.Tensor,
         dst_ids: torch.Tensor,
-        dst_mask: torch.Tensor,
         event_embeddings: torch.Tensor,
-        event_edge_ids: torch.Tensor,
         event_timestamps: torch.Tensor,
+        memory: torch.Tensor,
+        edge_index: torch.Tensor,
+        last_update: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Calculate graph event messages. We concatenate the event type,
-        source and destination memories, time embedding and event embedding.
+        Calculate edge event messages. We concatenate the event type,
+        source and destination memories, relative time embedding and event embedding.
 
-        Special events like pad, start, end are masked out. Node events are also
-        masked out for destination node messages.
+        Special events like pad, start, end are masked out.
 
-        event_type_ids: (batch, event_seq_len)
-        src_ids: (batch, event_seq_len)
-        src_mask: (batch, event_seq_len)
-        dst_ids: (batch, event_seq_len)
-        dst_mask: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        event_edge_ids: (batch, event_seq_len)
-        event_timestamps: (batch, event_seq_len)
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        event_embeddings: (batch, event_embedding_dim)
+        event_timestamps: (batch)
+        memory: (num_node, memory_dim)
+        edge_index: (2, num_edge)
+        last_update: (num_edge)
 
         output:
-            src_messages: (
-                batch,
-                event_seq_len,
-                event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-            )
-            dst_messages: (
-                batch,
-                event_seq_len,
-                event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-            )
+            src_messages: (batch, message_dim)
+            dst_messages: (batch, message_dim)
         """
-        # repeat event type id for event type embeddings
         event_type_embs = self.event_type_emb(event_type_ids)
-        # (batch, event_seq_len, event_type_emb_dim)
+        # (batch, event_type_emb_dim)
 
-        # use the memory for node embeddings
-        src_embs = self.memory[src_ids] * src_mask.unsqueeze(-1)  # type: ignore
-        # (batch, event_seq_len, hidden_dim)
-        dst_embs = self.memory[dst_ids] * dst_mask.unsqueeze(-1)  # type: ignore
-        # (batch, event_seq_len, hidden_dim)
+        src_memory = memory[src_ids]
+        # (batch, memory_dim)
+        dst_memory = memory[dst_ids]
+        # (batch, memory_dim)
 
         # calculate relative timestamps for edge events
-        edge_last_update = self.last_update[event_edge_ids]  # type: ignore
-        # (batch, event_seq_len)
+        edge_last_update = index_edge_attr(
+            edge_index, last_update, torch.stack([src_ids, dst_ids])
+        )
+        # (batch)
 
-        # multiply edge_last_update by dst_mask so that we
-        # only subtract last update timestamps for edge events
-        rel_edge_timestamps = event_timestamps - edge_last_update * dst_mask
-        # (batch, event_seq_len)
+        rel_edge_timestamps = event_timestamps - edge_last_update
+        # (batch)
 
-        # only select node events from event_timestamps
-        # and only select edge events from rel_edge_timestamps (use dst_mask)
-        # then add them and pass it through the time encoder to get the embeddings
-        # finally, mask out timestamp embeddings for special events
-        is_node_event = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["node-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"],
-        )
-        is_not_special_event = torch.logical_not(
-            torch.logical_or(
-                torch.logical_or(
-                    event_type_ids == EVENT_TYPE_ID_MAP["pad"],
-                    event_type_ids == EVENT_TYPE_ID_MAP["start"],
-                ),
-                event_type_ids == EVENT_TYPE_ID_MAP["end"],
-            )
-        )
-        # (batch, event_seq_len)
-        timestamp_emb = self.time_encoder(
-            event_timestamps * is_node_event + rel_edge_timestamps * dst_mask
-        ).view(
-            event_timestamps.size(0), -1, self.time_enc_dim
-        ) * is_not_special_event.unsqueeze(
-            -1
-        )
-        # (batch, event_seq_len, time_enc_dim)
+        timestamp_emb = self.time_encoder(rel_edge_timestamps)
+        # (batch, time_enc_dim)
 
-        # mask out special events
-        src_messages = (
-            torch.cat(
-                [
-                    event_type_embs,
-                    src_embs,
-                    dst_embs,
-                    timestamp_emb,
-                    event_embeddings,
-                ],
-                dim=-1,
-            )
-            * is_not_special_event.unsqueeze(-1)
+        src_messages = torch.cat(
+            [
+                event_type_embs,
+                src_memory,
+                dst_memory,
+                timestamp_emb,
+                event_embeddings,
+            ],
+            dim=-1,
         )
-        # (
-        #   batch,
-        #   event_seq_len,
-        #   event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        # )
-        dst_messages = (
-            torch.cat(
-                [
-                    event_type_embs,
-                    dst_embs,
-                    src_embs,
-                    timestamp_emb,
-                    event_embeddings,
-                ],
-                dim=-1,
-            )
-            * dst_mask.unsqueeze(-1)
+        # (batch, message_dim)
+        dst_messages = torch.cat(
+            [
+                event_type_embs,
+                dst_memory,
+                src_memory,
+                timestamp_emb,
+                event_embeddings,
+            ],
+            dim=-1,
         )
-        # (
-        #   batch,
-        #   event_seq_len,
-        #   event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        # )
+        # (batch, message_dim)
         return src_messages, dst_messages
-
-    def agg_message(self, messages: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
-        """
-        Aggregate messages based on the given node IDs. For now we calculate the sum.
-
-        messages: (
-            batch,
-            event_seq_len,
-            event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        )
-        ids: (batch, event_seq_len)
-
-        output: (
-            max_src_id,
-            event_type_emb_dim + 2 * memory_dim + time_enc_dim + event_embedding_dim
-        )
-        """
-        return scatter(messages.flatten(end_dim=1), ids.flatten(), dim=0)
-
-    def update_node_features(
-        self,
-        event_type_ids: torch.Tensor,
-        src_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-    ) -> None:
-        """
-        Update node features using node-add event embeddings.
-
-        event_type_ids: (batch, event_seq_len)
-        src_ids: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        """
-        # update node features using node-add event embeddings
-        is_node_add = event_type_ids.flatten() == EVENT_TYPE_ID_MAP["node-add"]
-        # (batch * event_seq_len)
-        node_add_src_ids = src_ids.flatten()[is_node_add]
-        # (num_node_add)
-
-        # Duplicates are not possible because we generate a new ID for
-        # every added node.
-        node_add_event_embeddings = event_embeddings.flatten(end_dim=1)[is_node_add]
-        # (num_node_add, event_embedding_dim)
-        self.node_features[node_add_src_ids] = node_add_event_embeddings  # type: ignore
-
-    def update_edge_features(
-        self,
-        event_type_ids: torch.Tensor,
-        event_edge_ids: torch.Tensor,
-        event_embeddings: torch.Tensor,
-    ) -> None:
-        """
-        Update edge features using edge-add event embeddings.
-
-        event_type_ids: (batch, event_seq_len)
-        event_edge_ids: (batch, event_seq_len)
-        event_embeddings: (batch, event_seq_len, event_embedding_dim)
-        """
-        # update edge features using edge-add event embeddings
-        is_edge_add = event_type_ids.flatten() == EVENT_TYPE_ID_MAP["edge-add"]
-        # (batch * event_seq_len)
-        edge_add_edge_ids = event_edge_ids.flatten()[is_edge_add]
-        # (num_edge_add)
-
-        # Duplicates are not possible because we generate a new ID for
-        # every added edge.
-        edge_add_event_embeddings = event_embeddings.flatten(end_dim=1)[is_edge_add]
-        # (num_edge_add, event_embedding_dim)
-        self.edge_features[  # type: ignore
-            edge_add_edge_ids
-        ] = edge_add_event_embeddings
-
-    def update_last_update(
-        self,
-        event_type_ids: torch.Tensor,
-        event_edge_ids: torch.Tensor,
-        event_timestamps: torch.Tensor,
-    ) -> None:
-        """
-        Update last update timestamps for edges.
-
-        event_type_ids: (batch, event_seq_len)
-        event_edge_ids: (batch, event_seq_len)
-        event_timestamps: (batch, event_seq_len)
-        """
-        # update last update timestamps using edge events
-        flat_event_type_ids = event_type_ids.flatten()
-        is_edge_event = torch.logical_or(
-            flat_event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            flat_event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
-        )
-        # (batch * event_seq_len)
-
-        # Duplicates are possible here but it's OK, b/c PyTorch
-        # automatically assigns the latest last update value in the given batch.
-        edge_ids = event_edge_ids.flatten()[is_edge_event]
-        # (num_edge_event)
-        edge_timestamps = event_timestamps.flatten()[is_edge_event]
-        # (num_edge_event)
-        self.last_update[edge_ids] = edge_timestamps  # type: ignore
-
-    def reset(self) -> None:
-        self.memory.data.fill_(0)  # type: ignore
-        self.last_update.data.fill_(0)  # type: ignore
-        self.node_features.data.fill_(0)  # type: ignore
-        self.edge_features.data.fill_(0)  # type: ignore

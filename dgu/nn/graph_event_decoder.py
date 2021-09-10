@@ -132,14 +132,10 @@ class EventStaticLabelHead(nn.Module):
         autoregressive_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
-        node_label_embeddings: torch.Tensor,
-        edge_label_embeddings: torch.Tensor,
+        label_embeddings: torch.Tensor,
     ) -> None:
         super().__init__()
-        assert node_label_embeddings.size(1) == edge_label_embeddings.size(1)
-        self.label_embedding_dim = node_label_embeddings.size(1)
-        self.num_node_label = node_label_embeddings.size(0)
-        self.num_edge_label = edge_label_embeddings.size(0)
+        self.label_embedding_dim = label_embeddings.size(1)
 
         self.key_linear = nn.Sequential(
             nn.Linear(self.label_embedding_dim, hidden_dim),
@@ -151,10 +147,7 @@ class EventStaticLabelHead(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, key_query_dim),
         )
-        self.register_buffer(
-            "label_embeddings",
-            torch.cat([node_label_embeddings, edge_label_embeddings]),
-        )
+        self.label_embeddings = nn.Embedding.from_pretrained(label_embeddings)
 
     def forward(self, autoregressive_embedding: torch.Tensor) -> torch.Tensor:
         """
@@ -164,7 +157,7 @@ class EventStaticLabelHead(nn.Module):
             label_logits: (batch, num_label), logits for nodes first, then edges
         """
         # calculate the key from label_embeddings
-        key = self.key_linear(self.label_embeddings)
+        key = self.key_linear(self.label_embeddings.weight)
         # (num_label, key_query_dim)
 
         # calculate the query from event_type and autoregressive_embedding
@@ -182,8 +175,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
         node_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
-        node_label_embeddings: torch.Tensor,
-        edge_label_embeddings: torch.Tensor,
+        label_embeddings: torch.Tensor,
     ) -> None:
         super().__init__()
         self.event_type_head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
@@ -194,11 +186,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
             node_embedding_dim, graph_event_embedding_dim, hidden_dim, key_query_dim
         )
         self.event_label_head = EventStaticLabelHead(
-            graph_event_embedding_dim,
-            hidden_dim,
-            key_query_dim,
-            node_label_embeddings,
-            edge_label_embeddings,
+            graph_event_embedding_dim, hidden_dim, key_query_dim, label_embeddings
         )
 
     def forward(

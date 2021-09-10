@@ -53,20 +53,19 @@ def test_event_node_head(
 
 
 @pytest.mark.parametrize(
-    "autoregressive_embedding_dim,hidden_dim,key_query_dim,num_node_label,"
-    "num_edge_label,label_embedding_dim,batch",
+    "autoregressive_embedding_dim,hidden_dim,key_query_dim,num_label,"
+    "label_embedding_dim,batch",
     [
-        (24, 12, 8, 4, 5, 24, 1),
-        (24, 12, 8, 4, 5, 24, 10),
-        (48, 24, 12, 8, 10, 48, 24),
+        (24, 12, 8, 4, 24, 1),
+        (24, 12, 8, 4, 24, 10),
+        (48, 24, 12, 8, 48, 24),
     ],
 )
 def test_event_static_label_head(
     autoregressive_embedding_dim,
     hidden_dim,
     key_query_dim,
-    num_node_label,
-    num_edge_label,
+    num_label,
     label_embedding_dim,
     batch,
 ):
@@ -74,20 +73,19 @@ def test_event_static_label_head(
         autoregressive_embedding_dim,
         hidden_dim,
         key_query_dim,
-        torch.rand(num_node_label, label_embedding_dim),
-        torch.rand(num_edge_label, label_embedding_dim),
+        torch.rand(num_label, label_embedding_dim),
     )
     label_logits = head(torch.rand(batch, autoregressive_embedding_dim))
-    assert label_logits.size() == (batch, num_node_label + num_edge_label)
+    assert label_logits.size() == (batch, num_label)
 
 
 @pytest.mark.parametrize(
     "graph_event_embedding_dim,node_embedding_dim,hidden_dim,key_query_dim,"
-    "num_node_label,num_edge_label,label_embedding_dim,batch,num_node",
+    "num_label,label_embedding_dim,batch,num_node",
     [
-        (36, 24, 12, 8, 4, 5, 24, 1, 4),
-        (36, 24, 12, 8, 4, 5, 24, 10, 12),
-        (72, 36, 24, 12, 8, 10, 48, 24, 36),
+        (36, 24, 12, 8, 4, 24, 1, 4),
+        (36, 24, 12, 8, 4, 24, 10, 12),
+        (72, 36, 24, 12, 8, 48, 24, 36),
     ],
 )
 def test_static_label_graph_event_decoder(
@@ -95,8 +93,7 @@ def test_static_label_graph_event_decoder(
     node_embedding_dim,
     hidden_dim,
     key_query_dim,
-    num_node_label,
-    num_edge_label,
+    num_label,
     label_embedding_dim,
     batch,
     num_node,
@@ -106,8 +103,7 @@ def test_static_label_graph_event_decoder(
         node_embedding_dim,
         hidden_dim,
         key_query_dim,
-        torch.rand(num_node_label, label_embedding_dim),
-        torch.rand(num_edge_label, label_embedding_dim),
+        torch.rand(num_label, label_embedding_dim),
     )
     results = decoder(
         torch.rand(batch, graph_event_embedding_dim),
@@ -117,7 +113,7 @@ def test_static_label_graph_event_decoder(
     assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
     assert results["src_logits"].size() == (batch, num_node)
     assert results["dst_logits"].size() == (batch, num_node)
-    assert results["label_logits"].size() == (batch, num_node_label + num_edge_label)
+    assert results["label_logits"].size() == (batch, num_label)
 
 
 @pytest.mark.parametrize(
@@ -126,8 +122,7 @@ def test_static_label_graph_event_decoder(
 )
 @pytest.mark.parametrize("hidden", [True, False])
 def test_rnn_graph_event_decoder(hidden, input_dim, hidden_dim, batch, num_node):
-    num_node_label = 10
-    num_edge_label = 10
+    num_label = 10
     label_embedding_dim = 8
     node_embedding_dim = 16
 
@@ -139,8 +134,7 @@ def test_rnn_graph_event_decoder(hidden, input_dim, hidden_dim, batch, num_node)
             node_embedding_dim,
             8,
             8,
-            torch.rand(num_node_label, label_embedding_dim),
-            torch.rand(num_edge_label, label_embedding_dim),
+            torch.rand(num_label, label_embedding_dim),
         ),
     )
 
@@ -153,4 +147,4 @@ def test_rnn_graph_event_decoder(hidden, input_dim, hidden_dim, batch, num_node)
     assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
     assert results["src_logits"].size() == (batch, num_node)
     assert results["dst_logits"].size() == (batch, num_node)
-    assert results["label_logits"].size() == (batch, num_node_label + num_edge_label)
+    assert results["label_logits"].size() == (batch, num_label)
