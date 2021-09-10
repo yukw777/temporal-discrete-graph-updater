@@ -41,9 +41,11 @@ def tw_cmd_gen_datamodule(tmpdir):
 
 @pytest.fixture
 def tw_cmd_gen_collator():
+    _, label_id_map = read_label_vocab_files(
+        "vocabs/node_vocab.txt", "vocabs/relation_vocab.txt"
+    )
     return TWCmdGenTemporalDataCollator(
-        SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt"),
-        read_label_vocab_files("vocabs/node_vocab.txt", "vocabs/relation_vocab.txt"),
+        SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt"), label_id_map
     )
 
 
@@ -1499,9 +1501,10 @@ def test_tw_cmd_gen_collator_collate_graphical_inputs(
 
 
 def test_read_label_vocab_files():
-    label_id_map = read_label_vocab_files(
+    labels, label_id_map = read_label_vocab_files(
         "tests/data/test_node_vocab.txt", "tests/data/test_relation_vocab.txt"
     )
+    assert labels == ["", "player", "inventory", "chopped", "in", "is"]
     assert label_id_map == {
         "": 0,
         "player": 1,

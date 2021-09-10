@@ -418,8 +418,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
             torch.tensor([1]),
             torch.tensor([0]),
-            torch.tensor([4]),  # is
-            torch.tensor([2, 0]),
+            torch.tensor([5]),  # is
+            torch.tensor([3, 1]),
             torch.tensor([0, 0]),
             (["add , player , chopped , is"], [["add", "player", "chopped", "is"]]),
         ),
@@ -427,8 +427,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
             torch.tensor([1]),
             torch.tensor([0]),
-            torch.tensor([4]),  # is
-            torch.tensor([2, 0]),
+            torch.tensor([5]),  # is
+            torch.tensor([3, 1]),
             torch.tensor([0, 0]),
             (
                 ["delete , player , chopped , is"],
@@ -441,8 +441,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             ),
             torch.tensor([1, 0]),
             torch.tensor([0, 1]),
-            torch.tensor([4, 3]),  # [is, in]
-            torch.tensor([2, 0, 0, 1, 0, 1]),
+            torch.tensor([5, 4]),  # [is, in]
+            torch.tensor([3, 1, 1, 2, 1, 2]),
             torch.tensor([0, 0, 0, 0, 1, 1]),
             (
                 ["add , player , chopped , is", "delete , player , inventory , in"],
@@ -503,8 +503,8 @@ def test_sldgu_generate_graph_triples(
             [torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]])],
             [torch.tensor([1])],
             [torch.tensor([0])],
-            [torch.tensor([4])],
-            [torch.tensor([2, 0])],
+            [torch.tensor([5])],
+            [torch.tensor([3, 1])],
             [torch.tensor([0, 0])],
             (
                 [["add , player , chopped , is"]],
@@ -515,8 +515,8 @@ def test_sldgu_generate_graph_triples(
             [torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]])],
             [torch.tensor([1])],
             [torch.tensor([0])],
-            [torch.tensor([4])],
-            [torch.tensor([2, 0])],
+            [torch.tensor([5])],
+            [torch.tensor([3, 1])],
             [torch.tensor([0, 0])],
             (
                 [["delete , player , chopped , is"]],
@@ -534,8 +534,8 @@ def test_sldgu_generate_graph_triples(
             ],
             [torch.tensor([1, 0]), torch.tensor([0, 2])],
             [torch.tensor([0, 1]), torch.tensor([1, 3])],
-            [torch.tensor([4, 3]), torch.tensor([4, 3])],
-            [torch.tensor([2, 0, 0, 1, 0, 1]), torch.tensor([0, 2, 0, 1, 0, 1])],
+            [torch.tensor([5, 4]), torch.tensor([5, 4])],
+            [torch.tensor([3, 1, 1, 2, 1, 2]), torch.tensor([1, 3, 1, 2, 1, 2])],
             [torch.tensor([0, 0, 0, 0, 1, 1]), torch.tensor([0, 0, 1, 1, 1, 1])],
             (
                 [

@@ -26,6 +26,7 @@ from dgu.data import (
     TWCmdGenTemporalBatch,
     TWCmdGenTemporalGraphicalInput,
     TWCmdGenTemporalTextualInput,
+    read_label_vocab_files,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 
@@ -81,13 +82,13 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         self.truncated_bptt_steps = truncated_bptt_steps
         # preprocessor
-        if word_vocab_path is not None:
+        if word_vocab_path is None:
+            # just load with special tokens
+            self.preprocessor = SpacyPreprocessor([PAD, UNK, BOS, EOS])
+        else:
             self.preprocessor = SpacyPreprocessor.load_from_file(
                 to_absolute_path(word_vocab_path)
             )
-        else:
-            # just load with special tokens
-            self.preprocessor = SpacyPreprocessor([PAD, UNK, BOS, EOS])
 
         # load pretrained word embedding and freeze it
         if pretrained_word_embedding_path is not None:
@@ -112,33 +113,19 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             pretrained_word_embeddings, nn.Linear(word_emb_dim, hidden_dim)
         )
 
+        if node_vocab_path is not None and relation_vocab_path is not None:
+            self.labels, self.label_id_map = read_label_vocab_files(
+                to_absolute_path(node_vocab_path), to_absolute_path(relation_vocab_path)
+            )
+        else:
+            self.labels = ["", "node", "relation"]
+            self.label_id_map = {label: i for i, label in enumerate(self.labels)}
+
         # calculate node/edge label embeddings
-        if node_vocab_path is not None:
-            with open(to_absolute_path(node_vocab_path), "r") as f:
-                node_vocab = [node_name.strip() for node_name in f]
-        else:
-            # initialize with a single node
-            node_vocab = ["node"]
-        node_label_word_ids, node_label_mask = self.preprocessor.preprocess(node_vocab)
-        node_label_embeddings = masked_mean(
-            pretrained_word_embeddings(node_label_word_ids), node_label_mask
+        label_word_ids, label_mask = self.preprocessor.preprocess(self.labels)
+        label_embeddings = masked_mean(
+            pretrained_word_embeddings(label_word_ids), label_mask
         )
-        # load relation vocab
-        if relation_vocab_path is not None:
-            with open(to_absolute_path(relation_vocab_path), "r") as f:
-                relation_vocab = [relation_name.strip() for relation_name in f]
-        else:
-            # initialize with a single relation
-            relation_vocab = ["relation"]
-        # add reverse relations
-        relation_vocab += [rel + " reverse" for rel in relation_vocab]
-        edge_label_word_ids, edge_label_mask = self.preprocessor.preprocess(
-            relation_vocab
-        )
-        edge_label_embeddings = masked_mean(
-            pretrained_word_embeddings(edge_label_word_ids), edge_label_mask
-        )
-        self.labels: List[str] = node_vocab + relation_vocab
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -169,8 +156,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             hidden_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
-            node_label_embeddings,
-            edge_label_embeddings,
+            label_embeddings,
         )
         self.decoder = RNNGraphEventDecoder(4 * hidden_dim, hidden_dim, event_decoder)
 

@@ -30,9 +30,9 @@ def main(cfg: DictConfig) -> None:
     lm = instantiate(
         cfg.model,
         **cfg.train,
-        word_vocab_path=cfg.data_module.word_vocab_file,
-        node_vocab_path=cfg.data_module.node_vocab_file,
-        relation_vocab_path=cfg.data_module.relation_vocab_file,
+        word_vocab_path=cfg.data_module.word_vocab_path,
+        node_vocab_path=cfg.data_module.node_vocab_path,
+        relation_vocab_path=cfg.data_module.relation_vocab_path,
     )
 
     # fit

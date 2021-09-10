@@ -586,9 +586,9 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         test_path: str,
         test_batch_size: int,
         test_num_worker: int,
-        word_vocab_file: str,
-        node_vocab_file: str,
-        relation_vocab_file: str,
+        word_vocab_path: str,
+        node_vocab_path: str,
+        relation_vocab_path: str,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
@@ -602,10 +602,10 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         self.test_num_worker = test_num_worker
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
-            to_absolute_path(word_vocab_file)
+            to_absolute_path(word_vocab_path)
         )
-        self.label_id_map = read_label_vocab_files(
-            to_absolute_path(node_vocab_file), to_absolute_path(relation_vocab_file)
+        self.labels, self.label_id_map = read_label_vocab_files(
+            to_absolute_path(node_vocab_path), to_absolute_path(relation_vocab_path)
         )
 
     def prepare_data(self) -> None:
@@ -655,18 +655,17 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
 
 def read_label_vocab_files(
-    node_vocab_file: str, relation_vocab_file: str
-) -> Dict[str, int]:
-    id_map: Dict[str, int] = {"": 0}
-    with open(node_vocab_file) as f:
-        for i, line in enumerate(f):
+    node_vocab_path: str, relation_vocab_path: str
+) -> Tuple[List[str], Dict[str, int]]:
+    labels = [""]
+    with open(node_vocab_path) as f:
+        for line in f:
             stripped = line.strip()
             if stripped != "":
-                id_map[stripped] = i + 1
-    num_node_label = len(id_map)
-    with open(relation_vocab_file) as f:
-        for i, line in enumerate(f):
+                labels.append(stripped)
+    with open(relation_vocab_path) as f:
+        for line in f:
             stripped = line.strip()
             if stripped != "":
-                id_map[stripped] = i + num_node_label
-    return id_map
+                labels.append(stripped)
+    return labels, {label: i for i, label in enumerate(labels)}
