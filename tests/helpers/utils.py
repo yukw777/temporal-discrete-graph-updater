@@ -38,9 +38,7 @@ class EqualityDiGraph(nx.DiGraph):
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, EqualityDiGraph):
             return False
-        return nx.is_isomorphic(
-            self,
-            o,
-            node_match=lambda d1, d2: d1 == d2,
-            edge_match=lambda d1, d2: d1 == d2,
+
+        return self.nodes.data() == o.nodes.data() and list(self.edges.data()) == list(
+            o.edges.data()
         )
