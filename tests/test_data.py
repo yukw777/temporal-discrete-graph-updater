@@ -2,6 +2,7 @@ import pytest
 import json
 import torch
 import shutil
+import networkx as nx
 
 from dgu.data import (
     TWCmdGenTemporalGraphData,
@@ -418,6 +419,192 @@ def test_tw_cmd_gen_temporal_graph_data_from_graph_event(
         before_graph,
         after_graph,
         label_id_map,
+    )
+    assert data.x.equal(expected.x)
+    assert data.node_memory_update_index.equal(expected.node_memory_update_index)
+    assert data.node_memory_update_mask.equal(expected.node_memory_update_mask)
+    assert data.edge_index.equal(expected.edge_index)
+    assert data.edge_attr.equal(expected.edge_attr)
+    assert data.edge_last_update.equal(expected.edge_last_update)
+    assert data.event_src_index.equal(expected.event_src_index)
+    assert data.event_dst_index.equal(expected.event_dst_index)
+
+
+@pytest.mark.parametrize(
+    "event_src_index,event_dst_index,before_graph,before_graph_node_attrs,"
+    "after_graph,after_graph_node_attrs,expected",
+    [
+        (
+            torch.empty(0, dtype=torch.long),
+            torch.empty(0, dtype=torch.long),
+            EqualityDiGraph(),
+            {},
+            EqualityDiGraph(),
+            {},
+            TWCmdGenTemporalGraphData(
+                x=torch.empty(0, dtype=torch.long),
+                node_memory_update_index=torch.empty(0, dtype=torch.long),
+                node_memory_update_mask=torch.empty(0, dtype=torch.bool),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+                edge_timestamps=torch.empty(0),
+                event_src_index=torch.empty(0, dtype=torch.long),
+                event_dst_index=torch.empty(0, dtype=torch.long),
+            ),
+        ),
+        (
+            torch.tensor(2),
+            torch.tensor(1),
+            EqualityDiGraph(),
+            {},
+            EqualityDiGraph({"n0": {}}),
+            {"n0": {"label": "player", "label_id": 1}},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([1]),
+                node_memory_update_index=torch.empty(0, dtype=torch.long),
+                node_memory_update_mask=torch.empty(0, dtype=torch.bool),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+                edge_timestamps=torch.empty(0),
+                event_src_index=torch.tensor(2),
+                event_dst_index=torch.tensor(1),
+            ),
+        ),
+        (
+            torch.tensor(3),
+            torch.tensor(2),
+            EqualityDiGraph({"n0": {}}),
+            {"n0": {"label": "player", "label_id": 1}},
+            EqualityDiGraph({"n0": {}, "n1": {}}),
+            {
+                "n0": {"label": "player", "label_id": 1},
+                "n1": {"label": "inventory", "label_id": 2},
+            },
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([1, 2]),
+                node_memory_update_index=torch.tensor([0]),
+                node_memory_update_mask=torch.tensor([True]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+                edge_timestamps=torch.empty(0),
+                event_src_index=torch.tensor(3),
+                event_dst_index=torch.tensor(2),
+            ),
+        ),
+        (
+            torch.tensor(0),
+            torch.tensor(1),
+            EqualityDiGraph({"n0": {}, "n1": {}}),
+            {
+                "n0": {"label": "player", "label_id": 1},
+                "n1": {"label": "inventory", "label_id": 2},
+            },
+            EqualityDiGraph(
+                {"n0": {"n1": {"label": "in", "label_id": 4, "last_update": 0}}}
+            ),
+            {
+                "n0": {"label": "player", "label_id": 1},
+                "n1": {"label": "inventory", "label_id": 2},
+            },
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([1, 2]),
+                node_memory_update_index=torch.tensor([0, 1]),
+                node_memory_update_mask=torch.tensor([True, True]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([4]),
+                edge_last_update=torch.tensor([0.0]),
+                edge_timestamps=torch.tensor([2.0]),
+                event_src_index=torch.tensor(0),
+                event_dst_index=torch.tensor(1),
+            ),
+        ),
+        (
+            torch.tensor(3),
+            torch.tensor(2),
+            EqualityDiGraph(
+                {"n0": {"n1": {"label": "in", "label_id": 4, "last_update": 0}}}
+            ),
+            {
+                "n0": {"label": "player", "label_id": 1},
+                "n1": {"label": "inventory", "label_id": 2},
+            },
+            EqualityDiGraph({"n0": {}, "n1": {}}),
+            {
+                "n0": {"label": "player", "label_id": 1},
+                "n1": {"label": "inventory", "label_id": 2},
+            },
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([1, 2]),
+                node_memory_update_index=torch.tensor([0, 1]),
+                node_memory_update_mask=torch.tensor([True, True]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+                edge_timestamps=torch.empty(0),
+                event_src_index=torch.tensor(3),
+                event_dst_index=torch.tensor(2),
+            ),
+        ),
+        (
+            torch.tensor(3),
+            torch.tensor(2),
+            EqualityDiGraph({"n0": {}, "n1": {}}),
+            {
+                "n0": {"label": "player", "label_id": 1},
+                "n1": {"label": "inventory", "label_id": 2},
+            },
+            EqualityDiGraph({"n0": {}}),
+            {"n0": {"label": "player", "label_id": 1}},
+            TWCmdGenTemporalGraphData(
+                x=torch.tensor([1]),
+                node_memory_update_index=torch.tensor([0, 0]),
+                node_memory_update_mask=torch.tensor([True, False]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+                edge_timestamps=torch.empty(0),
+                event_src_index=torch.tensor(3),
+                event_dst_index=torch.tensor(2),
+            ),
+        ),
+        (
+            torch.tensor(3),
+            torch.tensor(2),
+            EqualityDiGraph({"n0": {}}),
+            {"n0": {"label": "player", "label_id": 1}},
+            EqualityDiGraph(),
+            {},
+            TWCmdGenTemporalGraphData(
+                x=torch.empty(0, dtype=torch.long),
+                node_memory_update_index=torch.tensor([0]),
+                node_memory_update_mask=torch.tensor([False]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+                edge_timestamps=torch.empty(0),
+                event_src_index=torch.tensor(3),
+                event_dst_index=torch.tensor(2),
+            ),
+        ),
+    ],
+)
+def test_tw_cmd_gen_temporal_graph_data_from_decoded_graph_event(
+    event_src_index,
+    event_dst_index,
+    before_graph,
+    before_graph_node_attrs,
+    after_graph,
+    after_graph_node_attrs,
+    expected,
+):
+    nx.set_node_attributes(after_graph, after_graph_node_attrs)
+    nx.set_node_attributes(before_graph, before_graph_node_attrs)
+
+    data = TWCmdGenTemporalGraphData.from_decoded_graph_event(
+        event_src_index, event_dst_index, before_graph, after_graph
     )
     assert data.x.equal(expected.x)
     assert data.node_memory_update_index.equal(expected.node_memory_update_index)

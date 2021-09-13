@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import torch
 import networkx as nx
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 from hydra.utils import to_absolute_path
@@ -206,15 +206,22 @@ class TWCmdGenTemporalGraphData(Data):
             return self.node_memory_update_mask.sum()
         return super().__inc__(key, value)
 
-    @classmethod
-    def from_graph_event(
-        cls,
-        event_src_index: torch.Tensor,
-        event_dst_index: torch.Tensor,
+    @staticmethod
+    def calculate_node_memory_update_edge_index(
         before_graph: nx.DiGraph,
         after_graph: nx.DiGraph,
-        label_id_map: Dict[str, int],
-    ) -> "TWCmdGenTemporalGraphData":
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Calculate the node memory update tensors and edge index tensor based on the
+        difference between the before and after graphs.
+
+        output: (
+            node_memory_update_index: (num_node_before),
+            node_memory_update_mask: (num_node_before),
+            edge_index: (2, num_edge_after),
+        )
+        """
         node_id_map = {node: node_id for node_id, node in enumerate(after_graph.nodes)}
         node_memory_update_index: List[int] = []
         node_memory_update_mask: List[bool] = []
@@ -225,38 +232,121 @@ class TWCmdGenTemporalGraphData(Data):
             else:
                 node_memory_update_index.append(0)
                 node_memory_update_mask.append(False)
-
-        return TWCmdGenTemporalGraphData(
-            # we set x for node_label_ids as that's how
-            # Data figures out how many nodes there are
-            x=torch.tensor([label_id_map[node.label] for node in after_graph.nodes])
-            if after_graph.order() > 0
-            else torch.empty(0, dtype=torch.long),
-            node_memory_update_index=torch.tensor(node_memory_update_index)
+        return (
+            torch.tensor(node_memory_update_index, device=device)
             if node_memory_update_index
-            else torch.empty(0, dtype=torch.long),
-            node_memory_update_mask=torch.tensor(node_memory_update_mask)
+            else torch.empty(0, dtype=torch.long, device=device),
+            torch.tensor(node_memory_update_mask, device=device)
             if node_memory_update_mask
-            else torch.empty(0, dtype=torch.bool),
-            edge_index=torch.tensor(
-                [(node_id_map[src], node_id_map[dst]) for src, dst in after_graph.edges]
+            else torch.empty(0, dtype=torch.bool, device=device),
+            torch.tensor(
+                [
+                    (node_id_map[src], node_id_map[dst])
+                    for src, dst in after_graph.edges
+                ],
+                device=device,
             ).t()
             if after_graph.number_of_edges() > 0
-            else torch.empty(2, 0, dtype=torch.long),
+            else torch.empty(2, 0, dtype=torch.long, device=device),
+        )
+
+    @classmethod
+    def from_decoded_graph_event(
+        cls,
+        event_src_index: torch.Tensor,
+        event_dst_index: torch.Tensor,
+        before_graph: nx.DiGraph,
+        after_graph: nx.DiGraph,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> "TWCmdGenTemporalGraphData":
+        (
+            node_memory_update_index,
+            node_memory_update_mask,
+            edge_index,
+        ) = cls.calculate_node_memory_update_edge_index(
+            before_graph, after_graph, device=device
+        )
+
+        return cls(
+            # we set x for node_label_ids as that's how
+            # Data figures out how many nodes there are
+            x=torch.tensor(
+                [label_id for _, label_id in after_graph.nodes.data("label_id")],
+                device=device,
+            )
+            if after_graph.order() > 0
+            else torch.empty(0, dtype=torch.long, device=device),
+            node_memory_update_index=node_memory_update_index,
+            node_memory_update_mask=node_memory_update_mask,
+            edge_index=edge_index,
             edge_attr=torch.tensor(
-                [label_id_map[label] for _, _, label in after_graph.edges.data("label")]
+                [label_id for _, _, label_id in after_graph.edges.data("label_id")],
+                device=device,
             )
             if after_graph.number_of_edges() > 0
-            else torch.empty(0, dtype=torch.long),
+            else torch.empty(0, dtype=torch.long, device=device),
             edge_last_update=torch.tensor(
                 [
                     last_update
                     for _, _, last_update in after_graph.edges.data("last_update")
                 ],
                 dtype=torch.float,
+                device=device,
             )
             if after_graph.number_of_edges() > 0
-            else torch.empty(0),
+            else torch.empty(0, device=device),
+            event_src_index=event_src_index,
+            event_dst_index=event_dst_index,
+        )
+
+    @classmethod
+    def from_graph_event(
+        cls,
+        event_src_index: torch.Tensor,
+        event_dst_index: torch.Tensor,
+        before_graph: nx.DiGraph,
+        after_graph: nx.DiGraph,
+        label_id_map: Dict[str, int],
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> "TWCmdGenTemporalGraphData":
+        (
+            node_memory_update_index,
+            node_memory_update_mask,
+            edge_index,
+        ) = cls.calculate_node_memory_update_edge_index(
+            before_graph, after_graph, device=device
+        )
+
+        return cls(
+            # we set x for node_label_ids as that's how
+            # Data figures out how many nodes there are
+            x=torch.tensor(
+                [label_id_map[node.label] for node in after_graph.nodes], device=device
+            )
+            if after_graph.order() > 0
+            else torch.empty(0, dtype=torch.long, device=device),
+            node_memory_update_index=node_memory_update_index,
+            node_memory_update_mask=node_memory_update_mask,
+            edge_index=edge_index,
+            edge_attr=torch.tensor(
+                [
+                    label_id_map[label]
+                    for _, _, label in after_graph.edges.data("label")
+                ],
+                device=device,
+            )
+            if after_graph.number_of_edges() > 0
+            else torch.empty(0, dtype=torch.long, device=device),
+            edge_last_update=torch.tensor(
+                [
+                    last_update
+                    for _, _, last_update in after_graph.edges.data("last_update")
+                ],
+                dtype=torch.float,
+                device=device,
+            )
+            if after_graph.number_of_edges() > 0
+            else torch.empty(0, device=device),
             event_src_index=event_src_index,
             event_dst_index=event_dst_index,
         )
