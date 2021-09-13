@@ -56,6 +56,37 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
             torch.tensor([0]),
             torch.tensor([0]),
+            torch.empty(0).long(),
+            0,
+            0,
+            0,
+        ),
+        (
+            4,
+            10,
+            5,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["start"],
+                ]
+            ),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.empty(0).long(),
+            0,
+            0,
+            0,
+        ),
+        (
+            1,
+            10,
+            5,
+            torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+            torch.tensor([0]),
+            torch.tensor([0]),
             torch.tensor([0, 0]),
             0,
             2,
@@ -378,15 +409,46 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
             ).float(),
             torch.tensor([[1, 1, 1], [1, 0, 0], [1, 1, 0]]).float(),
         ),
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([0, 0, 1, 1, 1, 1]),
+            4,
+            torch.tensor(
+                [
+                    [[2] * 4, [3] * 4, [0] * 4, [0] * 4],
+                    [[4] * 4, [5] * 4, [6] * 4, [7] * 4],
+                    [[0] * 4, [0] * 4, [0] * 4, [0] * 4],
+                    [[0] * 4, [0] * 4, [0] * 4, [0] * 4],
+                ]
+            ).float(),
+            torch.tensor(
+                [[1, 1, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]
+            ).float(),
+        ),
+        (
+            torch.empty(0, 4),
+            torch.empty(0).long(),
+            4,
+            torch.zeros(4, 0, 4),
+            torch.zeros(4, 0),
+        ),
     ],
 )
 def test_sldgu_batchify_node_embeddings(
-    node_embeddings, batch, expected_batch_node_embeddings, expected_batch_mask
+    node_embeddings,
+    batch,
+    batch_size,
+    expected_batch_node_embeddings,
+    expected_batch_mask,
 ):
     (
         batch_node_embeddings,
         batch_mask,
-    ) = StaticLabelDiscreteGraphUpdater.batchify_node_embeddings(node_embeddings, batch)
+    ) = StaticLabelDiscreteGraphUpdater.batchify_node_embeddings(
+        node_embeddings, batch, batch_size
+    )
     assert batch_node_embeddings.equal(expected_batch_node_embeddings)
     assert batch_mask.equal(expected_batch_mask)
 

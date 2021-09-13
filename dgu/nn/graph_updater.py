@@ -273,7 +273,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # batchify node_embeddings
         batch_node_embeddings, batch_node_mask = self.batchify_node_embeddings(
-            tgn_results["node_embeddings"], batch
+            tgn_results["node_embeddings"], batch, obs_mask.size(0)
         )
         # batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
         # batch_node_mask: (batch, max_sub_graph_num_node)
@@ -851,7 +851,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     @staticmethod
     def batchify_node_embeddings(
-        node_embeddings: torch.Tensor, batch: torch.Tensor
+        node_embeddings: torch.Tensor, batch: torch.Tensor, batch_size: int
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Batchify node embeddings from the mini-batched global graph so that
@@ -861,6 +861,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         node_embeddings: (num_node, hidden_dim)
         batch: (num_node)
+        batch_size: desired batch size
 
         output:
             batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
@@ -868,6 +869,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         """
         # batchify node_embeddings based on batch
         bincount = batch.bincount()
+        # we pad the bincount to the desired batch size in case the last graphs in
+        # the batch don't have nodes.
+        bincount = F.pad(bincount, (0, max(0, batch_size - bincount.size(0))))
         splits = bincount[:-1].cumsum(0).cpu()
         batch_node_embeddings = pad_sequence(
             node_embeddings.tensor_split(splits), batch_first=True  # type: ignore
