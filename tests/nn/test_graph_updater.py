@@ -799,7 +799,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
 
 @pytest.mark.parametrize(
     "graphs,node_attrs,event_type_ids,src_ids,dst_ids,label_ids,timestamps,expected,"
-    "expected_node_attrs",
+    "expected_node_attrs,expected_filtered_event_type_ids",
     [
         (
             [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
@@ -817,6 +817,13 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0.0, 0.0, 0.0]),
             [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
             [{}, {}, {}],
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
         ),
         (
             [
@@ -841,6 +848,12 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
                 ),
             ],
             [{"added-node-0": {"label": "inventory", "label_id": 2}}, {}],
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
         ),
         (
             [
@@ -865,6 +878,12 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
                 EqualityDiGraph({"n1": {}, "n2": {}}),
             ],
             [{}, {}],
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
         ),
         (
             [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
@@ -882,6 +901,13 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([2.0, 3.0, 4.0]),
             [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
             [{}, {}, {}],
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
         ),
     ],
 )
@@ -897,6 +923,7 @@ def test_sldgu_apply_decoded_events(
     timestamps,
     expected,
     expected_node_attrs,
+    expected_filtered_event_type_ids,
 ):
     monkeypatch.setattr("uuid.uuid4", MockUUID())
 
@@ -906,10 +933,11 @@ def test_sldgu_apply_decoded_events(
     for graph, attrs in zip(expected, expected_node_attrs):
         nx.set_node_attributes(graph, attrs)
 
-    updated_graphs = sldgu.apply_decoded_events(
+    updated_graphs, filtered_event_type_ids = sldgu.apply_decoded_events(
         graphs, event_type_ids, src_ids, dst_ids, label_ids, timestamps
     )
     assert updated_graphs == expected
+    assert filtered_event_type_ids.equal(expected_filtered_event_type_ids)
 
 
 @pytest.mark.parametrize(

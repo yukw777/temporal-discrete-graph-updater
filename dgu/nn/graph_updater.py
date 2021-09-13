@@ -1088,7 +1088,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # (batch)
 
             # apply the decoded event
-            updated_graphs = self.apply_decoded_events(
+            updated_graphs, decoded_event_type_ids = self.apply_decoded_events(
                 graphs,
                 decoded_event_type_ids,
                 decoded_src_ids,
@@ -1156,10 +1156,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         dst_ids: torch.Tensor,
         label_ids: torch.Tensor,
         timestamps: torch.Tensor,
-    ) -> List[nx.DiGraph]:
+    ) -> Tuple[List[nx.DiGraph], torch.Tensor]:
         """
-        Apply the given batch of decoded events to the given graphs. Ignores invalid
-        graph events, e.g. adding an edge between non-existent nodes.
+        Apply the given batch of decoded events to the given graphs. Return a new
+        event type id tensor where invalid graph events, e.g. adding an edge between
+        non-existent nodes, have been filtered out.
 
         graphs: graphs for games in the batch
         event_type_ids: (batch)
@@ -1168,16 +1169,22 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         label_ids: (batch)
         timestamps: (batch)
 
-        output: list of updated graphs
+        output: (
+            [updated graph, ...],
+            filtered_event_type_ids: (batch),
+        )
         """
         updated_graphs = deepcopy(graphs)
-        for graph, event_type_id, src_id, dst_id, label_id, timestamp in zip(
-            updated_graphs,
-            event_type_ids,
-            src_ids,
-            dst_ids,
-            label_ids,
-            timestamps,
+        invalid_mask = torch.zeros_like(event_type_ids, dtype=torch.bool)
+        for i, (graph, event_type_id, src_id, dst_id, label_id, timestamp) in enumerate(
+            zip(
+                updated_graphs,
+                event_type_ids,
+                src_ids,
+                dst_ids,
+                label_ids,
+                timestamps,
+            )
         ):
             if event_type_id == EVENT_TYPE_ID_MAP["node-add"]:
                 graph.add_node(
@@ -1189,6 +1196,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 nodes = list(graph.nodes)
                 if src_id < len(nodes):
                     graph.remove_node(list(graph.nodes)[src_id])
+                else:
+                    invalid_mask[i] = True
             elif event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
                 nodes = list(graph.nodes)
                 if src_id < len(nodes) and dst_id < len(nodes):
@@ -1199,9 +1208,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         label_id=label_id.item(),
                         last_update=timestamp.item(),
                     )
+                else:
+                    invalid_mask[i] = True
             elif event_type_id == EVENT_TYPE_ID_MAP["edge-delete"]:
                 nodes = list(graph.nodes)
                 if src_id < len(nodes) and dst_id < len(nodes):
                     graph.remove_edge(nodes[src_id], nodes[dst_id])
+                else:
+                    invalid_mask[i] = True
 
-        return updated_graphs
+        return updated_graphs, event_type_ids.masked_fill(
+            invalid_mask, EVENT_TYPE_ID_MAP["pad"]
+        )
