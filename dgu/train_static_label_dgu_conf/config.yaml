@@ -41,4 +41,5 @@ trainer:
   _target_: pytorch_lightning.Trainer
 
 defaults:
+  - _self_
   - trainer/logger: null
