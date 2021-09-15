@@ -959,7 +959,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player]
-                    "updated_memory": torch.tensor([[2] * 8]).float(),
+                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -977,13 +977,11 @@ def test_sldgu_apply_decoded_events(
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
                     "label_ids": torch.tensor([1]),  # [player]
-                    "node_label_ids": torch.tensor([1]),
-                    "batch": torch.tensor([0]),
-                    "updated_memory": torch.tensor([[2] * 8]).float(),
-                    "updated_graphs": [EqualityDiGraph({"added-node-0": {}})],
-                    "updated_node_attrs": [
-                        {"added-node-0": {"label": "player", "label_id": 1}}
-                    ],
+                    "node_label_ids": torch.empty(0).long(),
+                    "batch": torch.empty(0).long(),
+                    "updated_memory": torch.empty(0, 8),
+                    "updated_graphs": [EqualityDiGraph()],
+                    "updated_node_attrs": [{}],
                 },
                 {
                     "event_type_ids": torch.tensor([2]),  # [end]
@@ -1015,7 +1013,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player]
-                    "updated_memory": torch.tensor([[2] * 8]).float(),
+                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1026,7 +1024,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 0, 1, 0, 0, 0]]
                     ).float(),  # [inventory]
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8]).float(),
+                    "updated_memory": torch.tensor([[2] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1053,30 +1051,23 @@ def test_sldgu_apply_decoded_events(
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
                     "label_ids": torch.tensor([1]),  # [player]
-                    "node_label_ids": torch.tensor([1]),
-                    "batch": torch.tensor([0]),
-                    "updated_memory": torch.tensor([[2] * 8]).float(),
-                    "updated_graphs": [EqualityDiGraph({"added-node-0": {}})],
-                    "updated_node_attrs": [
-                        {"added-node-0": {"label": "player", "label_id": 1}}
-                    ],
+                    "node_label_ids": torch.empty(0).long(),
+                    "batch": torch.empty(0).long(),
+                    "updated_memory": torch.empty(0, 8),
+                    "updated_graphs": [EqualityDiGraph()],
+                    "updated_node_attrs": [{}],
                 },
                 {
                     "event_type_ids": torch.tensor([3]),  # [node-add]
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
                     "label_ids": torch.tensor([2]),  # [inventory]
-                    "node_label_ids": torch.tensor([1, 2]),
-                    "batch": torch.tensor([0, 0]),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8]).float(),
-                    "updated_graphs": [
-                        EqualityDiGraph({"added-node-0": {}, "added-node-1": {}})
-                    ],
+                    "node_label_ids": torch.tensor([1]),
+                    "batch": torch.tensor([0]),
+                    "updated_memory": torch.tensor([[2] * 8]).float(),
+                    "updated_graphs": [EqualityDiGraph({"added-node-0": {}})],
                     "updated_node_attrs": [
-                        {
-                            "added-node-0": {"label": "player", "label_id": 1},
-                            "added-node-1": {"label": "inventory", "label_id": 2},
-                        }
+                        {"added-node-0": {"label": "player", "label_id": 1}}
                     ],
                 },
             ],
@@ -1096,7 +1087,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
+                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1107,7 +1098,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [kitchen, inventory]
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
+                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1118,7 +1109,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
+                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1129,7 +1120,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [kitchen, inventory]
-                    "updated_memory": torch.tensor([[7] * 8, [8] * 8, [9] * 8]).float(),
+                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
             [
@@ -1138,6 +1129,17 @@ def test_sldgu_apply_decoded_events(
                     "src_ids": torch.zeros(2).long(),
                     "dst_ids": torch.zeros(2).long(),
                     "label_ids": torch.tensor([1, 1]),  # [player, player]
+                    "node_label_ids": torch.empty(0).long(),
+                    "batch": torch.empty(0).long(),
+                    "updated_memory": torch.empty(0, 8),
+                    "updated_graphs": [EqualityDiGraph(), EqualityDiGraph()],
+                    "updated_node_attrs": [{}, {}],
+                },
+                {
+                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
+                    "src_ids": torch.zeros(2).long(),
+                    "dst_ids": torch.zeros(2).long(),
+                    "label_ids": torch.tensor([1, 2]),
                     "node_label_ids": torch.tensor([1, 1]),
                     "batch": torch.tensor([0, 1]),
                     "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
@@ -1151,10 +1153,10 @@ def test_sldgu_apply_decoded_events(
                     ],
                 },
                 {
-                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
-                    "src_ids": torch.zeros(2).long(),
-                    "dst_ids": torch.zeros(2).long(),
-                    "label_ids": torch.tensor([1, 2]),
+                    "event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
+                    "src_ids": torch.tensor([0, 0]),
+                    "dst_ids": torch.tensor([0, 1]),
+                    "label_ids": torch.tensor([0, 5]),
                     "node_label_ids": torch.tensor([1, 1, 2]),
                     "batch": torch.tensor([0, 1, 1]),
                     "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
@@ -1171,43 +1173,13 @@ def test_sldgu_apply_decoded_events(
                     ],
                 },
                 {
-                    "event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
-                    "src_ids": torch.tensor([0, 0]),
-                    "dst_ids": torch.tensor([0, 1]),
-                    "label_ids": torch.tensor([0, 5]),
-                    "node_label_ids": torch.tensor([1, 1, 2]),
-                    "batch": torch.tensor([0, 1, 1]),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
-                    "updated_graphs": [
-                        EqualityDiGraph({"added-node-0": {}}),
-                        EqualityDiGraph(
-                            {
-                                "added-node-1": {
-                                    "added-node-2": {
-                                        "label": "is",
-                                        "label_id": 5,
-                                        "last_update": 4.0,
-                                    }
-                                }
-                            }
-                        ),
-                    ],
-                    "updated_node_attrs": [
-                        {"added-node-0": {"label": "player", "label_id": 1}},
-                        {
-                            "added-node-1": {"label": "player", "label_id": 1},
-                            "added-node-2": {"label": "inventory", "label_id": 2},
-                        },
-                    ],
-                },
-                {
                     "event_type_ids": torch.tensor([0, 2]),  # [pad, end]
                     "src_ids": torch.tensor([0, 1]),
                     "dst_ids": torch.tensor([0, 0]),
                     "label_ids": torch.tensor([0, 2]),
                     "node_label_ids": torch.tensor([1, 1, 2]),
                     "batch": torch.tensor([0, 1, 1]),
-                    "updated_memory": torch.tensor([[7] * 8, [8] * 8, [9] * 8]).float(),
+                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                     "updated_graphs": [
                         EqualityDiGraph({"added-node-0": {}}),
                         EqualityDiGraph(
@@ -1247,7 +1219,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
+                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1258,7 +1230,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [kitchen, inventory]
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
+                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1269,7 +1241,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
+                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1280,7 +1252,7 @@ def test_sldgu_apply_decoded_events(
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [kitchen, inventory]
-                    "updated_memory": torch.tensor([[7] * 8, [8] * 8, [9] * 8]).float(),
+                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
             [
@@ -1289,6 +1261,17 @@ def test_sldgu_apply_decoded_events(
                     "src_ids": torch.zeros(2).long(),
                     "dst_ids": torch.zeros(2).long(),
                     "label_ids": torch.tensor([1, 1]),  # [player, player]
+                    "node_label_ids": torch.empty(0).long(),
+                    "batch": torch.empty(0).long(),
+                    "updated_memory": torch.empty(0, 8),
+                    "updated_graphs": [EqualityDiGraph(), EqualityDiGraph()],
+                    "updated_node_attrs": [{}, {}],
+                },
+                {
+                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
+                    "src_ids": torch.zeros(2).long(),
+                    "dst_ids": torch.zeros(2).long(),
+                    "label_ids": torch.tensor([1, 2]),
                     "node_label_ids": torch.tensor([1, 1]),
                     "batch": torch.tensor([0, 1]),
                     "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
@@ -1299,26 +1282,6 @@ def test_sldgu_apply_decoded_events(
                     "updated_node_attrs": [
                         {"added-node-0": {"label": "player", "label_id": 1}},
                         {"added-node-1": {"label": "player", "label_id": 1}},
-                    ],
-                },
-                {
-                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
-                    "src_ids": torch.zeros(2).long(),
-                    "dst_ids": torch.zeros(2).long(),
-                    "label_ids": torch.tensor([1, 2]),
-                    "node_label_ids": torch.tensor([1, 1, 2]),
-                    "batch": torch.tensor([0, 1, 1]),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
-                    "updated_graphs": [
-                        EqualityDiGraph({"added-node-0": {}}),
-                        EqualityDiGraph({"added-node-1": {}, "added-node-2": {}}),
-                    ],
-                    "updated_node_attrs": [
-                        {"added-node-0": {"label": "player", "label_id": 1}},
-                        {
-                            "added-node-1": {"label": "player", "label_id": 1},
-                            "added-node-2": {"label": "inventory", "label_id": 2},
-                        },
                     ],
                 },
             ],

@@ -1008,20 +1008,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         decoded_src_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
         decoded_dst_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
         decoded_label_ids = torch.tensor([0] * batch_size, device=self.device)
-        updated_graphs = [deepcopy(g) for g in graphs]
-        graph_batch = Batch.from_data_list(
-            [
-                TWCmdGenTemporalGraphData.from_decoded_graph_event(
-                    src_id, dst_id, prev_graph, graph, device=self.device
-                )
-                for src_id, dst_id, prev_graph, graph in zip(
-                    decoded_src_ids,
-                    decoded_dst_ids,
-                    graphs,
-                    updated_graphs,
-                )
-            ]
-        )
 
         end_event_mask = torch.tensor([False] * batch_size, device=self.device)
         # (batch)
@@ -1034,6 +1020,31 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         encoded_prev_action: Optional[torch.Tensor] = None
         results_list: List[Dict[str, Any]] = []
         for _ in range(self.hparams.max_decode_len):  # type: ignore
+            # apply the decoded event
+            updated_graphs, decoded_event_type_ids = self.apply_decoded_events(
+                graphs,
+                decoded_event_type_ids,
+                decoded_src_ids,
+                decoded_dst_ids,
+                decoded_label_ids,
+                step_input.timestamps,
+            )
+
+            # construct the graph batch input with the original graphs and
+            # updated graphs
+            graph_batch = Batch.from_data_list(
+                [
+                    TWCmdGenTemporalGraphData.from_decoded_graph_event(
+                        src_id, dst_id, prev_graph, graph, device=self.device
+                    )
+                    for src_id, dst_id, prev_graph, graph in zip(
+                        decoded_src_ids,
+                        decoded_dst_ids,
+                        graphs,
+                        updated_graphs,
+                    )
+                ]
+            )
             results = self(
                 step_input.obs_mask,
                 step_input.prev_action_mask,
@@ -1086,29 +1097,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 results["label_logits"].argmax(dim=1).masked_fill(end_event_mask, 0)
             )
             # (batch)
-
-            # apply the decoded event
-            updated_graphs, decoded_event_type_ids = self.apply_decoded_events(
-                graphs,
-                decoded_event_type_ids,
-                decoded_src_ids,
-                decoded_dst_ids,
-                decoded_label_ids,
-                step_input.timestamps,
-            )
-            graph_batch = Batch.from_data_list(
-                [
-                    TWCmdGenTemporalGraphData.from_decoded_graph_event(
-                        src_id, dst_id, prev_graph, graph, device=self.device
-                    )
-                    for src_id, dst_id, prev_graph, graph in zip(
-                        decoded_src_ids,
-                        decoded_dst_ids,
-                        graphs,
-                        updated_graphs,
-                    )
-                ]
-            )
 
             # collect the results
             results_list.append(
