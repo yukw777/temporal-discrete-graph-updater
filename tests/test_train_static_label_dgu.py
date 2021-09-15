@@ -1,10 +1,12 @@
 import shutil
+import pytest
 
 from dgu.train_static_label_dgu import main
 from hydra import initialize, compose
 
 
-def test_main(tmp_path):
+@pytest.mark.parametrize("use_file_system_sharing_strategy", ["true", "false"])
+def test_main(tmp_path, use_file_system_sharing_strategy):
     shutil.copy2("tests/data/test_data.json", tmp_path)
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
 
@@ -12,15 +14,13 @@ def test_main(tmp_path):
         cfg = compose(
             config_name="config",
             overrides=[
+                f"use_file_system_sharing_strategy={use_file_system_sharing_strategy}",
                 f"data_module.train_path={tmp_path}/test_data.json",
                 "data_module.train_batch_size=2",
-                "data_module.train_num_worker=0",
                 f"data_module.val_path={tmp_path}/test_data.json",
                 "data_module.val_batch_size=2",
-                "data_module.val_num_worker=0",
                 f"data_module.test_path={tmp_path}/test_data.json",
                 "data_module.test_batch_size=2",
-                "data_module.test_num_worker=0",
                 "model.hidden_dim=8",
                 "model.text_encoder_num_conv_layers=2",
                 "model.text_encoder_kernel_size=3",

@@ -1,5 +1,7 @@
 seed: 42
 
+use_file_system_sharing_strategy: false
+
 data_module:
   _target_: dgu.data.TWCmdGenTemporalDataModule
   train_path: data/cmd_gen.0.2/train.json
