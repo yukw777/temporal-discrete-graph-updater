@@ -1204,7 +1204,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     invalid_mask[i] = True
             elif event_type_id == EVENT_TYPE_ID_MAP["edge-delete"]:
                 nodes = list(graph.nodes)
-                if src_id < len(nodes) and dst_id < len(nodes):
+                if (
+                    src_id < len(nodes)
+                    and dst_id < len(nodes)
+                    and graph.has_edge(nodes[src_id], nodes[dst_id])
+                ):
                     graph.remove_edge(nodes[src_id], nodes[dst_id])
                 else:
                     invalid_mask[i] = True

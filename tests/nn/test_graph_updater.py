@@ -886,23 +886,35 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
         ),
         (
-            [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
-            [{}, {}, {}],
+            [
+                EqualityDiGraph(),
+                EqualityDiGraph(),
+                EqualityDiGraph(),
+                EqualityDiGraph({"n1": {}, "n2": {}}),
+            ],
+            [{}, {}, {}, {}],
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["node-delete"],
                     EVENT_TYPE_ID_MAP["edge-add"],
                     EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
                 ]
             ),
-            torch.tensor([3, 5, 2]),
-            torch.tensor([0, 0, 4]),
-            torch.tensor([2, 1, 4]),
-            torch.tensor([2.0, 3.0, 4.0]),
-            [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
-            [{}, {}, {}],
+            torch.tensor([3, 5, 2, 0]),
+            torch.tensor([0, 0, 4, 1]),
+            torch.tensor([2, 1, 4, 3]),
+            torch.tensor([2.0, 3.0, 4.0, 5.0]),
+            [
+                EqualityDiGraph(),
+                EqualityDiGraph(),
+                EqualityDiGraph(),
+                EqualityDiGraph({"n1": {}, "n2": {}}),
+            ],
+            [{}, {}, {}, {}],
             torch.tensor(
                 [
+                    EVENT_TYPE_ID_MAP["pad"],
                     EVENT_TYPE_ID_MAP["pad"],
                     EVENT_TYPE_ID_MAP["pad"],
                     EVENT_TYPE_ID_MAP["pad"],
