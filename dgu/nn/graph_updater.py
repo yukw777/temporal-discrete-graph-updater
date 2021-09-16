@@ -1045,6 +1045,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     )
                 ]
             )
+
+            # forward pass
             results = self(
                 step_input.obs_mask,
                 step_input.prev_action_mask,
@@ -1068,7 +1070,23 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 encoded_prev_action=encoded_prev_action,
             )
 
-            # save the decoded results
+            # collect the results here since we're throwing away the graph event
+            # that's generated last. We don't care about the last event b/c it's
+            # supposed to be "end" anyway.
+            results_list.append(
+                {
+                    "event_type_ids": decoded_event_type_ids,
+                    "src_ids": decoded_src_ids,
+                    "dst_ids": decoded_dst_ids,
+                    "label_ids": decoded_label_ids,
+                    "node_label_ids": graph_batch.x,
+                    "batch": graph_batch.batch,
+                    "updated_memory": results["updated_memory"],
+                    "updated_graphs": updated_graphs,
+                }
+            )
+
+            # process the decoded result for the next iteration
             decoded_event_type_ids = (
                 results["event_type_logits"]
                 .argmax(dim=1)
@@ -1097,20 +1115,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 results["label_logits"].argmax(dim=1).masked_fill(end_event_mask, 0)
             )
             # (batch)
-
-            # collect the results
-            results_list.append(
-                {
-                    "event_type_ids": decoded_event_type_ids,
-                    "src_ids": decoded_src_ids,
-                    "dst_ids": decoded_dst_ids,
-                    "label_ids": decoded_label_ids,
-                    "node_label_ids": graph_batch.x,
-                    "batch": graph_batch.batch,
-                    "updated_memory": results["updated_memory"],
-                    "updated_graphs": updated_graphs,
-                }
-            )
 
             # update the memory
             memory = results["updated_memory"]

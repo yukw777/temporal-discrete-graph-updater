@@ -973,10 +973,10 @@ def test_sldgu_apply_decoded_events(
             ],
             [
                 {
-                    "event_type_ids": torch.tensor([3]),  # [node-add]
+                    "event_type_ids": torch.tensor([1]),  # [start]
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
-                    "label_ids": torch.tensor([1]),  # [player]
+                    "label_ids": torch.zeros(1).long(),  # [pad]
                     "node_label_ids": torch.empty(0).long(),
                     "batch": torch.empty(0).long(),
                     "updated_memory": torch.empty(0, 8),
@@ -984,10 +984,10 @@ def test_sldgu_apply_decoded_events(
                     "updated_node_attrs": [{}],
                 },
                 {
-                    "event_type_ids": torch.tensor([2]),  # [end]
+                    "event_type_ids": torch.tensor([3]),  # [node-add]
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
-                    "label_ids": torch.tensor([0]),
+                    "label_ids": torch.tensor([1]),  # [player]
                     "node_label_ids": torch.tensor([1]),
                     "batch": torch.tensor([0]),
                     "updated_memory": torch.tensor([[3] * 8]).float(),
@@ -1047,10 +1047,10 @@ def test_sldgu_apply_decoded_events(
             ],
             [
                 {
-                    "event_type_ids": torch.tensor([3]),  # [node-add]
+                    "event_type_ids": torch.tensor([1]),  # [start]
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
-                    "label_ids": torch.tensor([1]),  # [player]
+                    "label_ids": torch.zeros(1).long(),  # [pad]
                     "node_label_ids": torch.empty(0).long(),
                     "batch": torch.empty(0).long(),
                     "updated_memory": torch.empty(0, 8),
@@ -1061,7 +1061,7 @@ def test_sldgu_apply_decoded_events(
                     "event_type_ids": torch.tensor([3]),  # [node-add]
                     "src_ids": torch.zeros(1).long(),
                     "dst_ids": torch.zeros(1).long(),
-                    "label_ids": torch.tensor([2]),  # [inventory]
+                    "label_ids": torch.tensor([1]),  # [player]
                     "node_label_ids": torch.tensor([1]),
                     "batch": torch.tensor([0]),
                     "updated_memory": torch.tensor([[2] * 8]).float(),
@@ -1125,10 +1125,10 @@ def test_sldgu_apply_decoded_events(
             ],
             [
                 {
-                    "event_type_ids": torch.tensor([3, 3]),  # [node-add, node-add]
+                    "event_type_ids": torch.tensor([1, 1]),  # [start, start]
                     "src_ids": torch.zeros(2).long(),
                     "dst_ids": torch.zeros(2).long(),
-                    "label_ids": torch.tensor([1, 1]),  # [player, player]
+                    "label_ids": torch.zeros(2).long(),  # [pad, pad]
                     "node_label_ids": torch.empty(0).long(),
                     "batch": torch.empty(0).long(),
                     "updated_memory": torch.empty(0, 8),
@@ -1136,10 +1136,10 @@ def test_sldgu_apply_decoded_events(
                     "updated_node_attrs": [{}, {}],
                 },
                 {
-                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
+                    "event_type_ids": torch.tensor([3, 3]),  # [node-add, node-add]
                     "src_ids": torch.zeros(2).long(),
                     "dst_ids": torch.zeros(2).long(),
-                    "label_ids": torch.tensor([1, 2]),
+                    "label_ids": torch.tensor([1, 1]),  # [player, player]
                     "node_label_ids": torch.tensor([1, 1]),
                     "batch": torch.tensor([0, 1]),
                     "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
@@ -1153,10 +1153,10 @@ def test_sldgu_apply_decoded_events(
                     ],
                 },
                 {
-                    "event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
-                    "src_ids": torch.tensor([0, 0]),
-                    "dst_ids": torch.tensor([0, 1]),
-                    "label_ids": torch.tensor([0, 5]),
+                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
+                    "src_ids": torch.zeros(2).long(),
+                    "dst_ids": torch.zeros(2).long(),
+                    "label_ids": torch.tensor([1, 2]),
                     "node_label_ids": torch.tensor([1, 1, 2]),
                     "batch": torch.tensor([0, 1, 1]),
                     "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
@@ -1173,10 +1173,10 @@ def test_sldgu_apply_decoded_events(
                     ],
                 },
                 {
-                    "event_type_ids": torch.tensor([0, 2]),  # [pad, end]
-                    "src_ids": torch.tensor([0, 1]),
-                    "dst_ids": torch.tensor([0, 0]),
-                    "label_ids": torch.tensor([0, 2]),
+                    "event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
+                    "src_ids": torch.tensor([0, 0]),
+                    "dst_ids": torch.tensor([0, 1]),
+                    "label_ids": torch.tensor([0, 5]),
                     "node_label_ids": torch.tensor([1, 1, 2]),
                     "batch": torch.tensor([0, 1, 1]),
                     "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
@@ -1257,10 +1257,10 @@ def test_sldgu_apply_decoded_events(
             ],
             [
                 {
-                    "event_type_ids": torch.tensor([3, 3]),  # [node-add, node-add]
+                    "event_type_ids": torch.tensor([1, 1]),  # [start, start]
                     "src_ids": torch.zeros(2).long(),
                     "dst_ids": torch.zeros(2).long(),
-                    "label_ids": torch.tensor([1, 1]),  # [player, player]
+                    "label_ids": torch.zeros(2).long(),  # [pad, pad]
                     "node_label_ids": torch.empty(0).long(),
                     "batch": torch.empty(0).long(),
                     "updated_memory": torch.empty(0, 8),
@@ -1268,10 +1268,10 @@ def test_sldgu_apply_decoded_events(
                     "updated_node_attrs": [{}, {}],
                 },
                 {
-                    "event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
+                    "event_type_ids": torch.tensor([3, 3]),  # [node-add, node-add]
                     "src_ids": torch.zeros(2).long(),
                     "dst_ids": torch.zeros(2).long(),
-                    "label_ids": torch.tensor([1, 2]),
+                    "label_ids": torch.tensor([1, 1]),  # [player, player]
                     "node_label_ids": torch.tensor([1, 1]),
                     "batch": torch.tensor([0, 1]),
                     "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
