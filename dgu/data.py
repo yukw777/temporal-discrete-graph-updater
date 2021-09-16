@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import torch
 import networkx as nx
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 from hydra.utils import to_absolute_path
@@ -93,36 +93,26 @@ def empty_tensor() -> torch.Tensor:
 
 
 @dataclass(frozen=True)
-class TWCmdGenTemporalTextualInput:
+class TWCmdGenTemporalStepInput:
     obs_word_ids: torch.Tensor = field(default_factory=empty_tensor)
     obs_mask: torch.Tensor = field(default_factory=empty_tensor)
     prev_action_word_ids: torch.Tensor = field(default_factory=empty_tensor)
     prev_action_mask: torch.Tensor = field(default_factory=empty_tensor)
+    timestamps: torch.Tensor = field(default_factory=empty_tensor)
 
     def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalTextualInput):
+        if not isinstance(o, TWCmdGenTemporalStepInput):
             return False
-        return (
-            self.obs_word_ids.equal(o.obs_word_ids)
-            and self.obs_mask.equal(o.obs_mask)
-            and self.prev_action_word_ids.equal(o.prev_action_word_ids)
-            and self.prev_action_mask.equal(o.prev_action_mask)
+        return all(getattr(self, f).equal(getattr(o, f)) for f in self.__annotations__)
+
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalStepInput":
+        return TWCmdGenTemporalStepInput(
+            **{f: getattr(self, f).to(*args, **kwargs) for f in self.__annotations__}
         )
 
-    def to(self, *args, **kwargs) -> "TWCmdGenTemporalTextualInput":
-        return TWCmdGenTemporalTextualInput(
-            obs_word_ids=self.obs_word_ids.to(*args, **kwargs),
-            obs_mask=self.obs_mask.to(*args, **kwargs),
-            prev_action_word_ids=self.prev_action_word_ids.to(*args, **kwargs),
-            prev_action_mask=self.prev_action_mask.to(*args, **kwargs),
-        )
-
-    def pin_memory(self) -> "TWCmdGenTemporalTextualInput":
-        return TWCmdGenTemporalTextualInput(
-            obs_word_ids=self.obs_word_ids.pin_memory(),
-            obs_mask=self.obs_mask.pin_memory(),
-            prev_action_word_ids=self.prev_action_word_ids.pin_memory(),
-            prev_action_mask=self.prev_action_mask.pin_memory(),
+    def pin_memory(self) -> "TWCmdGenTemporalStepInput":
+        return TWCmdGenTemporalStepInput(
+            **{f: getattr(self, f).pin_memory() for f in self.__annotations__}
         )
 
 
@@ -134,13 +124,11 @@ class TWCmdGenTemporalGraphicalInput:
     edge_index: torch.Tensor = field(default_factory=empty_tensor)
     edge_label_ids: torch.Tensor = field(default_factory=empty_tensor)
     edge_last_update: torch.Tensor = field(default_factory=empty_tensor)
-    edge_timestamps: torch.Tensor = field(default_factory=empty_tensor)
     batch: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
@@ -169,7 +157,7 @@ class TWCmdGenTemporalGraphicalInput:
 class TWCmdGenTemporalBatch:
     data: Tuple[
         Tuple[
-            TWCmdGenTemporalTextualInput,
+            TWCmdGenTemporalStepInput,
             Tuple[TWCmdGenTemporalGraphicalInput, ...],
             Tuple[Tuple[str, ...], ...],
         ],
@@ -218,16 +206,22 @@ class TWCmdGenTemporalGraphData(Data):
             return self.node_memory_update_mask.sum()
         return super().__inc__(key, value)
 
-    @classmethod
-    def from_graph_event(
-        cls,
-        event_src_index: torch.Tensor,
-        event_dst_index: torch.Tensor,
-        timestamp: int,
+    @staticmethod
+    def calculate_node_memory_update_edge_index(
         before_graph: nx.DiGraph,
         after_graph: nx.DiGraph,
-        label_id_map: Dict[str, int],
-    ) -> "TWCmdGenTemporalGraphData":
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Calculate the node memory update tensors and edge index tensor based on the
+        difference between the before and after graphs.
+
+        output: (
+            node_memory_update_index: (num_node_before),
+            node_memory_update_mask: (num_node_before),
+            edge_index: (2, num_edge_after),
+        )
+        """
         node_id_map = {node: node_id for node_id, node in enumerate(after_graph.nodes)}
         node_memory_update_index: List[int] = []
         node_memory_update_mask: List[bool] = []
@@ -238,41 +232,121 @@ class TWCmdGenTemporalGraphData(Data):
             else:
                 node_memory_update_index.append(0)
                 node_memory_update_mask.append(False)
-
-        return TWCmdGenTemporalGraphData(
-            # we set x for node_label_ids as that's how
-            # Data figures out how many nodes there are
-            x=torch.tensor([label_id_map[node.label] for node in after_graph.nodes])
-            if after_graph.order() > 0
-            else torch.empty(0, dtype=torch.long),
-            node_memory_update_index=torch.tensor(node_memory_update_index)
+        return (
+            torch.tensor(node_memory_update_index, device=device)
             if node_memory_update_index
-            else torch.empty(0, dtype=torch.long),
-            node_memory_update_mask=torch.tensor(node_memory_update_mask)
+            else torch.empty(0, dtype=torch.long, device=device),
+            torch.tensor(node_memory_update_mask, device=device)
             if node_memory_update_mask
-            else torch.empty(0, dtype=torch.bool),
-            edge_index=torch.tensor(
-                [(node_id_map[src], node_id_map[dst]) for src, dst in after_graph.edges]
+            else torch.empty(0, dtype=torch.bool, device=device),
+            torch.tensor(
+                [
+                    (node_id_map[src], node_id_map[dst])
+                    for src, dst in after_graph.edges
+                ],
+                device=device,
             ).t()
             if after_graph.number_of_edges() > 0
-            else torch.empty(2, 0, dtype=torch.long),
+            else torch.empty(2, 0, dtype=torch.long, device=device),
+        )
+
+    @classmethod
+    def from_decoded_graph_event(
+        cls,
+        event_src_index: torch.Tensor,
+        event_dst_index: torch.Tensor,
+        before_graph: nx.DiGraph,
+        after_graph: nx.DiGraph,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> "TWCmdGenTemporalGraphData":
+        (
+            node_memory_update_index,
+            node_memory_update_mask,
+            edge_index,
+        ) = cls.calculate_node_memory_update_edge_index(
+            before_graph, after_graph, device=device
+        )
+
+        return cls(
+            # we set x for node_label_ids as that's how
+            # Data figures out how many nodes there are
+            x=torch.tensor(
+                [label_id for _, label_id in after_graph.nodes.data("label_id")],
+                device=device,
+            )
+            if after_graph.order() > 0
+            else torch.empty(0, dtype=torch.long, device=device),
+            node_memory_update_index=node_memory_update_index,
+            node_memory_update_mask=node_memory_update_mask,
+            edge_index=edge_index,
             edge_attr=torch.tensor(
-                [label_id_map[label] for _, _, label in after_graph.edges.data("label")]
+                [label_id for _, _, label_id in after_graph.edges.data("label_id")],
+                device=device,
             )
             if after_graph.number_of_edges() > 0
-            else torch.empty(0, dtype=torch.long),
+            else torch.empty(0, dtype=torch.long, device=device),
             edge_last_update=torch.tensor(
                 [
                     last_update
                     for _, _, last_update in after_graph.edges.data("last_update")
                 ],
                 dtype=torch.float,
+                device=device,
             )
             if after_graph.number_of_edges() > 0
-            else torch.empty(0),
-            edge_timestamps=torch.tensor(timestamp, dtype=torch.float).expand(
-                after_graph.number_of_edges()
-            ),
+            else torch.empty(0, device=device),
+            event_src_index=event_src_index,
+            event_dst_index=event_dst_index,
+        )
+
+    @classmethod
+    def from_graph_event(
+        cls,
+        event_src_index: torch.Tensor,
+        event_dst_index: torch.Tensor,
+        before_graph: nx.DiGraph,
+        after_graph: nx.DiGraph,
+        label_id_map: Dict[str, int],
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> "TWCmdGenTemporalGraphData":
+        (
+            node_memory_update_index,
+            node_memory_update_mask,
+            edge_index,
+        ) = cls.calculate_node_memory_update_edge_index(
+            before_graph, after_graph, device=device
+        )
+
+        return cls(
+            # we set x for node_label_ids as that's how
+            # Data figures out how many nodes there are
+            x=torch.tensor(
+                [label_id_map[node.label] for node in after_graph.nodes], device=device
+            )
+            if after_graph.order() > 0
+            else torch.empty(0, dtype=torch.long, device=device),
+            node_memory_update_index=node_memory_update_index,
+            node_memory_update_mask=node_memory_update_mask,
+            edge_index=edge_index,
+            edge_attr=torch.tensor(
+                [
+                    label_id_map[label]
+                    for _, _, label in after_graph.edges.data("label")
+                ],
+                device=device,
+            )
+            if after_graph.number_of_edges() > 0
+            else torch.empty(0, dtype=torch.long, device=device),
+            edge_last_update=torch.tensor(
+                [
+                    last_update
+                    for _, _, last_update in after_graph.edges.data("last_update")
+                ],
+                dtype=torch.float,
+                device=device,
+            )
+            if after_graph.number_of_edges() > 0
+            else torch.empty(0, device=device),
             event_src_index=event_src_index,
             event_dst_index=event_dst_index,
         )
@@ -287,17 +361,18 @@ class TWCmdGenTemporalDataCollator:
         self.preprocessor = preprocessor
         self.label_id_map = label_id_map
 
-    def collate_textual_inputs(
-        self, obs: List[str], prev_actions: List[str]
-    ) -> TWCmdGenTemporalTextualInput:
+    def collate_step_inputs(
+        self, obs: List[str], prev_actions: List[str], timestamps: List[int]
+    ) -> TWCmdGenTemporalStepInput:
         """
-        Collate observations and previous actions.
+        Collate step data such as observation, previous action and timestamp.
 
-        output: TWCmdGenTemporalTextualInput(
+        output: TWCmdGenTemporalStepInput(
             obs_word_ids: (batch, obs_len),
             obs_mask: (batch, obs_len),
             prev_action_word_ids: (batch, prev_action_len),
             prev_action_mask: (batch, prev_action_len),
+            timestamps: (batch)
         )
         """
         # textual observation
@@ -309,11 +384,12 @@ class TWCmdGenTemporalDataCollator:
         prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
             [prev_action.split() for prev_action in prev_actions]
         )
-        return TWCmdGenTemporalTextualInput(
+        return TWCmdGenTemporalStepInput(
             obs_word_ids=obs_word_ids,
             obs_mask=obs_mask,
             prev_action_word_ids=prev_action_word_ids,
             prev_action_mask=prev_action_mask,
+            timestamps=torch.tensor(timestamps, dtype=torch.float),
         )
 
     def collate_graphical_inputs(
@@ -330,13 +406,11 @@ class TWCmdGenTemporalDataCollator:
                 edge_index: (2, num_edges),
                 edge_label_ids: (num_edges),
                 edge_last_update: (num_edges),
-                edge_timestamps: (num_edges),
                 batch: (num_nodes),
                 tgt_event_type_ids: (batch),
                 tgt_event_src_ids: (batch),
                 tgt_event_dst_ids: (batch),
                 tgt_event_label_ids: (batch),
-                tgt_event_timestamps: (batch),
                 groundtruth_event_type_ids: (batch),
                 groundtruth_event_src_ids: (batch),
                 groundtruth_event_src_mask: (batch),
@@ -396,7 +470,6 @@ class TWCmdGenTemporalDataCollator:
         tgt_event_src_ids = torch.tensor([0] * batch_size)
         tgt_event_dst_ids = torch.tensor([0] * batch_size)
         tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
-        tgt_event_timestamps = torch.tensor([0.0] * batch_size)
         for seq_step_num in range(max_event_seq_len):
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
@@ -419,7 +492,6 @@ class TWCmdGenTemporalDataCollator:
                         TWCmdGenTemporalGraphData.from_graph_event(
                             torch.tensor(event_src_id),
                             torch.tensor(event_dst_id),
-                            event["timestamp"],
                             event["before_graph"],
                             event["after_graph"],
                             self.label_id_map,
@@ -437,7 +509,6 @@ class TWCmdGenTemporalDataCollator:
                         TWCmdGenTemporalGraphData.from_graph_event(
                             torch.tensor(0),
                             torch.tensor(0),
-                            0,
                             event_seq[-1]["after_graph"],
                             event_seq[-1]["after_graph"],
                             self.label_id_map,
@@ -461,13 +532,11 @@ class TWCmdGenTemporalDataCollator:
                     edge_index=graph_batch.edge_index,
                     edge_label_ids=graph_batch.edge_attr,
                     edge_last_update=graph_batch.edge_last_update,
-                    edge_timestamps=graph_batch.edge_timestamps,
                     batch=graph_batch.batch,
                     tgt_event_type_ids=tgt_event_type_ids,
                     tgt_event_src_ids=tgt_event_src_ids,
                     tgt_event_dst_ids=tgt_event_dst_ids,
                     tgt_event_label_ids=tgt_event_label_ids,
-                    tgt_event_timestamps=tgt_event_timestamps,
                     groundtruth_event_type_ids=groundtruth_event_type_ids,
                     groundtruth_event_src_ids=groundtruth_event_src_ids,
                     groundtruth_event_src_mask=groundtruth_event_src_mask,
@@ -483,9 +552,6 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_src_ids = graph_batch.event_src_index
             tgt_event_dst_ids = graph_batch.event_dst_index
             tgt_event_label_ids = groundtruth_event_label_ids
-            tgt_event_timestamps = torch.tensor(
-                batch_event_timestamps, dtype=torch.float
-            )
         return collated, updated_batch_graphs
 
     def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
@@ -495,11 +561,12 @@ class TWCmdGenTemporalDataCollator:
         of graph event inputs.
         (
             (
-                TWCmdGenTemporalTextualInput(
+                TWCmdGenTemporalStepInput(
                     obs_word_ids: (batch, obs_len),
                     obs_mask: (batch, obs_len),
                     prev_action_word_ids: (batch, prev_action_len),
                     prev_action_mask: (batch, prev_action_len),
+                    timestamps: (batch)
                 ),
                 (
                     TWCmdGenTemporalGraphicalInput(
@@ -509,13 +576,11 @@ class TWCmdGenTemporalDataCollator:
                         edge_index: (2, num_edges),
                         edge_label_ids: (num_edges),
                         edge_last_update: (num_edges),
-                        edge_timestamps: (num_edges),
                         batch: (num_nodes),
                         tgt_event_type_ids: (batch),
                         tgt_event_src_ids: (batch),
                         tgt_event_dst_ids: (batch),
                         tgt_event_label_ids: (batch),
-                        tgt_event_timestamps: (batch),
                         groundtruth_event_type_ids: (batch),
                         groundtruth_event_src_ids: (batch),
                         groundtruth_event_src_mask: (batch),
@@ -543,7 +608,7 @@ class TWCmdGenTemporalDataCollator:
         max_episode_len = max(len(episode) for episode in batch)
         collated_batch: List[
             Tuple[
-                TWCmdGenTemporalTextualInput,
+                TWCmdGenTemporalStepInput,
                 List[TWCmdGenTemporalGraphicalInput],
                 Tuple[Tuple[str, ...], ...],
             ]
@@ -553,11 +618,12 @@ class TWCmdGenTemporalDataCollator:
             batch_ith_step = [
                 episode[i] if i < len(episode) else {} for episode in batch
             ]
-            textual = self.collate_textual_inputs(
+            step = self.collate_step_inputs(
                 # use "<bos> <eos>" for empty observations and previous actions
                 # to prevent nan's when encoding.
-                [step.get("observation", "<bos> <eos>") for step in batch_ith_step],
-                [step.get("previous_action", "<bos> <eos>") for step in batch_ith_step],
+                [s_i.get("observation", "<bos> <eos>") for s_i in batch_ith_step],
+                [s_i.get("previous_action", "<bos> <eos>") for s_i in batch_ith_step],
+                [s_i.get("timestamp", 0) for s_i in batch_ith_step],
             )
             graph_events, updated_batch_graphs = self.collate_graphical_inputs(
                 updated_batch_graphs, batch_ith_step
@@ -565,7 +631,7 @@ class TWCmdGenTemporalDataCollator:
             cmds = tuple(
                 tuple(step.get("target_commands", [])) for step in batch_ith_step
             )
-            collated_batch.append((textual, graph_events, cmds))
+            collated_batch.append((step, graph_events, cmds))
         return TWCmdGenTemporalBatch(
             data=tuple(
                 (textual, tuple(graph_events), tuple(cmds))
