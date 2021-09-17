@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import torchmetrics
-import random
 import wandb
 import dgu.metrics
 import networkx as nx
@@ -61,7 +60,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         max_decode_len: int = 100,
         learning_rate: float = 5e-4,
         truncated_bptt_steps: int = 0,
-        log_k_triple_sets: int = 3,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
         node_vocab_path: Optional[str] = None,
@@ -84,7 +82,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "max_decode_len",
             "learning_rate",
             "truncated_bptt_steps",
-            "log_k_triple_sets",
         )
         self.truncated_bptt_steps = truncated_bptt_steps
         # preprocessor
@@ -588,7 +585,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         batch_seq: Sequence[torch.Tensor],
     ) -> Tuple[List[List[str]], List[List[str]]]:
         batch_size = event_type_id_seq[0].size(0)
-
         # (batch, event_seq_len, cmd_len)
         batch_cmds: List[List[str]] = [[] for _ in range(batch_size)]
         # (batch, event_seq_len, token_len)
@@ -681,9 +677,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def eval_step(
         self, batch: TWCmdGenTemporalBatch, log_prefix: str
-    ) -> List[Tuple[str, str, str]]:
-        # [(groundtruth commands, teacher-force commands, greedy-decode commands)]
-        table_data: List[Tuple[str, str, str]] = []
+    ) -> List[Tuple[str, ...]]:
+        # [(id, groundtruth commands, teacher-force commands, greedy-decode commands)]
+        # id = (game|walkthrough_step|timestamp)
+        table_data: List[Tuple[str, ...]] = []
 
         tf_memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
         gd_memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
@@ -812,10 +809,13 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
             # collect graph triple table data
             table_data.extend(
-                zip(
-                    [" | ".join(cmds) for cmds in step_groundtruth_cmds],
-                    [" | ".join(cmds) for cmds in batch_tf_cmds],
-                    [" | ".join(cmds) for cmds in batch_gd_cmds],
+                self.generate_predict_table_rows(
+                    batch.ids,
+                    step_input.timestamps,
+                    step_input.mask,
+                    step_groundtruth_cmds,
+                    batch_tf_cmds,
+                    batch_gd_cmds,
                 )
             )
 
@@ -834,43 +834,35 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
-    ) -> List[Tuple[str, str, str]]:
+    ) -> List[Tuple[str, ...]]:
         return self.eval_step(batch, "val")
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenTemporalBatch, batch_idx: int
-    ) -> List[Tuple[str, str, str]]:
+    ) -> List[Tuple[str, ...]]:
         return self.eval_step(batch, "test")
 
     def wandb_log_gen_obs(
-        self, outputs: List[List[Tuple[str, str, str]]], table_title: str
+        self, outputs: List[List[Tuple[str, str, str, str]]], table_title: str
     ) -> None:
-        flat_outputs = [item for sublist in outputs for item in sublist]
-        data = (
-            random.sample(flat_outputs, self.hparams.log_k_triple_sets)  # type: ignore
-            if len(flat_outputs) >= self.hparams.log_k_triple_sets  # type: ignore
-            else flat_outputs
+        eval_table_artifact = wandb.Artifact(table_title, "predictions")
+        eval_table = wandb.Table(
+            columns=["id", "truth", "tf", "gd"],
+            data=[item for sublist in outputs for item in sublist],
         )
-        self.logger.experiment.log(
-            {
-                table_title: wandb.Table(
-                    data=data, columns=["Groundtruth", "Teacher-Force", "Greedy Decode"]
-                )
-            }
-        )
+        eval_table_artifact.add(eval_table, "predictions")
+        self.logger.experiment.log_artifact(eval_table_artifact)
 
     def validation_epoch_end(  # type: ignore
         self,
-        outputs: List[List[Tuple[str, str, str]]],
+        outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(
-                outputs, f"Generated Graph Triplets Val Epoch {self.current_epoch}"
-            )
+            self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
 
     def test_epoch_end(  # type: ignore
         self,
-        outputs: List[List[Tuple[str, str, str]]],
+        outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "Generated Graph Triplets Test")
@@ -1216,3 +1208,38 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return updated_graphs, event_type_ids.masked_fill(
             invalid_mask, EVENT_TYPE_ID_MAP["pad"]
         )
+
+    @staticmethod
+    def generate_predict_table_rows(
+        ids: Sequence[Tuple[str, int]],
+        timestamps: torch.Tensor,
+        mask: torch.Tensor,
+        *args: Sequence[Sequence[str]]
+    ) -> List[Tuple[str, ...]]:
+        """
+        Generate rows for the prediction table.
+
+        ids: len([(game, walkthrough_step), ...]) = batch
+        timestamps: (batch)
+        mask: (batch)
+        args: various commands of shape (batch, event_seq_len)
+
+        output: [
+            ('game|walkthrough_step|timestamp', groundtruth_cmd, tf_cmd, gd_cmd),
+            ...
+        ]
+        """
+        return [
+            data[1:]
+            for data in zip(
+                mask.tolist(),
+                [
+                    "|".join([game, str(walkthrough_step), str(int(timestamp))])
+                    for (game, walkthrough_step), timestamp in zip(
+                        ids, timestamps.tolist()
+                    )
+                ],
+                *[[" | ".join(cmds) for cmds in batch_cmds] for batch_cmds in args]
+            )
+            if data[0]
+        ]
