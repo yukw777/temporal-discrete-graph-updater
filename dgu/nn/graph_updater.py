@@ -854,7 +854,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def wandb_log_gen_obs(
         self, outputs: List[List[Tuple[str, str, str, str]]], table_title: str
     ) -> None:
-        eval_table_artifact = wandb.Artifact(table_title, "predictions")
+        eval_table_artifact = wandb.Artifact(
+            table_title + f"_{self.logger.experiment.id}", "predictions"
+        )
         eval_table = wandb.Table(
             columns=["id", "truth", "tf", "gd"],
             data=[item for sublist in outputs for item in sublist],
@@ -1223,7 +1225,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         ids: Sequence[Tuple[str, int]],
         timestamps: torch.Tensor,
         mask: Sequence[bool],
-        *args: Sequence[Sequence[str]]
+        *args: Sequence[Sequence[str]],
     ) -> List[Tuple[str, ...]]:
         """
         Generate rows for the prediction table.
@@ -1248,7 +1250,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         ids, timestamps.tolist()
                     )
                 ],
-                *[[" | ".join(cmds) for cmds in batch_cmds] for batch_cmds in args]
+                *[[" | ".join(cmds) for cmds in batch_cmds] for batch_cmds in args],
             )
             if data[0]
         ]
