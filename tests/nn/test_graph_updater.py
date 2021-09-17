@@ -1368,7 +1368,7 @@ def test_sldgu_greedy_decode(
         (
             (("g0", 0),),
             torch.tensor([1.0]),
-            torch.tensor([True]),
+            [True],
             [
                 (("add , player , kitchen , in", "add , table , kitchen , in"),),
                 [["add , player , kitchen , in", "add , fire , kitchen , in"]],
@@ -1386,7 +1386,7 @@ def test_sldgu_greedy_decode(
         (
             (("g0", 0), ("g1", 2), ("g2", 1)),
             torch.tensor([1.0, 2.0, 3.0]),
-            torch.tensor([True, False, True]),
+            [True, False, True],
             [
                 (
                     ("add , player , kitchen , in", "add , table , kitchen , in"),

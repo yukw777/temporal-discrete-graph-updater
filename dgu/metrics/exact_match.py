@@ -19,9 +19,12 @@ class ExactMatch(Metric):
         self,
         batch_preds: List[List[str]],
         batch_targets: List[List[str]],
+        batch_mask: List[bool],
     ) -> None:
         assert len(batch_preds) == len(batch_targets)
-        for preds, targets in zip(batch_preds, batch_targets):
+        for preds, targets, mask in zip(batch_preds, batch_targets, batch_mask):
+            if not mask:
+                continue
             # calculate the exact match score for each example in the batch
             if len(preds) == 0:
                 if len(targets) == 0:
@@ -36,4 +39,6 @@ class ExactMatch(Metric):
             self.total += 1  # type: ignore
 
     def compute(self) -> torch.Tensor:
+        if self.total == 0:
+            return torch.zeros_like(self.total, dtype=torch.float)  # type: ignore
         return self.score / self.total  # type: ignore

@@ -755,23 +755,28 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
 
             # log teacher force graph based metrics
+            step_mask = step_input.mask.tolist()
             self.log(
                 log_prefix + "_graph_tf_em",
-                self.graph_tf_exact_match(batch_tf_cmds, step_groundtruth_cmds),
+                self.graph_tf_exact_match(
+                    batch_tf_cmds, step_groundtruth_cmds, step_mask
+                ),
             )
             self.log(
                 log_prefix + "_graph_tf_f1",
-                self.graph_tf_f1(batch_tf_cmds, step_groundtruth_cmds),
+                self.graph_tf_f1(batch_tf_cmds, step_groundtruth_cmds, step_mask),
             )
 
             # log teacher force token based metrics
             self.log(
                 log_prefix + "_token_tf_em",
-                self.token_tf_exact_match(batch_tf_tokens, batch_groundtruth_tokens),
+                self.token_tf_exact_match(
+                    batch_tf_tokens, batch_groundtruth_tokens, step_mask
+                ),
             )
             self.log(
                 log_prefix + "_token_tf_f1",
-                self.token_tf_f1(batch_tf_tokens, batch_groundtruth_tokens),
+                self.token_tf_f1(batch_tf_tokens, batch_groundtruth_tokens, step_mask),
             )
 
             # greedy decoding
@@ -790,21 +795,25 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # log greedy decode graph based metrics
             self.log(
                 log_prefix + "_graph_gd_em",
-                self.graph_gd_exact_match(batch_gd_cmds, step_groundtruth_cmds),
+                self.graph_gd_exact_match(
+                    batch_gd_cmds, step_groundtruth_cmds, step_mask
+                ),
             )
             self.log(
                 log_prefix + "_graph_gd_f1",
-                self.graph_gd_f1(batch_gd_cmds, step_groundtruth_cmds),
+                self.graph_gd_f1(batch_gd_cmds, step_groundtruth_cmds, step_mask),
             )
 
             # log greedy decode token based metrics
             self.log(
                 log_prefix + "_token_gd_em",
-                self.token_gd_exact_match(batch_gd_tokens, batch_groundtruth_tokens),
+                self.token_gd_exact_match(
+                    batch_gd_tokens, batch_groundtruth_tokens, step_mask
+                ),
             )
             self.log(
                 log_prefix + "_token_gd_f1",
-                self.token_gd_f1(batch_gd_tokens, batch_groundtruth_tokens),
+                self.token_gd_f1(batch_gd_tokens, batch_groundtruth_tokens, step_mask),
             )
 
             # collect graph triple table data
@@ -812,7 +821,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 self.generate_predict_table_rows(
                     batch.ids,
                     step_input.timestamps,
-                    step_input.mask,
+                    step_mask,
                     step_groundtruth_cmds,
                     batch_tf_cmds,
                     batch_gd_cmds,
@@ -1213,7 +1222,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def generate_predict_table_rows(
         ids: Sequence[Tuple[str, int]],
         timestamps: torch.Tensor,
-        mask: torch.Tensor,
+        mask: Sequence[bool],
         *args: Sequence[Sequence[str]]
     ) -> List[Tuple[str, ...]]:
         """
@@ -1232,7 +1241,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return [
             data[1:]
             for data in zip(
-                mask.tolist(),
+                mask,
                 [
                     "|".join([game, str(walkthrough_step), str(int(timestamp))])
                     for (game, walkthrough_step), timestamp in zip(
