@@ -1038,14 +1038,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_batch = Batch.from_data_list(
                 [
                     TWCmdGenTemporalGraphData.from_decoded_graph_event(
-                        src_id, dst_id, prev_graph, graph, device=self.device
+                        prev_graph, graph, device=self.device
                     )
-                    for src_id, dst_id, prev_graph, graph in zip(
-                        decoded_src_ids,
-                        decoded_dst_ids,
-                        graphs,
-                        updated_graphs,
-                    )
+                    for prev_graph, graph in zip(graphs, updated_graphs)
                 ]
             )
 
