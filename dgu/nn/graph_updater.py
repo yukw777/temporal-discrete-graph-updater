@@ -447,23 +447,29 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         output: (batch)
         """
-        event_type_loss = torch.sum(
+        # event type loss
+        loss = torch.sum(
             self.criterion(event_type_logits, groundtruth_event_type_ids)
             * groundtruth_event_mask
         )
-        src_loss = torch.sum(
-            self.criterion(src_logits, groundtruth_event_src_ids)
-            * groundtruth_event_src_mask
-        )
-        dst_loss = torch.sum(
-            self.criterion(dst_logits, groundtruth_event_dst_ids)
-            * groundtruth_event_dst_mask
-        )
-        label_loss = torch.sum(
+        if groundtruth_event_dst_mask.any():
+            # source node loss
+            loss += torch.sum(
+                self.criterion(src_logits, groundtruth_event_src_ids)
+                * groundtruth_event_src_mask
+            )
+        if groundtruth_event_dst_mask.any():
+            # destination node loss
+            loss += torch.sum(
+                self.criterion(dst_logits, groundtruth_event_dst_ids)
+                * groundtruth_event_dst_mask
+            )
+        # label loss
+        loss += torch.sum(
             self.criterion(label_logits, groundtruth_event_label_ids)
             * groundtruth_event_mask
         )
-        return event_type_loss + src_loss + dst_loss + label_loss
+        return loss
 
     def calculate_f1s(
         self,
