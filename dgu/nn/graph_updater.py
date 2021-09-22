@@ -538,8 +538,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         Generate graph triplets based on the given batch of graph events.
 
         event_type_ids: (batch)
-        src_ids: (batch)
-        dst_ids: (batch)
+        src_ids: (batch) or empty
+        dst_ids: (batch) or empty
         label_ids: (batch)
         node_label_ids: (num_node)
         batch: (num_node)
@@ -743,8 +743,18 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     results["event_type_logits"].argmax(dim=1)
                     for results in tf_results_list
                 ],
-                [results["src_logits"].argmax(dim=1) for results in tf_results_list],
-                [results["dst_logits"].argmax(dim=1) for results in tf_results_list],
+                [
+                    results["src_logits"].argmax(dim=1)
+                    if results["src_logits"].size(1) > 0
+                    else torch.zeros(results["src_logits"].size(0), dtype=torch.long)
+                    for results in tf_results_list
+                ],
+                [
+                    results["dst_logits"].argmax(dim=1)
+                    if results["dst_logits"].size(1) > 0
+                    else torch.zeros(results["dst_logits"].size(0), dtype=torch.long)
+                    for results in tf_results_list
+                ],
                 [results["label_logits"].argmax(dim=1) for results in tf_results_list],
                 [
                     graphical_input.node_label_ids
