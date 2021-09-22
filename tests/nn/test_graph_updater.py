@@ -798,8 +798,137 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
 
 
 @pytest.mark.parametrize(
+    "event_type_ids,src_ids,dst_ids,batch,expected",
+    [
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            torch.empty(0).long(),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0, 1, 1]),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([2, 0]),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0, 0, 1, 1]),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([3, 5, 2, 0]),
+            torch.tensor([0, 0, 4, 1]),
+            torch.empty(0).long(),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([3, 5, 2, 0]),
+            torch.tensor([0, 0, 4, 1]),
+            torch.tensor([3, 3]),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([0, 1, 0, 0]),
+            torch.tensor([0, 0, 1, 1]),
+            torch.tensor([3, 3]),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+        ),
+    ],
+)
+def test_sldgu_filter_invalid_events(
+    sldgu, event_type_ids, src_ids, dst_ids, batch, expected
+):
+    assert sldgu.filter_invalid_events(event_type_ids, src_ids, dst_ids, batch).equal(
+        expected
+    )
+
+
+@pytest.mark.parametrize(
     "graphs,node_attrs,event_type_ids,src_ids,dst_ids,label_ids,timestamps,expected,"
-    "expected_node_attrs,expected_filtered_event_type_ids",
+    "expected_node_attrs",
     [
         (
             [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
@@ -817,13 +946,6 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0.0, 0.0, 0.0]),
             [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
             [{}, {}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["end"],
-                ]
-            ),
         ),
         (
             [
@@ -848,12 +970,6 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
                 ),
             ],
             [{"added-node-0": {"label": "inventory", "label_id": 2}}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                ]
-            ),
         ),
         (
             [
@@ -878,48 +994,6 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
                 EqualityDiGraph({"n1": {}, "n2": {}}),
             ],
             [{}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
-        ),
-        (
-            [
-                EqualityDiGraph(),
-                EqualityDiGraph(),
-                EqualityDiGraph(),
-                EqualityDiGraph({"n1": {}, "n2": {}}),
-            ],
-            [{}, {}, {}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
-            torch.tensor([3, 5, 2, 0]),
-            torch.tensor([0, 0, 4, 1]),
-            torch.tensor([2, 1, 4, 3]),
-            torch.tensor([2.0, 3.0, 4.0, 5.0]),
-            [
-                EqualityDiGraph(),
-                EqualityDiGraph(),
-                EqualityDiGraph(),
-                EqualityDiGraph({"n1": {}, "n2": {}}),
-            ],
-            [{}, {}, {}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                ]
-            ),
         ),
     ],
 )
@@ -935,7 +1009,6 @@ def test_sldgu_apply_decoded_events(
     timestamps,
     expected,
     expected_node_attrs,
-    expected_filtered_event_type_ids,
 ):
     monkeypatch.setattr("uuid.uuid4", MockUUID())
 
@@ -945,11 +1018,12 @@ def test_sldgu_apply_decoded_events(
     for graph, attrs in zip(expected, expected_node_attrs):
         nx.set_node_attributes(graph, attrs)
 
-    updated_graphs, filtered_event_type_ids = sldgu.apply_decoded_events(
-        graphs, event_type_ids, src_ids, dst_ids, label_ids, timestamps
+    assert (
+        sldgu.apply_decoded_events(
+            graphs, event_type_ids, src_ids, dst_ids, label_ids, timestamps
+        )
+        == expected
     )
-    assert updated_graphs == expected
-    assert filtered_event_type_ids.equal(expected_filtered_event_type_ids)
 
 
 @pytest.mark.parametrize(
@@ -1109,7 +1183,7 @@ def test_sldgu_apply_decoded_events(
                     "dst_logits": torch.rand(2, 1),
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
-                    ).float(),  # [kitchen, inventory]
+                    ).float(),  # [player, inventory]
                     "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
@@ -1131,7 +1205,7 @@ def test_sldgu_apply_decoded_events(
                     "dst_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
-                    ).float(),  # [kitchen, inventory]
+                    ).float(),  # [player, inventory]
                     "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
@@ -1241,7 +1315,7 @@ def test_sldgu_apply_decoded_events(
                     "dst_logits": torch.rand(2, 1),
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
-                    ).float(),  # [kitchen, inventory]
+                    ).float(),  # [player, inventory]
                     "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
@@ -1263,7 +1337,7 @@ def test_sldgu_apply_decoded_events(
                     "dst_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
-                    ).float(),  # [kitchen, inventory]
+                    ).float(),  # [player, inventory]
                     "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
@@ -1293,6 +1367,190 @@ def test_sldgu_apply_decoded_events(
                     ],
                     "updated_node_attrs": [
                         {"added-node-0": {"label": "player", "label_id": 1}},
+                        {"added-node-1": {"label": "player", "label_id": 1}},
+                    ],
+                },
+            ],
+        ),
+        (
+            10,
+            2,
+            3,
+            5,
+            [
+                {
+                    "event_type_logits": torch.tensor(
+                        [[0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]
+                    ).float(),  # [node-add, node-add]
+                    "src_logits": torch.empty(2, 0),
+                    "dst_logits": torch.empty(2, 0),
+                    "label_logits": torch.tensor(
+                        [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
+                    ).float(),  # [player, player]
+                    "updated_memory": torch.empty(0, 8),
+                },
+                {
+                    "event_type_logits": torch.tensor(
+                        [[0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0]]
+                    ).float(),  # [node-add, end]
+                    "src_logits": torch.rand(2, 1),
+                    "dst_logits": torch.rand(2, 1),
+                    "label_logits": torch.tensor(
+                        [[0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
+                    ).float(),  # [inventory, inventory]
+                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
+                },
+                {
+                    "event_type_logits": torch.tensor(
+                        [[0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1]]
+                    ).float(),  # [edge-add, edge-delete]
+                    "src_logits": torch.tensor([[0, 0, 1], [1, 1, 1]]).float(),
+                    "dst_logits": torch.tensor([[1, 0, 0], [0, 1, 1]]).float(),
+                    "label_logits": torch.tensor(
+                        [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
+                    ).float(),  # [in, is]
+                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
+                },
+                {
+                    "event_type_logits": torch.tensor(
+                        [[0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 0, 1]]
+                    ).float(),  # [edge-delete, edge-delete]
+                    "src_logits": torch.tensor([[1, 0, 0], [1, 1, 1]]).float(),
+                    "dst_logits": torch.tensor([[0, 0, 1], [0, 1, 1]]).float(),
+                    "label_logits": torch.tensor(
+                        [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
+                    ).float(),  # [in, is]
+                    "updated_memory": torch.tensor([[4] * 8, [5] * 8, [6] * 8]).float(),
+                },
+                {
+                    "event_type_logits": torch.tensor(
+                        [[0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1]]
+                    ).float(),  # [node-delete, edge-delete]
+                    "src_logits": torch.tensor([[0, 0, 1], [1, 1, 1]]).float(),
+                    "dst_logits": torch.tensor([[1, 0, 0], [0, 1, 1]]).float(),
+                    "label_logits": torch.tensor(
+                        [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
+                    ).float(),  # [player, player]
+                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
+                },
+                {
+                    "event_type_logits": torch.tensor(
+                        [[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]
+                    ).float(),  # [end, node-add]
+                    "src_logits": torch.rand(2, 3),
+                    "dst_logits": torch.rand(2, 3),
+                    "label_logits": torch.tensor(
+                        [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
+                    ).float(),  # [player, inventory]
+                    "updated_memory": torch.tensor([[4] * 8, [5] * 8, [6] * 8]).float(),
+                },
+            ],
+            [
+                {
+                    "event_type_ids": torch.tensor([1, 1]),  # [start, start]
+                    "src_ids": torch.zeros(2).long(),
+                    "dst_ids": torch.zeros(2).long(),
+                    "label_ids": torch.zeros(2).long(),  # [pad, pad]
+                    "node_label_ids": torch.empty(0).long(),
+                    "batch": torch.empty(0).long(),
+                    "updated_memory": torch.empty(0, 8),
+                    "updated_graphs": [EqualityDiGraph(), EqualityDiGraph()],
+                    "updated_node_attrs": [{}, {}],
+                },
+                {
+                    "event_type_ids": torch.tensor([3, 3]),  # [node-add, node-add]
+                    "src_ids": torch.zeros(2).long(),
+                    "dst_ids": torch.zeros(2).long(),
+                    "label_ids": torch.tensor([1, 1]),  # [player, player]
+                    "node_label_ids": torch.tensor([1, 1]),
+                    "batch": torch.tensor([0, 1]),
+                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
+                    "updated_graphs": [
+                        EqualityDiGraph({"added-node-0": {}}),
+                        EqualityDiGraph({"added-node-1": {}}),
+                    ],
+                    "updated_node_attrs": [
+                        {"added-node-0": {"label": "player", "label_id": 1}},
+                        {"added-node-1": {"label": "player", "label_id": 1}},
+                    ],
+                },
+                {
+                    "event_type_ids": torch.tensor([3, 2]),  # [node-add, end]
+                    "src_ids": torch.zeros(2).long(),
+                    "dst_ids": torch.zeros(2).long(),
+                    "label_ids": torch.tensor([2, 2]),  # [inventory, inventory]
+                    "node_label_ids": torch.tensor([1, 2, 1]),
+                    "batch": torch.tensor([0, 0, 1]),
+                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
+                    "updated_graphs": [
+                        EqualityDiGraph({"added-node-0": {}, "added-node-2": {}}),
+                        EqualityDiGraph({"added-node-1": {}}),
+                    ],
+                    "updated_node_attrs": [
+                        {
+                            "added-node-0": {"label": "player", "label_id": 1},
+                            "added-node-2": {"label": "inventory", "label_id": 2},
+                        },
+                        {"added-node-1": {"label": "player", "label_id": 1}},
+                    ],
+                },
+                {
+                    "event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
+                    "src_ids": torch.tensor([2, 0]),
+                    "dst_ids": torch.tensor([0, 0]),
+                    "label_ids": torch.tensor([4, 0]),
+                    "node_label_ids": torch.tensor([1, 2, 1]),
+                    "batch": torch.tensor([0, 0, 1]),
+                    "updated_memory": torch.tensor([[4] * 8, [5] * 8, [6] * 8]).float(),
+                    "updated_graphs": [
+                        EqualityDiGraph({"added-node-0": {}, "added-node-2": {}}),
+                        EqualityDiGraph({"added-node-1": {}}),
+                    ],
+                    "updated_node_attrs": [
+                        {
+                            "added-node-0": {"label": "player", "label_id": 1},
+                            "added-node-2": {"label": "inventory", "label_id": 2},
+                        },
+                        {"added-node-1": {"label": "player", "label_id": 1}},
+                    ],
+                },
+                {
+                    "event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
+                    "src_ids": torch.tensor([0, 0]),
+                    "dst_ids": torch.tensor([2, 0]),
+                    "label_ids": torch.tensor([4, 0]),
+                    "node_label_ids": torch.tensor([1, 2, 1]),
+                    "batch": torch.tensor([0, 0, 1]),
+                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
+                    "updated_graphs": [
+                        EqualityDiGraph({"added-node-0": {}, "added-node-2": {}}),
+                        EqualityDiGraph({"added-node-1": {}}),
+                    ],
+                    "updated_node_attrs": [
+                        {
+                            "added-node-0": {"label": "player", "label_id": 1},
+                            "added-node-2": {"label": "inventory", "label_id": 2},
+                        },
+                        {"added-node-1": {"label": "player", "label_id": 1}},
+                    ],
+                },
+                {
+                    "event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
+                    "src_ids": torch.tensor([2, 0]),
+                    "dst_ids": torch.tensor([0, 0]),
+                    "label_ids": torch.tensor([1, 0]),
+                    "node_label_ids": torch.tensor([1, 2, 1]),
+                    "batch": torch.tensor([0, 0, 1]),
+                    "updated_memory": torch.tensor([[4] * 8, [5] * 8, [6] * 8]).float(),
+                    "updated_graphs": [
+                        EqualityDiGraph({"added-node-0": {}, "added-node-2": {}}),
+                        EqualityDiGraph({"added-node-1": {}}),
+                    ],
+                    "updated_node_attrs": [
+                        {
+                            "added-node-0": {"label": "player", "label_id": 1},
+                            "added-node-2": {"label": "inventory", "label_id": 2},
+                        },
                         {"added-node-1": {"label": "player", "label_id": 1}},
                     ],
                 },
