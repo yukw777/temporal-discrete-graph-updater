@@ -447,23 +447,29 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         output: (batch)
         """
-        event_type_loss = torch.sum(
+        # event type loss
+        loss = torch.sum(
             self.criterion(event_type_logits, groundtruth_event_type_ids)
             * groundtruth_event_mask
         )
-        src_loss = torch.sum(
-            self.criterion(src_logits, groundtruth_event_src_ids)
-            * groundtruth_event_src_mask
-        )
-        dst_loss = torch.sum(
-            self.criterion(dst_logits, groundtruth_event_dst_ids)
-            * groundtruth_event_dst_mask
-        )
-        label_loss = torch.sum(
+        if groundtruth_event_dst_mask.any():
+            # source node loss
+            loss += torch.sum(
+                self.criterion(src_logits, groundtruth_event_src_ids)
+                * groundtruth_event_src_mask
+            )
+        if groundtruth_event_dst_mask.any():
+            # destination node loss
+            loss += torch.sum(
+                self.criterion(dst_logits, groundtruth_event_dst_ids)
+                * groundtruth_event_dst_mask
+            )
+        # label loss
+        loss += torch.sum(
             self.criterion(label_logits, groundtruth_event_label_ids)
             * groundtruth_event_mask
         )
-        return event_type_loss + src_loss + dst_loss + label_loss
+        return loss
 
     def calculate_f1s(
         self,
@@ -732,13 +738,39 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 self.log(log_prefix + "_label_f1", f1s["label_f1"])
 
             # calculate graph tuples from teacher forcing graph events
+            tf_src_id_seq = [
+                results["src_logits"].argmax(dim=1)
+                if results["src_logits"].size(1) > 0
+                else torch.zeros(
+                    results["src_logits"].size(0), dtype=torch.long, device=self.device
+                )
+                for results in tf_results_list
+            ]
+            tf_dst_id_seq = [
+                results["dst_logits"].argmax(dim=1)
+                if results["dst_logits"].size(1) > 0
+                else torch.zeros(
+                    results["dst_logits"].size(0), dtype=torch.long, device=self.device
+                )
+                for results in tf_results_list
+            ]
             batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
                 [
-                    results["event_type_logits"].argmax(dim=1)
-                    for results in tf_results_list
+                    self.filter_invalid_events(
+                        results["event_type_logits"].argmax(dim=1),
+                        src_ids,
+                        dst_ids,
+                        graphical_input.batch,
+                    )
+                    for results, src_ids, dst_ids, graphical_input in zip(
+                        tf_results_list,
+                        tf_src_id_seq,
+                        tf_dst_id_seq,
+                        graphical_input_seq,
+                    )
                 ],
-                [results["src_logits"].argmax(dim=1) for results in tf_results_list],
-                [results["dst_logits"].argmax(dim=1) for results in tf_results_list],
+                tf_src_id_seq,
+                tf_dst_id_seq,
                 [results["label_logits"].argmax(dim=1) for results in tf_results_list],
                 [
                     graphical_input.node_label_ids
@@ -1024,7 +1056,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         results_list: List[Dict[str, Any]] = []
         for _ in range(self.hparams.max_decode_len):  # type: ignore
             # apply the decoded event
-            updated_graphs, decoded_event_type_ids = self.apply_decoded_events(
+            updated_graphs = self.apply_decoded_events(
                 graphs,
                 decoded_event_type_ids,
                 decoded_src_ids,
@@ -1038,14 +1070,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_batch = Batch.from_data_list(
                 [
                     TWCmdGenTemporalGraphData.from_decoded_graph_event(
-                        src_id, dst_id, prev_graph, graph, device=self.device
+                        prev_graph, graph, device=self.device
                     )
-                    for src_id, dst_id, prev_graph, graph in zip(
-                        decoded_src_ids,
-                        decoded_dst_ids,
-                        graphs,
-                        updated_graphs,
-                    )
+                    for prev_graph, graph in zip(graphs, updated_graphs)
                 ]
             )
 
@@ -1119,6 +1146,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
             # (batch)
 
+            # filter out invalid decoded events
+            decoded_event_type_ids = self.filter_invalid_events(
+                decoded_event_type_ids,
+                decoded_src_ids,
+                decoded_dst_ids,
+                graph_batch.batch,
+            )
+            # (batch)
+
             # update the memory
             memory = results["updated_memory"]
 
@@ -1143,6 +1179,50 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         return results_list
 
+    @staticmethod
+    def filter_invalid_events(
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        dst_ids: torch.Tensor,
+        batch: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Filter out invalid events, e.g. deleting a non-existent node by setting them
+        to pad events.
+
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        batch: (num_node)
+
+        output: filtered event_type_ids (batch)
+        """
+        batch_size = event_type_ids.size(0)
+        batch_bincount = batch.bincount()
+        subgraph_num_node = F.pad(
+            batch_bincount, (0, batch_size - batch_bincount.size(0))
+        )
+        # (batch)
+        invalid_mask = torch.zeros_like(event_type_ids, dtype=torch.bool)
+        # (batch)
+        num_node = batch.size(0)
+        for i, (num_node, event_type_id, src_id, dst_id) in enumerate(
+            zip(subgraph_num_node, event_type_ids, src_ids, dst_ids)
+        ):
+            if event_type_id == EVENT_TYPE_ID_MAP["node-delete"]:
+                if src_id >= num_node:
+                    invalid_mask[i] = True
+            elif event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
+                if src_id >= num_node or dst_id >= num_node:
+                    invalid_mask[i] = True
+            elif event_type_id == EVENT_TYPE_ID_MAP["edge-delete"]:
+                if src_id >= num_node or dst_id >= num_node:
+                    # if the edge doesn't exist, we still output it
+                    # as was done in the original paper
+                    invalid_mask[i] = True
+
+        return event_type_ids.masked_fill(invalid_mask, EVENT_TYPE_ID_MAP["pad"])
+
     def apply_decoded_events(
         self,
         graphs: List[nx.DiGraph],
@@ -1151,11 +1231,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         dst_ids: torch.Tensor,
         label_ids: torch.Tensor,
         timestamps: torch.Tensor,
-    ) -> Tuple[List[nx.DiGraph], torch.Tensor]:
+    ) -> List[nx.DiGraph]:
         """
-        Apply the given batch of decoded events to the given graphs. Return a new
-        event type id tensor where invalid graph events, e.g. adding an edge between
-        non-existent nodes, have been filtered out.
+        Apply the given batch of decoded events to the given graphs.
 
         graphs: graphs for games in the batch
         event_type_ids: (batch)
@@ -1164,22 +1242,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         label_ids: (batch)
         timestamps: (batch)
 
-        output: (
-            [updated graph, ...],
-            filtered_event_type_ids: (batch),
-        )
+        output: [updated graph, ...]
         """
         updated_graphs = deepcopy(graphs)
-        invalid_mask = torch.zeros_like(event_type_ids, dtype=torch.bool)
-        for i, (graph, event_type_id, src_id, dst_id, label_id, timestamp) in enumerate(
-            zip(
-                updated_graphs,
-                event_type_ids,
-                src_ids,
-                dst_ids,
-                label_ids,
-                timestamps,
-            )
+        for graph, event_type_id, src_id, dst_id, label_id, timestamp in zip(
+            updated_graphs, event_type_ids, src_ids, dst_ids, label_ids, timestamps
         ):
             if event_type_id == EVENT_TYPE_ID_MAP["node-add"]:
                 graph.add_node(
@@ -1188,37 +1255,23 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     label_id=label_id.item(),
                 )
             elif event_type_id == EVENT_TYPE_ID_MAP["node-delete"]:
-                nodes = list(graph.nodes)
-                if src_id < len(nodes):
-                    graph.remove_node(list(graph.nodes)[src_id])
-                else:
-                    invalid_mask[i] = True
+                graph.remove_node(list(graph.nodes)[src_id])
             elif event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
                 nodes = list(graph.nodes)
-                if src_id < len(nodes) and dst_id < len(nodes):
-                    graph.add_edge(
-                        nodes[src_id],
-                        nodes[dst_id],
-                        label=self.labels[label_id],
-                        label_id=label_id.item(),
-                        last_update=timestamp.item(),
-                    )
-                else:
-                    invalid_mask[i] = True
+                graph.add_edge(
+                    nodes[src_id],
+                    nodes[dst_id],
+                    label=self.labels[label_id],
+                    label_id=label_id.item(),
+                    last_update=timestamp.item(),
+                )
             elif event_type_id == EVENT_TYPE_ID_MAP["edge-delete"]:
                 nodes = list(graph.nodes)
-                if (
-                    src_id < len(nodes)
-                    and dst_id < len(nodes)
-                    and graph.has_edge(nodes[src_id], nodes[dst_id])
-                ):
+                # if the edge doesn't exist, we ignore
+                if graph.has_edge(nodes[src_id], nodes[dst_id]):
                     graph.remove_edge(nodes[src_id], nodes[dst_id])
-                else:
-                    invalid_mask[i] = True
 
-        return updated_graphs, event_type_ids.masked_fill(
-            invalid_mask, EVENT_TYPE_ID_MAP["pad"]
-        )
+        return updated_graphs
 
     @staticmethod
     def generate_predict_table_rows(

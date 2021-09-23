@@ -257,8 +257,6 @@ class TWCmdGenTemporalGraphData(Data):
     @classmethod
     def from_decoded_graph_event(
         cls,
-        event_src_index: torch.Tensor,
-        event_dst_index: torch.Tensor,
         before_graph: nx.DiGraph,
         after_graph: nx.DiGraph,
         device: Optional[Union[str, torch.device]] = None,
@@ -299,15 +297,11 @@ class TWCmdGenTemporalGraphData(Data):
             )
             if after_graph.number_of_edges() > 0
             else torch.empty(0, device=device),
-            event_src_index=event_src_index,
-            event_dst_index=event_dst_index,
         )
 
     @classmethod
     def from_graph_event(
         cls,
-        event_src_index: torch.Tensor,
-        event_dst_index: torch.Tensor,
         before_graph: nx.DiGraph,
         after_graph: nx.DiGraph,
         label_id_map: Dict[str, int],
@@ -351,8 +345,6 @@ class TWCmdGenTemporalGraphData(Data):
             )
             if after_graph.number_of_edges() > 0
             else torch.empty(0, device=device),
-            event_src_index=event_src_index,
-            event_dst_index=event_dst_index,
         )
 
 
@@ -480,6 +472,7 @@ class TWCmdGenTemporalDataCollator:
         tgt_event_src_ids = torch.tensor([0] * batch_size)
         tgt_event_dst_ids = torch.tensor([0] * batch_size)
         tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
+        tgt_before_graphs = batch_graphs
         for seq_step_num in range(max_event_seq_len):
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
@@ -487,26 +480,27 @@ class TWCmdGenTemporalDataCollator:
             batch_event_label_ids: List[int] = []
             batch_event_timestamps: List[int] = []
             batch_graph_data: List[TWCmdGenTemporalGraphData] = []
-            for event_seq in batch_event_seq:
+            next_tgt_before_graphs: List[nx.DiGraph] = []
+            for (event_seq, tgt_before_graph) in zip(
+                batch_event_seq, tgt_before_graphs
+            ):
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
                     event = event_seq[seq_step_num]
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP[event["type"]])
-                    event_src_id = event.get("src_id", event.get("node_id", 0))
-                    batch_event_src_ids.append(event_src_id)
-                    event_dst_id = event.get("dst_id", 0)
-                    batch_event_dst_ids.append(event_dst_id)
+                    batch_event_src_ids.append(
+                        event.get("src_id", event.get("node_id", 0))
+                    )
+                    batch_event_dst_ids.append(event.get("dst_id", 0))
                     batch_event_label_ids.append(self.label_id_map[event["label"]])
                     batch_event_timestamps.append(event["timestamp"])
+                    tgt_after_graph = event["before_graph"]
                     batch_graph_data.append(
                         TWCmdGenTemporalGraphData.from_graph_event(
-                            torch.tensor(event_src_id),
-                            torch.tensor(event_dst_id),
-                            event["before_graph"],
-                            event["after_graph"],
-                            self.label_id_map,
+                            tgt_before_graph, tgt_after_graph, self.label_id_map
                         )
                     )
+                    next_tgt_before_graphs.append(tgt_after_graph)
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
@@ -515,15 +509,13 @@ class TWCmdGenTemporalDataCollator:
                     batch_event_timestamps.append(0)
                     # we're done for this step for this batch item,
                     # so keep the graph around for the next step
+                    tgt_graph = event_seq[-1]["after_graph"]
                     batch_graph_data.append(
                         TWCmdGenTemporalGraphData.from_graph_event(
-                            torch.tensor(0),
-                            torch.tensor(0),
-                            event_seq[-1]["after_graph"],
-                            event_seq[-1]["after_graph"],
-                            self.label_id_map,
+                            tgt_graph, tgt_graph, self.label_id_map
                         )
                     )
+                    next_tgt_before_graphs.append(tgt_graph)
             groundtruth_event_type_ids = torch.tensor(batch_event_type_ids)
             groundtruth_event_src_ids = torch.tensor(batch_event_src_ids)
             groundtruth_event_dst_ids = torch.tensor(batch_event_dst_ids)
@@ -559,9 +551,12 @@ class TWCmdGenTemporalDataCollator:
 
             # the current groundtruth events become the next target events
             tgt_event_type_ids = groundtruth_event_type_ids
-            tgt_event_src_ids = graph_batch.event_src_index
-            tgt_event_dst_ids = graph_batch.event_dst_index
+            tgt_event_src_ids = groundtruth_event_src_ids
+            tgt_event_dst_ids = groundtruth_event_dst_ids
             tgt_event_label_ids = groundtruth_event_label_ids
+
+            # update the target before graphs
+            tgt_before_graphs = next_tgt_before_graphs
         return collated, updated_batch_graphs
 
     def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
