@@ -10,6 +10,7 @@ from dgu.nn.utils import (
     load_fasttext,
     find_indices,
     pad_batch_seq_of_seq,
+    get_edge_index_co_occurrence_matrix,
     index_edge_attr,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -376,3 +377,30 @@ def test_pad_batch_seq_of_seq(
 )
 def test_index_edge_attr(edge_index, edge_attr, indices, expected):
     assert index_edge_attr(edge_index, edge_attr, indices).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "edge_index_a,edge_index_b,expected",
+    [
+        (torch.empty(2, 0).long(), torch.empty(2, 0).long(), torch.empty(0, 0).bool()),
+        (
+            torch.tensor([[0], [3]]),
+            torch.tensor([[0], [3]]),
+            torch.tensor([[True]]),
+        ),
+        (
+            torch.tensor([[0], [3]]),
+            torch.tensor([[0], [2]]),
+            torch.tensor([[False]]),
+        ),
+        (
+            torch.tensor([[0, 1, 3], [3, 2, 5]]),
+            torch.tensor([[0, 3], [4, 5]]),
+            torch.tensor([[False, False], [False, False], [False, True]]),
+        ),
+    ],
+)
+def test_get_edge_index_co_occurrence_matrix(edge_index_a, edge_index_b, expected):
+    assert get_edge_index_co_occurrence_matrix(edge_index_a, edge_index_b).equal(
+        expected
+    )

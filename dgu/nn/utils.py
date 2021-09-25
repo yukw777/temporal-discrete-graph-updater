@@ -142,6 +142,20 @@ def pad_batch_seq_of_seq(
     )
 
 
+def get_edge_index_co_occurrence_matrix(
+    edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
+) -> torch.Tensor:
+    """
+    Calculate the co-occurrence matrix between two edge index matrices.
+
+    edge_index_a: (2, num_edge_a)
+    edge_index_b: (2, num_edge_b)
+
+    output: (num_edge_a, num_edge_b)
+    """
+    return torch.all(edge_index_a.t().unsqueeze(-1) == edge_index_b, dim=1)
+
+
 def index_edge_attr(
     edge_index: torch.Tensor, edge_attr: torch.Tensor, indices: torch.Tensor
 ) -> torch.Tensor:
@@ -156,16 +170,12 @@ def index_edge_attr(
 
     output: (num_indexed_edge, *)
     """
-    # transpose the indices
-    transposed_indices = indices.t().unsqueeze(-1)
-    # (num_indexed_edge, 2, 1)
-
-    # calculate the mask of the matching indices
-    mask = torch.all(edge_index == transposed_indices, dim=1)
-    # (num_edge, num_indexed_edge)
+    # calculate the co-occurrence matrix between edge_index and indices
+    co_occur = get_edge_index_co_occurrence_matrix(indices, edge_index)
+    # (num_indexed_edge, num_edge)
 
     # calculate positions of the matching indices
-    pos = mask.nonzero()[:, 1]
+    pos = co_occur.nonzero()[:, 1]
     # (num_indexed_edge)
 
     # create an empty
@@ -175,6 +185,6 @@ def index_edge_attr(
         device=edge_attr.device,
         dtype=edge_attr.dtype
     )
-    out[mask.any(dim=1)] = edge_attr[pos]
+    out[co_occur.any(1)] = edge_attr[pos]
     return out
     # (num_indexed_edge, *)
