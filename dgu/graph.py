@@ -1,7 +1,7 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 from copy import deepcopy
 
 from dgu.constants import IS
@@ -29,7 +29,8 @@ def process_add_triplet_cmd(
     src_label: str,
     rel_label: str,
     dst_label: str,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], nx.DiGraph]:
+    graph = deepcopy(graph)
     events: List[Dict[str, Any]] = []
     # take care of the source node
     src_node: Node
@@ -38,37 +39,15 @@ def process_add_triplet_cmd(
         # for the given relation, and if not, add a new node.
         src_node = ExitNode(src_label, rel_label, dst_label)
         if src_node not in graph:
-            before_graph = deepcopy(graph)
-            after_graph = deepcopy(graph)
-            after_graph.add_node(src_node)
-            events.append(
-                {
-                    "type": "node-add",
-                    "timestamp": timestamp,
-                    "label": src_label,
-                    "before_graph": before_graph,
-                    "after_graph": after_graph,
-                }
-            )
-            graph = after_graph
+            graph.add_node(src_node)
+            events.append({"type": "node-add", "label": src_label})
     else:
         # if it's a regular node, check if a node with the same label exists
         # and add if it doesn't.
         src_node = Node(src_label)
         if src_node not in graph:
-            before_graph = deepcopy(graph)
-            after_graph = deepcopy(graph)
-            after_graph.add_node(src_node)
-            events.append(
-                {
-                    "type": "node-add",
-                    "timestamp": timestamp,
-                    "label": src_label,
-                    "before_graph": before_graph,
-                    "after_graph": after_graph,
-                }
-            )
-            graph = after_graph
+            graph.add_node(src_node)
+            events.append({"type": "node-add", "label": src_label})
 
     # take care of the destination node
     dst_node: Node
@@ -78,58 +57,31 @@ def process_add_triplet_cmd(
         # and add if it doesn't.
         dst_node = IsDstNode(dst_label, src_label)
         if dst_node not in graph:
-            before_graph = deepcopy(graph)
-            after_graph = deepcopy(graph)
-            after_graph.add_node(dst_node)
-            events.append(
-                {
-                    "type": "node-add",
-                    "timestamp": timestamp,
-                    "label": dst_label,
-                    "before_graph": before_graph,
-                    "after_graph": after_graph,
-                }
-            )
-            graph = after_graph
+            graph.add_node(dst_node)
+            events.append({"type": "node-add", "label": dst_label})
     else:
         # if it's a regular node, check if a node with the same label exists
         # and add if it doesn't.
         dst_node = Node(dst_label)
         if dst_node not in graph:
-            before_graph = deepcopy(graph)
-            after_graph = deepcopy(graph)
-            after_graph.add_node(dst_node)
-            events.append(
-                {
-                    "type": "node-add",
-                    "timestamp": timestamp,
-                    "label": dst_label,
-                    "before_graph": before_graph,
-                    "after_graph": after_graph,
-                }
-            )
-            graph = after_graph
+            graph.add_node(dst_node)
+            events.append({"type": "node-add", "label": dst_label})
 
     if graph.has_edge(src_node, dst_node):
         # the edge already exists, so we're done
-        return events
+        return events, graph
     # the edge doesn't exist, so add it
-    before_graph = deepcopy(graph)
-    after_graph = deepcopy(graph)
-    after_graph.add_edge(src_node, dst_node, label=rel_label, last_update=timestamp)
-    node_id_map = {node: node_id for node_id, node in enumerate(before_graph.nodes)}
+    graph.add_edge(src_node, dst_node, label=rel_label, last_update=timestamp)
+    node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
     events.append(
         {
             "type": "edge-add",
             "src_id": node_id_map[src_node],
             "dst_id": node_id_map[dst_node],
-            "timestamp": timestamp,
             "label": rel_label,
-            "before_graph": before_graph,
-            "after_graph": after_graph,
         }
     )
-    return events
+    return events, graph
 
 
 def process_delete_triplet_cmd(
@@ -138,7 +90,8 @@ def process_delete_triplet_cmd(
     src_label: str,
     rel_label: str,
     dst_label: str,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], nx.DiGraph]:
+    graph = deepcopy(graph)
     events: List[Dict[str, Any]] = []
     # get the source node
     src_node: Node
@@ -148,7 +101,7 @@ def process_delete_triplet_cmd(
         src_node = Node(src_label)
     if src_node not in graph:
         # the source node doesn't exist, so return
-        return events
+        return events, graph
 
     # get the destination node
     dst_node: Node
@@ -158,69 +111,52 @@ def process_delete_triplet_cmd(
         dst_node = Node(dst_label)
     if dst_node not in graph:
         # the destination node doesn't exist, so return
-        return events
+        return events, graph
 
     if not graph.has_edge(src_node, dst_node):
-        # the edge doesn't exist, continue
-        return events
+        # the edge doesn't exist, so return
+        return events, graph
 
     # delete the edge and add event
-    before_graph = deepcopy(graph)
-    after_graph = deepcopy(graph)
-    edge_label = before_graph.edges[src_node, dst_node]["label"]
-    after_graph.remove_edge(src_node, dst_node)
-    node_id_map = {node: node_id for node_id, node in enumerate(before_graph.nodes)}
+    node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
+    edge_label = graph.edges[src_node, dst_node]["label"]
+    graph.remove_edge(src_node, dst_node)
     events.append(
         {
             "type": "edge-delete",
             "src_id": node_id_map[src_node],
             "dst_id": node_id_map[dst_node],
-            "timestamp": timestamp,
             "label": edge_label,
-            "before_graph": before_graph,
-            "after_graph": after_graph,
         }
     )
-    graph = after_graph
 
     # if there are no edges, delete the nodes
     if graph.degree[dst_node] == 0:
-        before_graph = deepcopy(graph)
-        after_graph = deepcopy(graph)
-        after_graph.remove_node(dst_node)
-        node_id_map = {node: node_id for node_id, node in enumerate(before_graph.nodes)}
+        node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
+        graph.remove_node(dst_node)
         events.append(
             {
                 "type": "node-delete",
                 "node_id": node_id_map[dst_node],
-                "timestamp": timestamp,
                 "label": dst_label,
-                "before_graph": before_graph,
-                "after_graph": after_graph,
             }
         )
-        graph = after_graph
     if graph.degree[src_node] == 0:
-        before_graph = deepcopy(graph)
-        after_graph = deepcopy(graph)
-        after_graph.remove_node(src_node)
-        node_id_map = {node: node_id for node_id, node in enumerate(before_graph.nodes)}
+        node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
+        graph.remove_node(src_node)
         events.append(
             {
                 "type": "node-delete",
                 "node_id": node_id_map[src_node],
-                "timestamp": timestamp,
                 "label": src_label,
-                "before_graph": before_graph,
-                "after_graph": after_graph,
             }
         )
-    return events
+    return events, graph
 
 
 def process_triplet_cmd(
     graph: nx.DiGraph, timestamp: int, cmd: str
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], nx.DiGraph]:
     """
     Update the internal graph based on the given triplet command and return
     corresponding graph events.
@@ -230,7 +166,6 @@ def process_triplet_cmd(
         {
             "type": "node-{add,delete}",
             "node_id": id for node to be added/deleted from the previous graph,
-            "timestamp": timestamp for the event,
             "label": label for node to be added/deleted,
             "before_graph": snapshot of the graph before this event,
             "after_graph": snapshot of the graph after this event,
@@ -240,7 +175,6 @@ def process_triplet_cmd(
             "type": "edge-{add,delete}",
             "src_id": id for src node to be added/deleted from the previous graph,
             "dst_id": id for dst node to be added/deleted from the previous graph,
-            "timestamp": timestamp for the event,
             "label": label for edge to be added/deleted,
             "before_graph": snapshot of the graph before this event,
             "after_graph": snapshot of the graph after this event,
