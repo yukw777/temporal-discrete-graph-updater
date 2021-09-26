@@ -130,12 +130,12 @@ class EventStaticLabelHead(nn.Module):
     def __init__(
         self,
         autoregressive_embedding_dim: int,
+        label_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
-        label_embeddings: torch.Tensor,
     ) -> None:
         super().__init__()
-        self.label_embedding_dim = label_embeddings.size(1)
+        self.label_embedding_dim = label_embedding_dim
 
         self.key_linear = nn.Sequential(
             nn.Linear(self.label_embedding_dim, hidden_dim),
@@ -147,17 +147,19 @@ class EventStaticLabelHead(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, key_query_dim),
         )
-        self.label_embeddings = nn.Embedding.from_pretrained(label_embeddings)
 
-    def forward(self, autoregressive_embedding: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, autoregressive_embedding: torch.Tensor, label_embeddings: torch.Tensor
+    ) -> torch.Tensor:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
+        label_embeddings: (num_label, label_embedding_dim)
 
         output:
             label_logits: (batch, num_label), logits for nodes first, then edges
         """
         # calculate the key from label_embeddings
-        key = self.key_linear(self.label_embeddings.weight)
+        key = self.key_linear(label_embeddings)
         # (num_label, key_query_dim)
 
         # calculate the query from event_type and autoregressive_embedding
@@ -173,9 +175,9 @@ class StaticLabelGraphEventDecoder(nn.Module):
         self,
         graph_event_embedding_dim: int,
         node_embedding_dim: int,
+        label_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
-        label_embeddings: torch.Tensor,
     ) -> None:
         super().__init__()
         self.event_type_head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
@@ -186,11 +188,14 @@ class StaticLabelGraphEventDecoder(nn.Module):
             node_embedding_dim, graph_event_embedding_dim, hidden_dim, key_query_dim
         )
         self.event_label_head = EventStaticLabelHead(
-            graph_event_embedding_dim, hidden_dim, key_query_dim, label_embeddings
+            graph_event_embedding_dim, label_embedding_dim, hidden_dim, key_query_dim
         )
 
     def forward(
-        self, graph_event_embeddings: torch.Tensor, node_embeddings: torch.Tensor
+        self,
+        graph_event_embeddings: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        label_embeddings: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
         Based on the graph event embeddings and node embeddings, calculate
@@ -199,6 +204,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
 
         graph_event_embeddings: (batch, graph_event_embedding_dim)
         node_embeddings: (batch, num_node, node_embedding_dim)
+        label_embeddings: (num_label, label_embedding_dim)
 
         output: {
             "event_type_logits": (batch, num_event_type),
@@ -216,7 +222,7 @@ class StaticLabelGraphEventDecoder(nn.Module):
         dst_logits, autoregressive_embedding = self.event_dst_head(
             autoregressive_embedding, node_embeddings
         )
-        label_logits = self.event_label_head(autoregressive_embedding)
+        label_logits = self.event_label_head(autoregressive_embedding, label_embeddings)
         return {
             "event_type_logits": event_type_logits,
             "src_logits": src_logits,
@@ -240,12 +246,14 @@ class RNNGraphEventDecoder(nn.Module):
         self,
         delta_g: torch.Tensor,
         node_embeddings: torch.Tensor,
+        label_embeddings: torch.Tensor,
         hidden: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         input:
             delta_g: (batch, input_dim)
             node_embeddings: (batch, num_node, node_embedding_dim)
+            label_embeddings: (num_label, label_embedding_dim)
             hidden: (batch, hidden_dim)
 
         output:
@@ -258,6 +266,8 @@ class RNNGraphEventDecoder(nn.Module):
             }
         """
         new_hidden = self.gru_cell(delta_g, hidden)
-        results = self.graph_event_decoder(new_hidden, node_embeddings)
+        results = self.graph_event_decoder(
+            new_hidden, node_embeddings, label_embeddings
+        )
         results["new_hidden"] = new_hidden
         return results
