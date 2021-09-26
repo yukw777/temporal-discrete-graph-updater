@@ -167,8 +167,6 @@ def process_triplet_cmd(
             "type": "node-{add,delete}",
             "node_id": id for node to be added/deleted from the previous graph,
             "label": label for node to be added/deleted,
-            "before_graph": snapshot of the graph before this event,
-            "after_graph": snapshot of the graph after this event,
         }
     Each edge event contains the following information:
         {
@@ -176,8 +174,6 @@ def process_triplet_cmd(
             "src_id": id for src node to be added/deleted from the previous graph,
             "dst_id": id for dst node to be added/deleted from the previous graph,
             "label": label for edge to be added/deleted,
-            "before_graph": snapshot of the graph before this event,
-            "after_graph": snapshot of the graph after this event,
         }
     """
     cmd_type, src_label, dst_label, rel_label = cmd.split(" , ")

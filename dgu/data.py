@@ -30,6 +30,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 "previous_action": "previous action...",
                 "timestamp": timestamp,
                 "target_commands": [graph commands, ...],
+                "graph_events": [graph events, ...],
             },
             ...
         ]
@@ -62,7 +63,12 @@ class TWCmdGenTemporalDataset(Dataset):
         ]
         random_examples = self.random_examples[(game, walkthrough_step)]
         data: List[Dict[str, Any]] = []
+        graph = nx.DiGraph()
         for timestamp, example in enumerate(walkthrough_examples + random_examples):
+            graph_events: List[Dict[str, Any]] = []
+            for cmd in example["target_commands"]:
+                sub_event_seq, graph = process_triplet_cmd(graph, timestamp, cmd)
+                graph_events.extend(sub_event_seq)
             data.append(
                 {
                     "game": game,
@@ -71,6 +77,7 @@ class TWCmdGenTemporalDataset(Dataset):
                     "previous_action": example["previous_action"],
                     "timestamp": timestamp,
                     "target_commands": example["target_commands"],
+                    "graph_events": graph_events,
                 }
             )
         return data
