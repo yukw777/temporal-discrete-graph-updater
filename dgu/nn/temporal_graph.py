@@ -1,13 +1,15 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from typing import Tuple, Optional, Dict
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
+from torch_geometric.data import Batch
 from torch_scatter import scatter
 
 from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.nn.utils import index_edge_attr
+from dgu.nn.utils import index_edge_attr, get_edge_index_co_occurrence_matrix
 
 
 class TransformerConvStack(nn.Module):
@@ -321,3 +323,178 @@ class TemporalGraphNetwork(nn.Module):
         )
         # (batch, message_dim)
         return src_messages, dst_messages
+
+    @staticmethod
+    def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
+        """
+        Calculate the node id offsets for turning subgraph node IDs into a batched
+        graph node IDs.
+
+        batch_size: scalar
+        batch: (num_node)
+
+        output: (batch_size)
+        """
+        subgraph_size_cumsum = batch.bincount().cumsum(0)
+        return F.pad(
+            subgraph_size_cumsum, (1, batch_size - subgraph_size_cumsum.size(0) - 1)
+        )
+
+    @classmethod
+    def update_batched_graph(
+        cls,
+        batched_graph: Batch,
+        event_type_ids: torch.Tensor,
+        event_src_ids: torch.Tensor,
+        event_dst_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+        event_timestamps: torch.Tensor,
+    ) -> Tuple[Batch, torch.Tensor, torch.Tensor]:
+        """
+        Update the given batch of graph events to the given batched graph.
+        Also returns the deleted node mask and sorted batch indices to be used
+        for updating the memory.
+        All the events are assumed to be valid, and each event in the batch is assuemd
+        to be applied only to the corresponding graph in the batched graph.
+
+        batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
+            batch: (num_node)
+            x: (num_node, event_embedding_dim)
+            edge_index: (2, num_edge)
+            edge_attr: (num_edge, event_embedding_dim)
+            edge_last_update: (num_edge)
+        )
+        event_type_ids: (batch)
+        event_src_ids: (batch)
+        event_dst_ids: (batch)
+        event_embeddings: (batch, event_embedding_dim)
+        event_timestamps: (batch)
+
+        output: (
+            updated batch of graphs,
+            deleted_node_mask: (num_node),
+            sorted_node_indices: (num_node-num_deleted_node+num_added_node),
+        )
+        """
+        # translate src_ids and dst_ids to batched versions
+        node_id_offsets = cls.calculate_node_id_offsets(
+            event_type_ids.size(0), batched_graph.batch
+        )
+        # (batch)
+
+        # take care of the edges first
+        # first turn existing edge_index into subgraph node IDs so that it's easier
+        # to manipulate
+        edge_index_batch = batched_graph.batch[batched_graph.edge_index[0]]
+        # (num_edge)
+        subgraph_edge_index = batched_graph.edge_index - node_id_offsets[
+            edge_index_batch
+        ].unsqueeze(0).expand(2, -1)
+        # (2, num_edge)
+
+        # collect edge add events
+        edge_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        # (batch)
+        added_edge_index_batch = edge_add_event_mask.nonzero().squeeze(-1)
+        # (num_added_edge)
+        added_edge_index = torch.stack(
+            [event_src_ids[edge_add_event_mask], event_dst_ids[edge_add_event_mask]]
+        )
+        # (2, num_added_edge)
+        added_edge_attr = event_embeddings[edge_add_event_mask]
+        # (num_added_edge, event_embedding_dim)
+        added_edge_last_update = event_timestamps[edge_add_event_mask]
+        # (num_added_edge)
+
+        # collect edge delete events
+        edge_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
+        # (batch)
+        deleted_edge_co_occur = get_edge_index_co_occurrence_matrix(
+            subgraph_edge_index,
+            torch.stack(
+                [
+                    event_src_ids[edge_delete_event_mask],
+                    event_dst_ids[edge_delete_event_mask],
+                ]
+            ),
+        )
+        # (num_edge, num_deleted_edge)
+        deleted_edge_mask = torch.ones(
+            batched_graph.num_edges,
+            dtype=torch.bool,
+            device=deleted_edge_co_occur.device,
+        ).masked_fill(deleted_edge_co_occur.any(1), False)
+        # (num_edge)
+
+        new_edge_index_batch = torch.cat(
+            [edge_index_batch[deleted_edge_mask], added_edge_index_batch]
+        )
+        # (num_edge-num_deleted_edge+num_added_edge)
+        new_subgraph_edge_index = torch.cat(
+            [subgraph_edge_index[:, deleted_edge_mask], added_edge_index], dim=1
+        )
+        # (2, num_edge-num_deleted_edge+num_added_edge)
+        new_edge_attr = torch.cat(
+            [batched_graph.edge_attr[deleted_edge_mask], added_edge_attr]
+        )
+        # (num_edge-num_deleted_edge+num_added_edge, event_embedding_dim)
+        new_edge_last_update = torch.cat(
+            [batched_graph.edge_last_update[deleted_edge_mask], added_edge_last_update]
+        )
+        # (num_edge-num_deleted_edge+num_added_edge)
+
+        # take care of the nodes now
+        # collect node add events
+        node_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        # (batch)
+        added_x = event_embeddings[node_add_event_mask]
+        # (num_added_node, event_embedding_dim)
+        added_node_batch = node_add_event_mask.nonzero().squeeze(-1)
+        # (num_added_node)
+
+        # collect node delete events
+        node_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
+        # (batch)
+        batch_src_ids = event_src_ids + node_id_offsets
+        # (batch)
+        node_delete_node_ids = batch_src_ids[node_delete_event_mask]
+        # (batch)
+        delete_node_mask = torch.ones(
+            batched_graph.num_nodes,
+            dtype=torch.bool,
+            device=node_delete_node_ids.device,
+        ).index_fill(0, node_delete_node_ids, False)
+        # (num_node)
+
+        # take care of the nodes
+        new_batch = torch.cat([batched_graph.batch[delete_node_mask], added_node_batch])
+        # (num_node-num_deleted_node+num_added_node)
+        new_x = torch.cat([batched_graph.x[delete_node_mask], added_x])
+        # (num_node-num_deleted_node+num_added_node, event_embedding_dim)
+
+        # sort the new batch in ascending order
+        sorted_batch, sorted_node_indices = new_batch.sort()
+        # sorted_batch: (num_node-num_deleted_node+num_added_node)
+        # sorted_node_indices: (num_node-num_deleted_node+num_added_node)
+
+        # update the new subgraph edge index to match the new sorted node indices
+        new_node_id_offsets = cls.calculate_node_id_offsets(
+            event_type_ids.size(0), sorted_batch
+        )
+        # (batch)
+        new_edge_index = new_subgraph_edge_index + new_node_id_offsets[
+            new_edge_index_batch
+        ].unsqueeze(0).expand(2, -1)
+        # (2, num_edge-num_deleted_edge+num_added_edge)
+
+        return (
+            Batch(
+                batch=sorted_batch,
+                x=new_x[sorted_node_indices],
+                edge_index=new_edge_index,
+                edge_attr=new_edge_attr,
+                edge_last_update=new_edge_last_update,
+            ),
+            delete_node_mask,
+            sorted_node_indices,
+        )
