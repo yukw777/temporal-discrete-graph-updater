@@ -215,43 +215,38 @@ class MockRNN(nn.Module):
 
 
 @pytest.mark.parametrize(
-    "memory,node_memory_update_index,node_memory_update_mask,node_features,"
-    "event_node_ids,agg_msgs,expected",
+    "memory,delete_node_mask,sorted_node_indices,event_node_ids,agg_msgs,expected",
     [
         (
             torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
-            torch.tensor([0, 2, 1]),
             torch.tensor([True, True, True]),
-            torch.rand(4, 4),
-            torch.tensor([0, 1, 1]),
+            torch.tensor([0, 3, 1, 2]),
+            torch.tensor([0, 2, 3]),
+            torch.tensor([[1] * 4, [0] * 4, [3] * 4, [5] * 4]).float(),
+            torch.tensor([[3] * 4, [0] * 4, [6] * 4, [9] * 4]).float(),
+        ),
+        (
+            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
+            torch.tensor([True, False, True]),
+            torch.tensor([0, 2, 1]),
+            torch.tensor([0, 2]),
+            torch.tensor([[3] * 4, [0] * 4, [5] * 4]).float(),
+            torch.tensor([[5] * 4, [0] * 4, [9] * 4]).float(),
+        ),
+        (
+            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
+            torch.tensor([False, False, True]),
+            torch.tensor([1, 2, 0]),
+            torch.tensor([0, 1]),
             torch.tensor([[3] * 4, [5] * 4]).float(),
-            torch.tensor([[5] * 4, [4] * 4, [8] * 4, [0] * 4]).float(),
-        ),
-        (
-            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
-            torch.tensor([0, 2, 1]),
-            torch.tensor([True, False, True]),
-            torch.rand(4, 4),
-            torch.tensor([0, 2, 0]),
-            torch.tensor([[3] * 4, [0] * 4, [5] * 4]).float(),
-            torch.tensor([[5] * 4, [9] * 4, [0] * 4, [0] * 4]).float(),
-        ),
-        (
-            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
-            torch.tensor([0, 2, 1]),
-            torch.tensor([True, False, True]),
-            torch.rand(2, 4),
-            torch.tensor([0, 2, 0]),
-            torch.tensor([[3] * 4, [0] * 4, [5] * 4]).float(),
-            torch.tensor([[5] * 4, [9] * 4]).float(),
+            torch.tensor([[3] * 4, [5] * 4, [4] * 4]).float(),
         ),
     ],
 )
 def test_tgn_update_memory(
     memory,
-    node_memory_update_index,
-    node_memory_update_mask,
-    node_features,
+    delete_node_mask,
+    sorted_node_indices,
     event_node_ids,
     agg_msgs,
     expected,
@@ -259,12 +254,7 @@ def test_tgn_update_memory(
     tgn = TemporalGraphNetwork(4, 4, 4, 4, 8, 1, 1)
     tgn.rnn = MockRNN()
     assert tgn.update_memory(
-        memory,
-        node_memory_update_index,
-        node_memory_update_mask,
-        node_features,
-        event_node_ids,
-        agg_msgs,
+        memory, delete_node_mask, sorted_node_indices, event_node_ids, agg_msgs
     ).equal(expected)
 
 

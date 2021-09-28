@@ -211,9 +211,8 @@ class TemporalGraphNetwork(nn.Module):
     def update_memory(
         self,
         memory: torch.Tensor,
-        node_memory_update_index: torch.Tensor,
-        node_memory_update_mask: torch.Tensor,
-        node_features: torch.Tensor,
+        delete_node_mask: torch.Tensor,
+        sorted_node_indices: torch.Tensor,
         event_node_ids: torch.Tensor,
         agg_msgs: torch.Tensor,
     ) -> torch.Tensor:
@@ -222,32 +221,32 @@ class TemporalGraphNetwork(nn.Module):
 
         memory: (prev_num_node, memory_dim)
             Node memories before the given graph events.
-        node_memory_update_index: (prev_num_node)
-            New indices for nodes in the previous memory.
-        node_memory_update_mask: (prev_num_node)
-            Mask for nodes that have not been deleted in the previous memory.
-        node_features: (num_node, event_embedding_dim)
-            Node features after the given graph events.
-        event_node_ids: (num_node_event + 2 * num_edge_event)
+        num_added_node: number of added nodes
+        delete_node_mask: mask for deleting nodes, (prev_num_node)
+        sorted_node_indices: sorted indices for nodes in the updated memory, (num_node)
+        event_node_ids: (2 * num_message), batched node IDs
         agg_msgs: (max_event_node_id, message_dim)
 
         output: (num_node, memory_dim)
         """
-        # update the memories
-        updated_prev_memory = memory.clone()
+        # mask out the deleted nodes, add new memories on the bottom then apply the new
+        # node ordering using the given indices.
+        updated_memory = memory[delete_node_mask]
+        # (prev_num_node - num_deleted_node)
+        num_added_node = int(sorted_node_indices.size(0) - updated_memory.size(0))
+        updated_memory = F.pad(updated_memory, (0, 0, 0, num_added_node))[
+            sorted_node_indices
+        ]
+        # (num_node, memory_dim)
+        # (prev_num_node - num_deleted_node + num_added_node, memory_dim)
+
+        # update the memory with messages
         if event_node_ids.numel() > 0:
             unique_event_node_ids = event_node_ids.unique()
-            updated_prev_memory[unique_event_node_ids] = self.rnn(
-                agg_msgs[unique_event_node_ids], memory[unique_event_node_ids]
+            updated_memory[unique_event_node_ids] = self.rnn(
+                agg_msgs[unique_event_node_ids], updated_memory[unique_event_node_ids]
             )
-        updated_memory = torch.zeros(
-            node_features.size(0), self.memory_dim, device=updated_prev_memory.device
-        )
-        updated_memory[
-            node_memory_update_index[node_memory_update_mask]
-        ] = updated_prev_memory[node_memory_update_mask]
         # (num_node, memory_dim)
-
         return updated_memory
 
     def edge_message(
