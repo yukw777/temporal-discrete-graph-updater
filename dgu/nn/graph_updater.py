@@ -126,8 +126,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # calculate node/edge label embeddings
         label_word_ids, label_mask = self.preprocessor.preprocess(self.labels)
-        label_embeddings = masked_mean(
-            pretrained_word_embeddings(label_word_ids), label_mask
+        self.label_embeddings = nn.Embedding.from_pretrained(
+            masked_mean(pretrained_word_embeddings(label_word_ids), label_mask)
         )
 
         # text encoder
@@ -531,8 +531,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
         label_ids: torch.Tensor,
-        node_label_ids: torch.Tensor,
-        batch: torch.Tensor,
+        batched_graph: Batch,
     ) -> Tuple[List[str], List[List[str]]]:
         """
         Generate graph triplets based on the given batch of graph events.
@@ -541,22 +540,35 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_ids: (batch)
         dst_ids: (batch)
         label_ids: (batch)
-        node_label_ids: (num_node)
-        batch: (num_node)
+        batched_graph: batched graph before the given events
 
         output: (
             cmds: len([commands, ...]) = batch
             tokens: len([[token, ...], ...]) = batch
         )
         """
+        # figure out the label IDs for the nodes in the batched graph
+        # we compare the node features, which are label embeddings, with the
+        # whole label embeddings and figure out the correct IDs.
+        graph_node_label_ids = torch.all(
+            batched_graph.x.unsqueeze(-1) == self.label_embeddings.weight.t(), dim=1
+        ).nonzero()[:, 1]
+        # (num_node)
+
+        # we ignore last graphs without nodes, b/c they wouldn't produce valid
+        # graph triples anyway
+        splits = batched_graph.batch.bincount()[:-1].cumsum(0).cpu()
+        batched_graph_node_label_ids = graph_node_label_ids.tensor_split(splits)
+        # (batch - num_last_empty_graphs)
+
         cmds: List[str] = []
         tokens: List[List[str]] = []
-        for event_type_id, src_id, dst_id, label_id, subgraph_num_node_offset in zip(
+        for event_type_id, src_id, dst_id, label_id, node_label_ids in zip(
             event_type_ids.tolist(),
-            src_ids.tolist(),
-            dst_ids.tolist(),
-            label_ids.tolist(),
-            [0] + batch.bincount().tolist()[:-1],
+            src_ids,
+            dst_ids,
+            label_ids,
+            batched_graph_node_label_ids,
         ):
             if event_type_id in {
                 EVENT_TYPE_ID_MAP["edge-add"],
@@ -567,12 +579,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
                     else "delete"
                 )
-                src_label = self.labels[
-                    node_label_ids[src_id + subgraph_num_node_offset]
-                ]
-                dst_label = self.labels[
-                    node_label_ids[dst_id + subgraph_num_node_offset]
-                ]
+                src_label = self.labels[node_label_ids[src_id]]
+                dst_label = self.labels[node_label_ids[dst_id]]
                 # in the original dataset, multi-word edge labels are joined by
                 # an underscore
                 edge_label = "_".join(self.labels[label_id].split())

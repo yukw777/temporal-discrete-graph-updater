@@ -1,6 +1,9 @@
 import pytest
 import torch
 import networkx as nx
+import shutil
+
+from torch_geometric.data.batch import Batch
 
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
@@ -20,9 +23,10 @@ class MockUUID:
 
 
 @pytest.fixture
-def sldgu():
+def sldgu(tmp_path):
+    shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
     return StaticLabelDiscreteGraphUpdater(
-        pretrained_word_embedding_path="tests/data/test-fasttext.vec",
+        pretrained_word_embedding_path=f"{tmp_path}/test-fasttext.vec",
         word_vocab_path="tests/data/test_word_vocab.txt",
         node_vocab_path="tests/data/test_node_vocab.txt",
         relation_vocab_path="tests/data/test_relation_vocab.txt",
@@ -425,24 +429,34 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,src_ids,dst_ids,label_ids,node_label_ids,batch,expected",
+    "event_type_ids,src_ids,dst_ids,label_ids,batched_graph,expected",
     [
         (
             torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
             torch.tensor([0]),
             torch.tensor([0]),
-            torch.tensor([0]),  # player
-            torch.tensor([0]),
-            torch.tensor([0]),
+            torch.tensor([1]),  # player
+            Batch(
+                batch=torch.tensor([0]),
+                x=torch.tensor([[9] * 300]).float(),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 300),
+                edge_last_update=torch.empty(0),
+            ),
             ([], []),
         ),
         (
             torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
             torch.tensor([0]),
             torch.tensor([0]),
-            torch.tensor([0]),  # player
-            torch.tensor([0]),
-            torch.tensor([0]),
+            torch.tensor([1]),  # player
+            Batch(
+                batch=torch.tensor([0]),
+                x=torch.tensor([[9] * 300]).float(),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 300),
+                edge_last_update=torch.empty(0),
+            ),
             ([], []),
         ),
         (
@@ -450,8 +464,13 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1]),
             torch.tensor([0]),
             torch.tensor([5]),  # is
-            torch.tensor([3, 1]),
-            torch.tensor([0, 0]),
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 300),
+                edge_last_update=torch.empty(0),
+            ),
             (["add , player , chopped , is"], [["add", "player", "chopped", "is"]]),
         ),
         (
@@ -459,8 +478,13 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1]),
             torch.tensor([0]),
             torch.tensor([5]),  # is
-            torch.tensor([3, 1]),
-            torch.tensor([0, 0]),
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 300),
+                edge_last_update=torch.empty(0),
+            ),
             (
                 ["delete , player , chopped , is"],
                 [["delete", "player", "chopped", "is"]],
@@ -473,8 +497,22 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1, 0]),
             torch.tensor([0, 1]),
             torch.tensor([5, 4]),  # [is, in]
-            torch.tensor([3, 1, 1, 2, 1, 2]),
-            torch.tensor([0, 0, 0, 0, 1, 1]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 0, 1, 1]),
+                x=torch.tensor(
+                    [
+                        [11] * 300,
+                        [9] * 300,
+                        [9] * 300,
+                        [10] * 300,
+                        [9] * 300,
+                        [10] * 300,
+                    ]
+                ).float(),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 300),
+                edge_last_update=torch.empty(0),
+            ),
             (
                 ["add , player , chopped , is", "delete , player , inventory , in"],
                 [
@@ -491,18 +529,12 @@ def test_sldgu_generate_graph_triples(
     src_ids,
     dst_ids,
     label_ids,
-    node_label_ids,
-    batch,
+    batched_graph,
     expected,
 ):
     assert (
         sldgu.generate_graph_triples(
-            event_type_ids,
-            src_ids,
-            dst_ids,
-            label_ids,
-            node_label_ids,
-            batch,
+            event_type_ids, src_ids, dst_ids, label_ids, batched_graph
         )
         == expected
     )
