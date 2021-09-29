@@ -973,45 +973,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         return batch_node_embeddings, batch_node_mask
 
-    @staticmethod
-    def get_edge_events(
-        event_type_ids: torch.Tensor,
-        src_ids: torch.Tensor,
-        dst_ids: torch.Tensor,
-        event_label_ids: torch.Tensor,
-        timestamps: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Get flattened edge events from batched graph events. Used to generate
-        inputs for the TGN.
-
-        event_type_ids: (batch)
-        src_ids: (batch)
-        dst_ids: (batch)
-        event_label_ids: (batch)
-        timestamps: (batch)
-
-        output:
-        {
-            "edge_event_type_ids": (num_edge_event),
-            "edge_event_src_ids": (num_edge_event),
-            "edge_event_dst_ids": (num_edge_event),
-            "edge_event_label_ids": (num_edge_event),
-            "edge_event_timestamps": (num_edge_event),
-        }
-        """
-        is_edge_event = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
-        )
-        return {
-            "edge_event_type_ids": event_type_ids[is_edge_event],
-            "edge_event_src_ids": src_ids[is_edge_event],
-            "edge_event_dst_ids": dst_ids[is_edge_event],
-            "edge_event_label_ids": event_label_ids[is_edge_event],
-            "edge_event_timestamps": timestamps[is_edge_event],
-        }
-
     def greedy_decode(
         self,
         step_input: TWCmdGenTemporalStepInput,

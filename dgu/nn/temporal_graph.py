@@ -6,7 +6,6 @@ from typing import Tuple, Optional, Dict
 from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_geometric.data import Batch
-from torch_scatter import scatter
 
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.nn.utils import index_edge_attr, get_edge_index_co_occurrence_matrix
@@ -240,88 +239,141 @@ class TemporalGraphNetwork(nn.Module):
         # (num_node, memory_dim)
         # (prev_num_node - num_deleted_node + num_added_node, memory_dim)
 
-        # update the memory with messages
-        if event_node_ids.numel() > 0:
-            unique_event_node_ids = event_node_ids.unique()
-            updated_memory[unique_event_node_ids] = self.rnn(
-                agg_msgs[unique_event_node_ids], updated_memory[unique_event_node_ids]
-            )
-        # (num_node, memory_dim)
-        return updated_memory
-
-    def edge_message(
+    def get_event_messages(
         self,
         event_type_ids: torch.Tensor,
-        src_ids: torch.Tensor,
-        dst_ids: torch.Tensor,
+        event_src_ids: torch.Tensor,
+        event_dst_ids: torch.Tensor,
         event_embeddings: torch.Tensor,
         event_timestamps: torch.Tensor,
+        node_id_offsets: torch.Tensor,
         memory: torch.Tensor,
         edge_index: torch.Tensor,
-        last_update: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        edge_last_update: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Calculate edge event messages. We concatenate the event type,
-        source and destination memories, relative time embedding and event embedding.
+        Calculate event messages. We ignore node delete events, b/c the memories of
+        deleted nodes are removed anyway. For node add events, we concatenate the event
+        type embedding, zero source memory and zero destination memory, time embedding
+        and event embedding. For edge events, we concatenate the event type, source
+        and destination memories, relative time embedding and event embedding.
 
         Special events like pad, start, end are masked out.
 
         event_type_ids: (batch)
-        src_ids: (batch)
-        dst_ids: (batch)
+        event_src_ids: (batch)
+        event_dst_ids: (batch)
         event_embeddings: (batch, event_embedding_dim)
         event_timestamps: (batch)
+        node_id_offsets: (batch)
         memory: (num_node, memory_dim)
         edge_index: (2, num_edge)
-        last_update: (num_edge)
+        edge_last_update: (num_edge)
 
         output:
-            src_messages: (batch, message_dim)
-            dst_messages: (batch, message_dim)
+            # 2 * num_edge_msgs b/c an edge event produces a source message
+            # and a destination message
+            node_add_event_messages: (num_node_add_event, message_dim)
+            edge_event_node_ids: (2 * num_edge_event), batched node IDs
+            edge_event_batch: (2 * num_edge_event)
+            edge_event_messages: (2 * num_edge_event, message_dim)
         """
-        event_type_embs = self.event_type_emb(event_type_ids)
-        # (batch, event_type_emb_dim)
-
-        src_memory = memory[src_ids]
-        # (batch, memory_dim)
-        dst_memory = memory[dst_ids]
-        # (batch, memory_dim)
-
-        # calculate relative timestamps for edge events
-        edge_last_update = index_edge_attr(
-            edge_index, last_update, torch.stack([src_ids, dst_ids])
+        # generate node add event messages
+        is_node_add_event = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        # (batch)
+        node_add_event_type_embs = self.event_type_emb(
+            event_type_ids[is_node_add_event]
         )
-        # (batch)
-
-        rel_edge_timestamps = event_timestamps - edge_last_update
-        # (batch)
-
-        timestamp_emb = self.time_encoder(rel_edge_timestamps)
-        # (batch, time_enc_dim)
-
-        src_messages = torch.cat(
+        # (num_node_add_event, event_type_emb_dim)
+        node_add_event_time_embeddings = self.time_encoder(
+            event_timestamps[is_node_add_event]
+        )
+        # (num_node_add_event, time_enc_dim)
+        node_add_event_embeddings = event_embeddings[is_node_add_event]
+        # (num_node_add_event, event_embedding_dim)
+        node_add_event_msgs = torch.cat(
             [
-                event_type_embs,
-                src_memory,
-                dst_memory,
-                timestamp_emb,
-                event_embeddings,
+                node_add_event_type_embs,
+                torch.zeros(
+                    node_add_event_type_embs.size(0),
+                    self.memory_dim,
+                    device=is_node_add_event.device,
+                ),
+                torch.zeros(
+                    node_add_event_type_embs.size(0),
+                    self.memory_dim,
+                    device=is_node_add_event.device,
+                ),
+                node_add_event_time_embeddings,
+                node_add_event_embeddings,
             ],
             dim=-1,
         )
-        # (batch, message_dim)
-        dst_messages = torch.cat(
+        # (num_node_add_event, message_dim)
+
+        # generate edge event messages
+        is_edge_event = torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+        )
+        # (batch)
+        edge_node_id_offsets = node_id_offsets[is_edge_event]
+        # (num_edge_event)
+        edge_event_src_ids = event_src_ids[is_edge_event]
+        # (num_edge_event)
+        batch_edge_event_src_ids = edge_event_src_ids + edge_node_id_offsets
+        # (num_edge_event)
+        edge_event_dst_ids = event_dst_ids[is_edge_event]
+        # (num_edge_event)
+        batch_edge_event_dst_ids = edge_event_dst_ids + edge_node_id_offsets
+        # (num_edge_event)
+        edge_event_type_embs = self.event_type_emb(event_type_ids[is_edge_event])
+        # (num_edge_event, event_type_emb_dim)
+        edge_event_src_memory = memory[batch_edge_event_src_ids]
+        # (num_edge_event, memory_dim)
+        edge_event_dst_memory = memory[batch_edge_event_dst_ids]
+        # (num_edge_event, memory_dim)
+        edge_event_last_update = index_edge_attr(
+            edge_index,
+            edge_last_update,
+            torch.stack([batch_edge_event_src_ids, batch_edge_event_dst_ids]),
+        )
+        # (num_edge_event)
+        rel_edge_timestamps = event_timestamps[is_edge_event] - edge_event_last_update
+        # (num_edge_event)
+        edge_event_timestamp_emb = self.time_encoder(rel_edge_timestamps)
+        # (num_edge_event, time_enc_dim)
+        edge_event_embeddings = event_embeddings[is_edge_event]
+        # (num_edge_event, event_embedding_dim)
+        edge_src_messages = torch.cat(
             [
-                event_type_embs,
-                dst_memory,
-                src_memory,
-                timestamp_emb,
-                event_embeddings,
+                edge_event_type_embs,
+                edge_event_src_memory,
+                edge_event_dst_memory,
+                edge_event_timestamp_emb,
+                edge_event_embeddings,
             ],
             dim=-1,
         )
-        # (batch, message_dim)
-        return src_messages, dst_messages
+        # (num_edge_event, message_dim)
+        edge_dst_messages = torch.cat(
+            [
+                edge_event_type_embs,
+                edge_event_dst_memory,
+                edge_event_src_memory,
+                edge_event_timestamp_emb,
+                edge_event_embeddings,
+            ],
+            dim=-1,
+        )
+        # (num_edge_event, message_dim)
+
+        return (
+            node_add_event_msgs,
+            torch.cat([edge_event_src_ids, edge_event_dst_ids]),
+            is_edge_event.nonzero().expand(-1, 2).t().flatten(),
+            torch.cat([edge_src_messages, edge_dst_messages]),
+        )
 
     @staticmethod
     def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
