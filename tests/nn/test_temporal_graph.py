@@ -2,6 +2,8 @@ import pytest
 import torch
 import torch.nn as nn
 
+from torch_geometric.data import Batch
+
 from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 
@@ -334,51 +336,7 @@ def test_transformer_conv_stack(
 
 class MockRNN(nn.Module):
     def forward(self, input, hidden):
-        return input + hidden
-
-
-@pytest.mark.parametrize(
-    "memory,delete_node_mask,sorted_node_indices,event_node_ids,agg_msgs,expected",
-    [
-        (
-            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
-            torch.tensor([True, True, True]),
-            torch.tensor([0, 3, 1, 2]),
-            torch.tensor([0, 2, 3]),
-            torch.tensor([[1] * 4, [0] * 4, [3] * 4, [5] * 4]).float(),
-            torch.tensor([[3] * 4, [0] * 4, [6] * 4, [9] * 4]).float(),
-        ),
-        (
-            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
-            torch.tensor([True, False, True]),
-            torch.tensor([0, 2, 1]),
-            torch.tensor([0, 2]),
-            torch.tensor([[3] * 4, [0] * 4, [5] * 4]).float(),
-            torch.tensor([[5] * 4, [0] * 4, [9] * 4]).float(),
-        ),
-        (
-            torch.tensor([[2] * 4, [3] * 4, [4] * 4]).float(),
-            torch.tensor([False, False, True]),
-            torch.tensor([1, 2, 0]),
-            torch.tensor([0, 1]),
-            torch.tensor([[3] * 4, [5] * 4]).float(),
-            torch.tensor([[3] * 4, [5] * 4, [4] * 4]).float(),
-        ),
-    ],
-)
-def test_tgn_update_memory(
-    memory,
-    delete_node_mask,
-    sorted_node_indices,
-    event_node_ids,
-    agg_msgs,
-    expected,
-):
-    tgn = TemporalGraphNetwork(4, 4, 4, 4, 8, 1, 1)
-    tgn.rnn = MockRNN()
-    assert tgn.update_memory(
-        memory, delete_node_mask, sorted_node_indices, event_node_ids, agg_msgs
-    ).equal(expected)
+        return input[:, 4:20:4] + hidden
 
 
 @pytest.mark.parametrize(
@@ -396,9 +354,8 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
 
 
 @pytest.mark.parametrize(
-    "batched_graphs,event_type_ids,event_src_ids,event_dst_ids,event_embeddings,"
-    "event_timestamps,expected_updated_batched_graph,expected_delete_node_mask,"
-    "expected_sorted_node_indices",
+    "batched_graphs,memory,event_type_ids,event_src_ids,event_dst_ids,event_embeddings,"
+    "event_timestamps,expected_updated_batched_graph,expected_updated_memory",
     [
         (
             Batch(
@@ -408,6 +365,7 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.empty(0, 4),
                 edge_last_update=torch.empty(0),
             ),
+            torch.empty(0, 4),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["pad"],
@@ -426,8 +384,7 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.empty(0, 4),
                 edge_last_update=torch.empty(0),
             ),
-            torch.empty(0).bool(),
-            torch.empty(0).long(),
+            torch.empty(0, 4),
         ),
         (
             Batch(
@@ -437,6 +394,7 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.empty(0, 4),
                 edge_last_update=torch.empty(0),
             ),
+            torch.tensor([[5] * 4, [6] * 4, [7] * 4, [8] * 4]).float(),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["node-add"],
@@ -454,8 +412,9 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[6] * 4]).float(),
                 edge_last_update=torch.tensor([5.0]),
             ),
-            torch.tensor([True, True, True, True]),
-            torch.tensor([0, 1, 4, 2, 3]),
+            torch.tensor(
+                [[5] * 4, [6] * 4, [0, 0, 6, 5], [14, 15, 15, 13], [16, 15, 16, 14]]
+            ).float(),
         ),
         (
             Batch(
@@ -465,6 +424,7 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[6] * 4]).float(),
                 edge_last_update=torch.tensor([5.0]),
             ),
+            torch.tensor([[5] * 4, [6] * 4, [7] * 4, [8] * 4, [9] * 4]).float(),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["node-delete"],
@@ -482,8 +442,7 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.empty(0, 4),
                 edge_last_update=torch.empty(0),
             ),
-            torch.tensor([True, True, False, True, True]),
-            torch.tensor([0, 1, 2, 3]),
+            torch.tensor([[5] * 4, [6] * 4, [16, 17, 9, 14], [18, 17, 10, 15]]).float(),
         ),
         (
             Batch(
@@ -493,6 +452,7 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.empty(0, 4),
                 edge_last_update=torch.empty(0),
             ),
+            torch.tensor([[5] * 4, [6] * 4, [7] * 4, [8] * 4]).float(),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["node-add"],
@@ -513,8 +473,16 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[6] * 4]).float(),
                 edge_last_update=torch.tensor([5.0]),
             ),
-            torch.tensor([True, True, True, True]),
-            torch.tensor([0, 1, 4, 2, 3, 5]),
+            torch.tensor(
+                [
+                    [5] * 4,
+                    [6] * 4,
+                    [0, 0, 6, 5],
+                    [14, 15, 15, 13],
+                    [16, 15, 16, 14],
+                    [0, 0, 7, 7],
+                ]
+            ).float(),
         ),
         (
             Batch(
@@ -526,6 +494,9 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[6] * 4]).float(),
                 edge_last_update=torch.tensor([5.0]),
             ),
+            torch.tensor(
+                [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
+            ).float(),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["node-delete"],
@@ -546,8 +517,17 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[6] * 4]).float(),
                 edge_last_update=torch.tensor([5.0]),
             ),
-            torch.tensor([True, False, True, True, True, True]),
-            torch.tensor([0, 1, 2, 3, 5, 4, 6]),
+            torch.tensor(
+                [
+                    [3] * 4,
+                    [5] * 4,
+                    [6] * 4,
+                    [7] * 4,
+                    [0, 0, 6, 8],
+                    [8] * 4,
+                    [0, 0, 7, 9],
+                ]
+            ).float(),
         ),
         (
             Batch(
@@ -559,6 +539,9 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[6] * 4]).float(),
                 edge_last_update=torch.tensor([5.0]),
             ),
+            torch.tensor(
+                [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4, [9] * 4]
+            ).float(),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["node-add"],
@@ -588,8 +571,18 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[11] * 4]).float(),
                 edge_last_update=torch.tensor([2.0]),
             ),
-            torch.tensor([True, True, True, True, True, True, True]),
-            torch.tensor([0, 1, 7, 2, 3, 4, 5, 6]),
+            torch.tensor(
+                [
+                    [3] * 4,
+                    [4] * 4,
+                    [0, 0, 8, 10],
+                    [10, 11, 6, 11],
+                    [12, 11, 7, 12],
+                    [7] * 4,
+                    [16, 17, 13, 19],
+                    [18, 17, 14, 20],
+                ]
+            ).float(),
         ),
         (
             Batch(
@@ -611,6 +604,9 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_last_update=torch.tensor([2.0]),
             ),
             torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4, [9] * 4]
+            ).float(),
+            torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["edge-add"],
                     EVENT_TYPE_ID_MAP["node-delete"],
@@ -630,8 +626,17 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[12] * 4]).float(),
                 edge_last_update=torch.tensor([3.0]),
             ),
-            torch.tensor([True, True, True, True, False, True, True, True]),
-            torch.tensor([0, 1, 2, 3, 4, 5, 6]),
+            torch.tensor(
+                [
+                    [4, 6, 8, 14],
+                    [3] * 4,
+                    [8, 6, 10, 16],
+                    [5] * 4,
+                    [7] * 4,
+                    [16, 17, 15, 19],
+                    [18, 17, 16, 20],
+                ]
+            ).float(),
         ),
         (
             Batch(
@@ -643,6 +648,9 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[12] * 4]).float(),
                 edge_last_update=torch.tensor([3.0]),
             ),
+            torch.tensor(
+                [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4, [9] * 4]
+            ).float(),
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["edge-delete"],
@@ -663,28 +671,80 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_attr=torch.tensor([[13] * 4, [14] * 4]).float(),
                 edge_last_update=torch.tensor([8.0, 7.0]),
             ),
-            torch.tensor([True, True, True, True, True, True, True]),
-            torch.tensor([0, 1, 2, 3, 4, 5, 6]),
+            torch.tensor(
+                [
+                    [6, 8, 5, 15],
+                    [4] * 4,
+                    [10, 8, 7, 17],
+                    [12, 13, 17, 19],
+                    [14, 13, 18, 20],
+                    [16, 17, 18, 22],
+                    [18, 17, 19, 23],
+                ]
+            ).float(),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor(
+                    [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
+                ).float(),
+                edge_index=torch.tensor([[2, 5], [0, 3]]),
+                edge_attr=torch.tensor([[1] * 4, [2] * 4]).float(),
+                edge_last_update=torch.tensor([3.0, 2.0]),
+            ),
+            torch.tensor(
+                [[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4]
+            ).float(),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+            ),
+            torch.tensor([0, 2]),
+            torch.tensor([1, 0]),
+            torch.tensor([[7] * 4, [8] * 4]).float(),
+            torch.tensor([5.0, 3.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor(
+                    [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
+                ).float(),
+                edge_index=torch.tensor([[2, 0], [0, 1]]),
+                edge_attr=torch.tensor([[1] * 4, [7] * 4]).float(),
+                edge_last_update=torch.tensor([3.0, 5.0]),
+            ),
+            torch.tensor(
+                [
+                    [2, 3, 9, 8],
+                    [4, 3, 10, 9],
+                    [3] * 4,
+                    [8, 10, 8, 12],
+                    [5] * 4,
+                    [12, 10, 10, 14],
+                ]
+            ).float(),
         ),
     ],
 )
-def test_tgn_update_batched_graph(
+def test_tgn_update_batched_graph_memory(
     batched_graphs,
+    memory,
     event_type_ids,
     event_src_ids,
     event_dst_ids,
     event_embeddings,
     event_timestamps,
     expected_updated_batched_graph,
-    expected_delete_node_mask,
-    expected_sorted_node_indices,
+    expected_updated_memory,
 ):
-    (
-        updated_batched_graph,
-        delete_node_mask,
-        sorted_node_indices,
-    ) = TemporalGraphNetwork.update_batched_graph(
+    tgn = TemporalGraphNetwork(4, 4, 4, 4, 8, 1, 1)
+    tgn.time_encoder = MockTimeEncoder()
+    tgn.event_type_emb = nn.Embedding.from_pretrained(
+        torch.linspace(0, 6, 7).unsqueeze(-1).expand(-1, 4)
+    )
+    tgn.rnn = MockRNN()
+    updated_batched_graph, updated_memory = tgn.update_batched_graph_memory(
         batched_graphs,
+        memory,
         event_type_ids,
         event_src_ids,
         event_dst_ids,
@@ -702,5 +762,5 @@ def test_tgn_update_batched_graph(
     assert updated_batched_graph.edge_last_update.equal(
         expected_updated_batched_graph.edge_last_update
     )
-    assert delete_node_mask.equal(expected_delete_node_mask)
-    assert sorted_node_indices.equal(expected_sorted_node_indices)
+    assert updated_memory.equal(expected_updated_memory)
+    assert updated_batched_graph.x.size(0) == updated_memory.size(0)

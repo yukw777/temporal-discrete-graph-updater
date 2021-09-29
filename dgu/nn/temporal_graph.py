@@ -391,16 +391,16 @@ class TemporalGraphNetwork(nn.Module):
             subgraph_size_cumsum, (1, batch_size - subgraph_size_cumsum.size(0) - 1)
         )
 
-    @classmethod
-    def update_batched_graph(
-        cls,
+    def update_batched_graph_memory(
+        self,
         batched_graph: Batch,
+        memory: torch.Tensor,
         event_type_ids: torch.Tensor,
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
         event_embeddings: torch.Tensor,
         event_timestamps: torch.Tensor,
-    ) -> Tuple[Batch, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[Batch, torch.Tensor]:
         """
         Update the given batch of graph events to the given batched graph.
         Also returns the deleted node mask and sorted batch indices to be used
@@ -415,6 +415,7 @@ class TemporalGraphNetwork(nn.Module):
             edge_attr: (num_edge, event_embedding_dim)
             edge_last_update: (num_edge)
         )
+        memory: (num_node, memory_dim)
         event_type_ids: (batch)
         event_src_ids: (batch)
         event_dst_ids: (batch)
@@ -423,12 +424,11 @@ class TemporalGraphNetwork(nn.Module):
 
         output: (
             updated batch of graphs,
-            deleted_node_mask: (num_node),
-            sorted_node_indices: (num_node-num_deleted_node+num_added_node),
+            updated_memory: (num_node-num_deleted_node+num_added_node, memory_dim)
         )
         """
         # translate src_ids and dst_ids to batched versions
-        node_id_offsets = cls.calculate_node_id_offsets(
+        node_id_offsets = self.calculate_node_id_offsets(
             event_type_ids.size(0), batched_graph.batch
         )
         # (batch)
@@ -460,12 +460,16 @@ class TemporalGraphNetwork(nn.Module):
         # collect edge delete events
         edge_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
         # (batch)
+        batch_src_ids = event_src_ids + node_id_offsets
+        # (batch)
+        batch_dst_ids = event_dst_ids + node_id_offsets
+        # (batch)
         deleted_edge_co_occur = get_edge_index_co_occurrence_matrix(
-            subgraph_edge_index,
+            batched_graph.edge_index,
             torch.stack(
                 [
-                    event_src_ids[edge_delete_event_mask],
-                    event_dst_ids[edge_delete_event_mask],
+                    batch_src_ids[edge_delete_event_mask],
+                    batch_dst_ids[edge_delete_event_mask],
                 ]
             ),
         )
@@ -529,7 +533,7 @@ class TemporalGraphNetwork(nn.Module):
         # sorted_node_indices: (num_node-num_deleted_node+num_added_node)
 
         # update the new subgraph edge index to match the new sorted node indices
-        new_node_id_offsets = cls.calculate_node_id_offsets(
+        new_node_id_offsets = self.calculate_node_id_offsets(
             event_type_ids.size(0), sorted_batch
         )
         # (batch)
@@ -537,6 +541,50 @@ class TemporalGraphNetwork(nn.Module):
             new_edge_index_batch
         ].unsqueeze(0).expand(2, -1)
         # (2, num_edge-num_deleted_edge+num_added_edge)
+
+        # take care of the memory
+        # first get the messages
+        (
+            node_add_event_msgs,
+            edge_event_node_ids,
+            edge_event_batch,
+            edge_event_msgs,
+        ) = self.get_event_messages(
+            event_type_ids,
+            event_src_ids,
+            event_dst_ids,
+            event_embeddings,
+            event_timestamps,
+            node_id_offsets,
+            memory,
+            batched_graph.edge_index,
+            batched_graph.edge_last_update,
+        )
+        num_node_add_msg = node_add_event_msgs.size(0)
+        # update memory with messages
+        if num_node_add_msg > 0 or edge_event_node_ids.size(0) > 0:
+            updated_memory = self.rnn(
+                torch.cat([node_add_event_msgs, edge_event_msgs]),
+                torch.cat(
+                    [
+                        torch.zeros(
+                            num_node_add_msg, self.memory_dim, device=memory.device
+                        ),
+                        memory[edge_event_node_ids + node_id_offsets[edge_event_batch]],
+                    ]
+                ),
+            )
+        else:
+            updated_memory = torch.empty(0, self.memory_dim, device=memory.device)
+        # (num_added_node + num_edge_event_msg)
+        new_memory = torch.cat(
+            [memory[delete_node_mask], updated_memory[:num_node_add_msg]]
+        )[sorted_node_indices]
+        # (num_node-num_deleted_node+num_added_node, memory_dim)
+        new_memory[
+            edge_event_node_ids + new_node_id_offsets[edge_event_batch]
+        ] = updated_memory[num_node_add_msg:]
+        # (num_node-num_deleted_node+num_added_node, memory_dim)
 
         return (
             Batch(
@@ -546,6 +594,5 @@ class TemporalGraphNetwork(nn.Module):
                 edge_attr=new_edge_attr,
                 edge_last_update=new_edge_last_update,
             ),
-            delete_node_mask,
-            sorted_node_indices,
+            new_memory,
         )
