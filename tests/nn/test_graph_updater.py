@@ -305,66 +305,6 @@ def test_sldgu_forward(
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,src_ids,dst_ids,event_label_ids,event_timestamps,expected",
-    [
-        (
-            torch.tensor([EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["start"]]),
-            torch.tensor([0, 0]),
-            torch.tensor([0, 0]),
-            torch.tensor([0, 0]),
-            torch.tensor([0, 0]).float(),
-            {
-                "edge_event_type_ids": torch.empty(0).long(),
-                "edge_event_src_ids": torch.empty(0).long(),
-                "edge_event_dst_ids": torch.empty(0).long(),
-                "edge_event_label_ids": torch.empty(0).long(),
-                "edge_event_timestamps": torch.empty(0),
-            },
-        ),
-        (
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                    EVENT_TYPE_ID_MAP["end"],
-                ]
-            ),
-            torch.tensor([0, 0, 4, 2, 3, 0]),
-            torch.tensor([0, 0, 1, 0, 5, 0]),
-            torch.tensor([0, 2, 4, 2, 6, 0]),
-            torch.tensor([0, 4, 6, 2, 4, 0]).float(),
-            {
-                "edge_event_type_ids": torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
-                ),
-                "edge_event_src_ids": torch.tensor([4, 3]),
-                "edge_event_dst_ids": torch.tensor([1, 5]),
-                "edge_event_label_ids": torch.tensor([4, 6]),
-                "edge_event_timestamps": torch.tensor([6.0, 4.0]),
-            },
-        ),
-    ],
-)
-def test_sldgu_get_edge_events(
-    event_type_ids, src_ids, dst_ids, event_label_ids, event_timestamps, expected
-):
-    results = StaticLabelDiscreteGraphUpdater.get_edge_events(
-        event_type_ids, src_ids, dst_ids, event_label_ids, event_timestamps
-    )
-    for k in [
-        "edge_event_type_ids",
-        "edge_event_src_ids",
-        "edge_event_dst_ids",
-        "edge_event_label_ids",
-        "edge_event_timestamps",
-    ]:
-        assert results[k].equal(expected[k])
-
-
-@pytest.mark.parametrize(
     "node_embeddings,batch,batch_size,expected_batch_node_embeddings,"
     "expected_batch_mask",
     [
