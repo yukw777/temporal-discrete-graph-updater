@@ -1147,75 +1147,41 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             batch_bincount, (0, batch_size - batch_bincount.size(0))
         )
         # (batch)
-        invalid_mask = torch.zeros_like(event_type_ids, dtype=torch.bool)
+
+        invalid_src_mask = src_ids >= subgraph_num_node
         # (batch)
-        num_node = batch.size(0)
-        for i, (num_node, event_type_id, src_id, dst_id) in enumerate(
-            zip(subgraph_num_node, event_type_ids, src_ids, dst_ids)
-        ):
-            if event_type_id == EVENT_TYPE_ID_MAP["node-delete"]:
-                if src_id >= num_node:
-                    invalid_mask[i] = True
-            elif event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
-                if src_id >= num_node or dst_id >= num_node:
-                    invalid_mask[i] = True
-            elif event_type_id == EVENT_TYPE_ID_MAP["edge-delete"]:
-                if src_id >= num_node or dst_id >= num_node:
-                    # if the edge doesn't exist, we still output it
-                    # as was done in the original paper
-                    invalid_mask[i] = True
+        invalid_dst_mask = dst_ids >= subgraph_num_node
+        # (batch)
+        self_loop_mask = src_ids == dst_ids
+        # (batch)
+        invalid_edge_mask = invalid_src_mask.logical_or(invalid_dst_mask).logical_or(
+            self_loop_mask
+        )
+        # (batch)
 
-        return event_type_ids.masked_fill(invalid_mask, EVENT_TYPE_ID_MAP["pad"])
+        invalid_node_delete_event_mask = invalid_src_mask.logical_and(
+            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
+        )
+        # (batch)
 
-    def apply_decoded_events(
-        self,
-        graphs: List[nx.DiGraph],
-        event_type_ids: torch.Tensor,
-        src_ids: torch.Tensor,
-        dst_ids: torch.Tensor,
-        label_ids: torch.Tensor,
-        timestamps: torch.Tensor,
-    ) -> List[nx.DiGraph]:
-        """
-        Apply the given batch of decoded events to the given graphs.
+        invalid_edge_add_event_mask = invalid_edge_mask.logical_and(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        )
+        # (batch)
 
-        graphs: graphs for games in the batch
-        event_type_ids: (batch)
-        src_ids: (batch)
-        dst_ids: (batch)
-        label_ids: (batch)
-        timestamps: (batch)
+        # if the edge doesn't exist, we still output it as was done
+        # in the original GATA paper
+        invalid_edge_delete_event_mask = invalid_edge_mask.logical_and(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
+        )
+        # (batch)
 
-        output: [updated graph, ...]
-        """
-        updated_graphs = deepcopy(graphs)
-        for graph, event_type_id, src_id, dst_id, label_id, timestamp in zip(
-            updated_graphs, event_type_ids, src_ids, dst_ids, label_ids, timestamps
-        ):
-            if event_type_id == EVENT_TYPE_ID_MAP["node-add"]:
-                graph.add_node(
-                    str(uuid.uuid4()),
-                    label=self.labels[label_id],
-                    label_id=label_id.item(),
-                )
-            elif event_type_id == EVENT_TYPE_ID_MAP["node-delete"]:
-                graph.remove_node(list(graph.nodes)[src_id])
-            elif event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
-                nodes = list(graph.nodes)
-                graph.add_edge(
-                    nodes[src_id],
-                    nodes[dst_id],
-                    label=self.labels[label_id],
-                    label_id=label_id.item(),
-                    last_update=timestamp.item(),
-                )
-            elif event_type_id == EVENT_TYPE_ID_MAP["edge-delete"]:
-                nodes = list(graph.nodes)
-                # if the edge doesn't exist, we ignore
-                if graph.has_edge(nodes[src_id], nodes[dst_id]):
-                    graph.remove_edge(nodes[src_id], nodes[dst_id])
+        invalid_event_mask = invalid_node_delete_event_mask.logical_or(
+            invalid_edge_add_event_mask
+        ).logical_or(invalid_edge_delete_event_mask)
+        # (batch)
 
-        return updated_graphs
+        return event_type_ids.masked_fill(invalid_event_mask, EVENT_TYPE_ID_MAP["pad"])
 
     @staticmethod
     def generate_predict_table_rows(

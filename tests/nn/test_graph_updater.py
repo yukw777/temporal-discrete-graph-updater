@@ -881,6 +881,27 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
                 ]
             ),
         ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([0, 1, 0, 2]),
+            torch.tensor([0, 1, 0, 2]),
+            torch.tensor([0, 1, 1, 2, 3, 3, 3]),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+        ),
     ],
 )
 def test_sldgu_filter_invalid_events(
@@ -888,106 +909,6 @@ def test_sldgu_filter_invalid_events(
 ):
     assert sldgu.filter_invalid_events(event_type_ids, src_ids, dst_ids, batch).equal(
         expected
-    )
-
-
-@pytest.mark.parametrize(
-    "graphs,node_attrs,event_type_ids,src_ids,dst_ids,label_ids,timestamps,expected,"
-    "expected_node_attrs",
-    [
-        (
-            [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
-            [{}, {}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["end"],
-                ]
-            ),
-            torch.tensor([0, 0, 0]),
-            torch.tensor([0, 0, 0]),
-            torch.tensor([0, 0, 0]),
-            torch.tensor([0.0, 0.0, 0.0]),
-            [EqualityDiGraph(), EqualityDiGraph(), EqualityDiGraph()],
-            [{}, {}, {}],
-        ),
-        (
-            [
-                EqualityDiGraph({"n1": {}, "n2": {}}),
-                EqualityDiGraph({"n1": {}, "n2": {}}),
-            ],
-            [{}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                ]
-            ),
-            torch.tensor([0, 1]),
-            torch.tensor([0, 0]),
-            torch.tensor([2, 4]),
-            torch.tensor([3.0, 5.0]),
-            [
-                EqualityDiGraph({"n1": {}, "n2": {}, "added-node-0": {}}),
-                EqualityDiGraph(
-                    {"n2": {"n1": {"label": "in", "label_id": 4, "last_update": 5.0}}}
-                ),
-            ],
-            [{"added-node-0": {"label": "inventory", "label_id": 2}}, {}],
-        ),
-        (
-            [
-                EqualityDiGraph({"n1": {}, "n2": {}, "added-node-0": {}}),
-                EqualityDiGraph(
-                    {"n2": {"n1": {"label": "in", "label_id": 4, "last_update": 5.0}}}
-                ),
-            ],
-            [{"added-node-0": {"label": "inventory", "label_id": 2}}, {}],
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
-            torch.tensor([2, 0]),
-            torch.tensor([0, 1]),
-            torch.tensor([2, 4]),
-            torch.tensor([2.0, 3.0]),
-            [
-                EqualityDiGraph({"n1": {}, "n2": {}}),
-                EqualityDiGraph({"n1": {}, "n2": {}}),
-            ],
-            [{}, {}],
-        ),
-    ],
-)
-def test_sldgu_apply_decoded_events(
-    monkeypatch,
-    sldgu,
-    graphs,
-    node_attrs,
-    event_type_ids,
-    src_ids,
-    dst_ids,
-    label_ids,
-    timestamps,
-    expected,
-    expected_node_attrs,
-):
-    monkeypatch.setattr("uuid.uuid4", MockUUID())
-
-    for graph, attrs in zip(graphs, node_attrs):
-        nx.set_node_attributes(graph, attrs)
-
-    for graph, attrs in zip(expected, expected_node_attrs):
-        nx.set_node_attributes(graph, attrs)
-
-    assert (
-        sldgu.apply_decoded_events(
-            graphs, event_type_ids, src_ids, dst_ids, label_ids, timestamps
-        )
-        == expected
     )
 
 
