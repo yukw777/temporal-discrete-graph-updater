@@ -541,16 +541,22 @@ def test_sldgu_generate_graph_triples(
 
 
 @pytest.mark.parametrize(
-    "event_type_id_seq,src_id_seq,dst_id_seq,label_id_seq,node_label_id_seq,batch_seq,"
-    "expected",
+    "event_type_id_seq,src_id_seq,dst_id_seq,label_id_seq,batched_graph_seq,expected",
     [
         (
             [torch.tensor([EVENT_TYPE_ID_MAP["node-add"]])],
             [torch.tensor([0])],
             [torch.tensor([0])],
             [torch.tensor([0])],
-            [torch.tensor([0])],
-            [torch.tensor([0])],
+            [
+                Batch(
+                    batch=torch.tensor([0]),
+                    x=torch.tensor([[9] * 300]).float(),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0, 300),
+                    edge_last_update=torch.empty(0),
+                )
+            ],
             ([[]], [[]]),
         ),
         (
@@ -558,8 +564,15 @@ def test_sldgu_generate_graph_triples(
             [torch.tensor([0])],
             [torch.tensor([0])],
             [torch.tensor([0])],
-            [torch.tensor([0])],
-            [torch.tensor([0])],
+            [
+                Batch(
+                    batch=torch.tensor([0]),
+                    x=torch.tensor([[9] * 300]).float(),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0, 300),
+                    edge_last_update=torch.empty(0),
+                )
+            ],
             ([[]], [[]]),
         ),
         (
@@ -567,8 +580,15 @@ def test_sldgu_generate_graph_triples(
             [torch.tensor([1])],
             [torch.tensor([0])],
             [torch.tensor([5])],
-            [torch.tensor([3, 1])],
-            [torch.tensor([0, 0])],
+            [
+                Batch(
+                    batch=torch.tensor([0, 0]),
+                    x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0, 300),
+                    edge_last_update=torch.empty(0),
+                )
+            ],
             (
                 [["add , player , chopped , is"]],
                 [["add", "player", "chopped", "is"]],
@@ -579,8 +599,15 @@ def test_sldgu_generate_graph_triples(
             [torch.tensor([1])],
             [torch.tensor([0])],
             [torch.tensor([5])],
-            [torch.tensor([3, 1])],
-            [torch.tensor([0, 0])],
+            [
+                Batch(
+                    batch=torch.tensor([0, 0]),
+                    x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0, 300),
+                    edge_last_update=torch.empty(0),
+                )
+            ],
             (
                 [["delete , player , chopped , is"]],
                 [["delete", "player", "chopped", "is"]],
@@ -598,8 +625,40 @@ def test_sldgu_generate_graph_triples(
             [torch.tensor([1, 0]), torch.tensor([0, 2])],
             [torch.tensor([0, 1]), torch.tensor([1, 3])],
             [torch.tensor([5, 4]), torch.tensor([5, 4])],
-            [torch.tensor([3, 1, 1, 2, 1, 2]), torch.tensor([1, 3, 1, 2, 1, 2])],
-            [torch.tensor([0, 0, 0, 0, 1, 1]), torch.tensor([0, 0, 1, 1, 1, 1])],
+            [
+                Batch(
+                    batch=torch.tensor([0, 0, 0, 0, 1, 1]),
+                    x=torch.tensor(
+                        [
+                            [11] * 300,
+                            [9] * 300,
+                            [9] * 300,
+                            [10] * 300,
+                            [9] * 300,
+                            [10] * 300,
+                        ]
+                    ).float(),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0, 300),
+                    edge_last_update=torch.empty(0),
+                ),
+                Batch(
+                    batch=torch.tensor([0, 0, 1, 1, 1, 1]),
+                    x=torch.tensor(
+                        [
+                            [9] * 300,
+                            [11] * 300,
+                            [9] * 300,
+                            [10] * 300,
+                            [9] * 300,
+                            [10] * 300,
+                        ]
+                    ).float(),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0, 300),
+                    edge_last_update=torch.empty(0),
+                ),
+            ],
             (
                 [
                     ["add , player , chopped , is", "delete , player , chopped , is"],
@@ -642,18 +701,12 @@ def test_sldgu_generate_batch_graph_triples_seq(
     src_id_seq,
     dst_id_seq,
     label_id_seq,
-    node_label_id_seq,
-    batch_seq,
+    batched_graph_seq,
     expected,
 ):
     assert (
         sldgu.generate_batch_graph_triples_seq(
-            event_type_id_seq,
-            src_id_seq,
-            dst_id_seq,
-            label_id_seq,
-            node_label_id_seq,
-            batch_seq,
+            event_type_id_seq, src_id_seq, dst_id_seq, label_id_seq, batched_graph_seq
         )
         == expected
     )

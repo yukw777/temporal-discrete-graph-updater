@@ -595,8 +595,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_id_seq: Sequence[torch.Tensor],
         dst_id_seq: Sequence[torch.Tensor],
         label_id_seq: Sequence[torch.Tensor],
-        node_label_id_seq: Sequence[torch.Tensor],
-        batch_seq: Sequence[torch.Tensor],
+        batched_graph_seq: Sequence[Batch],
     ) -> Tuple[List[List[str]], List[List[str]]]:
         batch_size = event_type_id_seq[0].size(0)
         # (batch, event_seq_len, cmd_len)
@@ -608,27 +607,20 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             src_ids,
             dst_ids,
             label_ids,
-            node_label_ids,
-            batch,
+            batched_graph,
         ) in enumerate(
             zip(
                 event_type_id_seq,
                 src_id_seq,
                 dst_id_seq,
                 label_id_seq,
-                node_label_id_seq,
-                batch_seq,
+                batched_graph_seq,
             )
         ):
             for batch_id, (cmd, tokens) in enumerate(
                 zip(
                     *self.generate_graph_triples(
-                        event_type_ids,
-                        src_ids,
-                        dst_ids,
-                        label_ids,
-                        node_label_ids,
-                        batch,
+                        event_type_ids, src_ids, dst_ids, label_ids, batched_graph
                     )
                 )
             ):
