@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch_geometric.data import Batch
 
 from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
-from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from dgu.constants import EVENT_TYPE_ID_MAP
 
 
 class MockTimeEncoder(nn.Module):
@@ -247,34 +247,231 @@ def test_tgn_get_event_message(
 
 
 @pytest.mark.parametrize(
-    "event_type_dim,memory_dim,time_enc_dim,event_embedding_dim,output_dim,"
-    "num_edge_event,prev_num_node,num_node,num_edge,"
-    "transformer_conv_num_block,transformer_conv_num_heads",
+    "event_type_emb_dim,memory_dim,time_enc_dim,event_embedding_dim,output_dim,"
+    "transformer_conv_num_block,transformer_conv_num_heads,event_type_ids,"
+    "event_src_ids,event_dst_ids,batched_graph,num_node,num_edge",
     [
-        (4, 8, 16, 20, 12, 0, 0, 0, 0, 1, 1),
-        (4, 8, 16, 20, 12, 0, 1, 1, 0, 1, 1),
-        (4, 8, 16, 20, 12, 1, 2, 2, 1, 1, 1),
-        (4, 8, 16, 20, 12, 4, 8, 5, 10, 4, 4),
-        (8, 16, 32, 48, 24, 10, 10, 8, 10, 6, 6),
-        (8, 16, 32, 48, 24, 10, 6, 8, 10, 6, 6),
-        (8, 16, 32, 48, 24, 10, 12, 8, 10, 8, 8),
+        (
+            4,
+            8,
+            16,
+            20,
+            12,
+            1,
+            1,
+            torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+            torch.tensor([0]),
+            torch.tensor([0]),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 20),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 20),
+                edge_last_update=torch.empty(0),
+            ),
+            0,
+            0,
+        ),
+        (
+            4,
+            8,
+            16,
+            20,
+            12,
+            1,
+            1,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 20),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 20),
+                edge_last_update=torch.empty(0),
+            ),
+            0,
+            0,
+        ),
+        (
+            4,
+            8,
+            16,
+            20,
+            12,
+            1,
+            1,
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+            ),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0]),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 20),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 20),
+                edge_last_update=torch.empty(0),
+            ),
+            2,
+            0,
+        ),
+        (
+            4,
+            8,
+            16,
+            20,
+            12,
+            1,
+            1,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([0, 2, 0, 1]),
+            torch.tensor([0, 1, 0, 2]),
+            Batch(
+                batch=torch.tensor([0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]),
+                x=torch.rand(11, 20),
+                edge_index=torch.tensor([[5, 8, 10], [6, 9, 9]]),
+                edge_attr=torch.rand(3, 20),
+                edge_last_update=torch.rand(3),
+            ),
+            11,
+            3,
+        ),
+        (
+            8,
+            16,
+            32,
+            48,
+            24,
+            6,
+            8,
+            torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+            torch.tensor([0]),
+            torch.tensor([0]),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 48),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 48),
+                edge_last_update=torch.empty(0),
+            ),
+            0,
+            0,
+        ),
+        (
+            8,
+            16,
+            32,
+            48,
+            24,
+            6,
+            8,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                    EVENT_TYPE_ID_MAP["pad"],
+                ]
+            ),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 48),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 48),
+                edge_last_update=torch.empty(0),
+            ),
+            0,
+            0,
+        ),
+        (
+            8,
+            16,
+            32,
+            48,
+            24,
+            6,
+            8,
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+            ),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0]),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 48),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 48),
+                edge_last_update=torch.empty(0),
+            ),
+            2,
+            0,
+        ),
+        (
+            8,
+            16,
+            32,
+            48,
+            24,
+            6,
+            8,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([0, 2, 0, 1]),
+            torch.tensor([0, 1, 0, 2]),
+            Batch(
+                batch=torch.tensor([0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]),
+                x=torch.rand(11, 48),
+                edge_index=torch.tensor([[5, 8, 10], [6, 9, 9]]),
+                edge_attr=torch.rand(3, 48),
+                edge_last_update=torch.rand(3),
+            ),
+            11,
+            3,
+        ),
     ],
 )
 def test_tgn_forward(
-    event_type_dim,
+    event_type_emb_dim,
     memory_dim,
     time_enc_dim,
     event_embedding_dim,
     output_dim,
-    num_edge_event,
-    prev_num_node,
-    num_node,
-    num_edge,
     transformer_conv_num_block,
     transformer_conv_num_heads,
+    event_type_ids,
+    event_src_ids,
+    event_dst_ids,
+    batched_graph,
+    num_node,
+    num_edge,
 ):
+    assert event_type_ids.size() == event_src_ids.size()
+    assert event_src_ids.size() == event_dst_ids.size()
+    batch = event_type_ids.size(0)
+
     tgn = TemporalGraphNetwork(
-        event_type_dim,
+        event_type_emb_dim,
         memory_dim,
         time_enc_dim,
         event_embedding_dim,
@@ -282,35 +479,24 @@ def test_tgn_forward(
         transformer_conv_num_block,
         transformer_conv_num_heads,
     )
-    edge_index = (
-        torch.randint(num_node, (2, num_edge)).unique(dim=1)
-        if num_node > 0 and num_edge > 1
-        else torch.zeros(2, num_edge).long()
-    )
     results = tgn(
-        torch.randint(len(EVENT_TYPES), (num_edge_event,)),
-        torch.randint(prev_num_node, (num_edge_event,))
-        if prev_num_node > 0
-        else torch.zeros(num_edge_event).long(),
-        torch.randint(prev_num_node, (num_edge_event,))
-        if prev_num_node > 0
-        else torch.zeros(num_edge_event).long(),
-        torch.rand(num_edge_event, event_embedding_dim),
-        torch.randint(10, (num_edge_event,)).float(),
-        torch.rand(prev_num_node, memory_dim),
-        torch.randint(num_node, (prev_num_node,))
-        if num_node > 0
-        else torch.zeros(prev_num_node).long(),
-        torch.randint(2, (prev_num_node,), dtype=torch.bool)
-        if num_node > 0
-        else torch.zeros(prev_num_node).bool(),
-        torch.rand(num_node, event_embedding_dim),
-        edge_index,
-        torch.rand(edge_index.size(1), event_embedding_dim),
-        torch.randint(10, (edge_index.size(1),)).float(),
-        torch.randint(10, (edge_index.size(1),)).float(),
+        event_type_ids,
+        event_src_ids,
+        event_dst_ids,
+        torch.rand(batch, event_embedding_dim),
+        torch.randint(10, (batch,)).float(),
+        batched_graph,
+        torch.rand(batched_graph.num_nodes, memory_dim),
     )
     assert results["node_embeddings"].size() == (num_node, output_dim)
+    assert results["updated_batched_graph"].batch.size() == (num_node,)
+    assert results["updated_batched_graph"].x.size() == (num_node, event_embedding_dim)
+    assert results["updated_batched_graph"].edge_index.size() == (2, num_edge)
+    assert results["updated_batched_graph"].edge_attr.size() == (
+        num_edge,
+        event_embedding_dim,
+    )
+    assert results["updated_batched_graph"].edge_last_update.size() == (num_edge,)
     assert results["updated_memory"].size() == (num_node, memory_dim)
 
 

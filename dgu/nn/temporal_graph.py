@@ -108,103 +108,90 @@ class TemporalGraphNetwork(nn.Module):
 
     def forward(
         self,
-        edge_event_type_ids: torch.Tensor,
-        edge_event_src_ids: torch.Tensor,
-        edge_event_dst_ids: torch.Tensor,
-        edge_event_embeddings: torch.Tensor,
-        edge_event_timestamps: torch.Tensor,
+        # graph events
+        event_type_ids: torch.Tensor,
+        event_src_ids: torch.Tensor,
+        event_dst_ids: torch.Tensor,
+        event_embeddings: torch.Tensor,
+        event_timestamps: torch.Tensor,
+        # diagonally stacked graph BEFORE the given graph events
+        batched_graph: Batch,
+        # memory
         memory: torch.Tensor,
-        node_memory_update_index: torch.Tensor,
-        node_memory_update_mask: torch.Tensor,
-        node_features: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_features: torch.Tensor,
-        edge_timestamps: torch.Tensor,
-        edge_last_update: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
-        Calculate the updated node embeddings based on the given events.
+        Update the given graphs using the given events and calculate the node embeddings
 
-        edge_event_type_ids: (num_edge_event)
-        edge_event_src_ids: (num_edge_event)
-        edge_event_dst_ids: (num_edge_event)
-        edge_event_embeddings: (num_edge_event, event_embedding_dim)
-        edge_event_timestamps: (num_edge_event)
+        graph events: {
+            event_type_ids: (batch)
+            event_src_ids: (batch)
+            event_dst_ids: (batch)
+            event_embeddings: (batch, event_embedding_dim)
+            event_timestamps: (batch)
+        }
+        batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
+            batch: (prev_num_node)
+            x: (prev_num_node, event_embedding_dim)
+            edge_index: (2, prev_num_edge)
+            edge_attr: (prev_num_edge, event_embedding_dim)
+            edge_last_update: (prev_num_edge)
+        )
         memory: (prev_num_node, memory_dim)
-            Node memories before the given graph events.
-        node_memory_update_index: (prev_num_node)
-            New indices for nodes in the previous memory.
-        node_memory_update_mask: (prev_num_node)
-            Mask for nodes that have not been deleted in the previous memory.
-        node_features: (num_node, event_embedding_dim)
-            Node features after the given graph events.
-        edge_index: (2, num_edge)
-            Edge indices after the given graph events.
-        edge_features: (num_edge, event_embedding_dim)
-            Edge features after the given graph events.
-        edge_timestamps: (num_edge) or scalar
-        edge_last_update: (num_edge)
-            Last edge update timestamps before the given graph events.
 
         output: {
             "node_embeddings": (num_node, output_dim),
+            "updated_batched_graph": Batch(
+                batch: (num_node)
+                x: (num_node, event_embedding_dim)
+                edge_index: (2, num_edge)
+                edge_attr: (num_edge, event_embedding_dim)
+                edge_last_update: (num_edge)
+            )
             "updated_memory": (num_node, memory_dim),
         }
         """
-        src_msgs, dst_msgs = self.edge_message(
-            edge_event_type_ids,
-            edge_event_src_ids,
-            edge_event_dst_ids,
-            edge_event_embeddings,
-            edge_event_timestamps,
+        # update the batched graph
+        updated_batched_graph, updated_memory = self.update_batched_graph_memory(
+            batched_graph,
             memory,
-            edge_index,
-            edge_last_update,
+            event_type_ids,
+            event_src_ids,
+            event_dst_ids,
+            event_embeddings,
+            event_timestamps,
         )
-        # src_msgs: (num_edge_event, message_dim)
-        # dst_msgs: (num_edge_event, message_dim)
-
-        # aggregate messages
-        event_node_ids = torch.cat([edge_event_src_ids, edge_event_dst_ids])
-        # (2 * num_edge_event)
-        agg_msgs = scatter(torch.cat([src_msgs, dst_msgs]), event_node_ids, dim=0)
-        # (max_event_node_id, message_dim)
-
-        # update the memories
-        updated_memory = self.update_memory(
-            memory,
-            node_memory_update_index,
-            node_memory_update_mask,
-            node_features,
-            event_node_ids,
-            agg_msgs,
-        )
-        # (num_node, memory_dim)
 
         # calculate the node embeddings
-        if node_features.size(0) != 0:
-            rel_t = edge_timestamps - edge_last_update
+        if updated_batched_graph.num_nodes != 0:
+            edge_timestamps = self.get_edge_timestamps(
+                event_timestamps,
+                updated_batched_graph.batch,
+                updated_batched_graph.edge_index,
+            )
+            # (num_edge)
+            rel_t = edge_timestamps - updated_batched_graph.edge_last_update
             # (num_edge)
             rel_t_embs = self.time_encoder(rel_t)
             # (num_edge, time_enc_dim)
-            x = torch.cat([node_features, updated_memory], dim=-1)
+            x = torch.cat([updated_batched_graph.x, updated_memory], dim=-1)
             # (num_node, event_embedding_dim + memory_dim)
-            edge_attr = torch.cat([rel_t_embs, edge_features], dim=-1)
+            edge_attr = torch.cat([rel_t_embs, updated_batched_graph.edge_attr], dim=-1)
             # (num_edge, time_enc_dim + event_embedding_dim)
-            node_embeddings = self.gnn(x, edge_index, edge_attr=edge_attr)
+            node_embeddings = self.gnn(
+                x, updated_batched_graph.edge_index, edge_attr=edge_attr
+            )
             # (num_node, output_dim)
         else:
             # no nodes, so no node embeddings either
             node_embeddings = torch.zeros(
-                0, self.output_dim, device=node_features.device
+                0, self.output_dim, device=event_type_ids.device
             )
             # (0, output_dim)
 
         return {
             "node_embeddings": node_embeddings,
-            # (num_node, output_dim)
-            "updated_memory": updated_memory
-            # (num_node, memory_dim)
+            "updated_batched_graph": updated_batched_graph,
+            "updated_memory": updated_memory,
         }
 
     @staticmethod
@@ -494,8 +481,6 @@ class TemporalGraphNetwork(nn.Module):
 
         # collect node delete events
         node_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
-        # (batch)
-        batch_src_ids = event_src_ids + node_id_offsets
         # (batch)
         node_delete_node_ids = batch_src_ids[node_delete_event_mask]
         # (batch)
