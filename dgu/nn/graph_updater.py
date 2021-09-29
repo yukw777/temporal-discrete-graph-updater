@@ -5,8 +5,6 @@ import pytorch_lightning as pl
 import torchmetrics
 import wandb
 import dgu.metrics
-import networkx as nx
-import uuid
 
 from typing import Optional, Dict, List, Sequence, Tuple, Any
 from torch.optim import Adam, Optimizer
@@ -15,7 +13,6 @@ from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Batch
-from copy import deepcopy
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
@@ -33,7 +30,6 @@ from dgu.data import (
     read_label_vocab_files,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.data import TWCmdGenTemporalGraphData
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -959,24 +955,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def greedy_decode(
         self,
         step_input: TWCmdGenTemporalStepInput,
-        graphs: List[nx.DiGraph],
-        memory: torch.Tensor,
+        batched_graph: Optional[Batch] = None,
+        memory: Optional[torch.Tensor] = None,
     ) -> List[Dict[str, Any]]:
         """
         step_input: the current step input
-        graphs: current graphs for each game in the batch
+        batch_graph: diagonally stacked batch of current graphs
         memory: (num_node, memory_dim)
 
         output:
         [{
-            event_type_ids: (batch)
-            src_ids: (batch)
-            dst_ids: (batch)
-            label_ids: (batch)
-            node_label_ids: (num_node)
-            batch: (num_node)
+            decoded_event_type_ids: (batch)
+            decoded_event_src_ids: (batch)
+            decoded_event_dst_ids: (batch)
+            decoded_event_label_ids: (batch)
+            updated_batched_graph: diagonally stacked batch of updated graphs.
+                these are the graphs used to decode the graph events above
             updated_memory: (num_node, memory_dim)
-            updated_graphs: [updated_graph, ...],
+                this is the memory used to decode the graph events above.
         }, ...]
         """
         # initialize the initial inputs
@@ -991,73 +987,26 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         end_event_mask = torch.tensor([False] * batch_size, device=self.device)
         # (batch)
 
-        label_embeddings = (
-            self.decoder.graph_event_decoder.event_label_head.label_embeddings
-        )
         decoder_hidden: Optional[torch.Tensor] = None
         encoded_obs: Optional[torch.Tensor] = None
         encoded_prev_action: Optional[torch.Tensor] = None
         results_list: List[Dict[str, Any]] = []
         for _ in range(self.hparams.max_decode_len):  # type: ignore
-            # apply the decoded event
-            updated_graphs = self.apply_decoded_events(
-                graphs,
+            results = self(
                 decoded_event_type_ids,
                 decoded_src_ids,
                 decoded_dst_ids,
                 decoded_label_ids,
-                step_input.timestamps,
-            )
-
-            # construct the graph batch input with the original graphs and
-            # updated graphs
-            graph_batch = Batch.from_data_list(
-                [
-                    TWCmdGenTemporalGraphData.from_decoded_graph_event(
-                        prev_graph, graph, device=self.device
-                    )
-                    for prev_graph, graph in zip(graphs, updated_graphs)
-                ]
-            )
-
-            # forward pass
-            results = self(
                 step_input.obs_mask,
                 step_input.prev_action_mask,
                 step_input.timestamps,
-                decoded_event_type_ids,
-                decoded_src_ids,
-                decoded_dst_ids,
-                decoded_label_ids,
-                memory,
-                label_embeddings(graph_batch.x),
-                graph_batch.node_memory_update_index,
-                graph_batch.node_memory_update_mask,
-                graph_batch.edge_index,
-                label_embeddings(graph_batch.edge_attr),
-                graph_batch.edge_last_update,
-                graph_batch.batch,
-                decoder_hidden=decoder_hidden,
                 obs_word_ids=step_input.obs_word_ids,
                 prev_action_word_ids=step_input.prev_action_word_ids,
                 encoded_obs=encoded_obs,
                 encoded_prev_action=encoded_prev_action,
-            )
-
-            # collect the results here since we're throwing away the graph event
-            # that's generated last. We don't care about the last event b/c it's
-            # supposed to be "end" anyway.
-            results_list.append(
-                {
-                    "event_type_ids": decoded_event_type_ids,
-                    "src_ids": decoded_src_ids,
-                    "dst_ids": decoded_dst_ids,
-                    "label_ids": decoded_label_ids,
-                    "node_label_ids": graph_batch.x,
-                    "batch": graph_batch.batch,
-                    "updated_memory": results["updated_memory"],
-                    "updated_graphs": updated_graphs,
-                }
+                batched_graph=batched_graph,
+                memory=memory,
+                decoder_hidden=decoder_hidden,
             )
 
             # process the decoded result for the next iteration
@@ -1067,26 +1016,33 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 .masked_fill(end_event_mask, EVENT_TYPE_ID_MAP["pad"])
             )
             # (batch)
-            if results["src_logits"].size(1) == 0:
+
+            if results["event_src_logits"].size(1) == 0:
                 decoded_src_ids = torch.zeros(
                     batch_size, dtype=torch.long, device=self.device
                 )
             else:
                 decoded_src_ids = (
-                    results["src_logits"].argmax(dim=1).masked_fill(end_event_mask, 0)
+                    results["event_src_logits"]
+                    .argmax(dim=1)
+                    .masked_fill(end_event_mask, 0)
                 )
             # (batch)
-            if results["dst_logits"].size(1) == 0:
+            if results["event_dst_logits"].size(1) == 0:
                 decoded_dst_ids = torch.zeros(
                     batch_size, dtype=torch.long, device=self.device
                 )
             else:
                 decoded_dst_ids = (
-                    results["dst_logits"].argmax(dim=1).masked_fill(end_event_mask, 0)
+                    results["event_dst_logits"]
+                    .argmax(dim=1)
+                    .masked_fill(end_event_mask, 0)
                 )
             # (batch)
             decoded_label_ids = (
-                results["label_logits"].argmax(dim=1).masked_fill(end_event_mask, 0)
+                results["event_label_logits"]
+                .argmax(dim=1)
+                .masked_fill(end_event_mask, 0)
             )
             # (batch)
 
@@ -1095,22 +1051,34 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 decoded_event_type_ids,
                 decoded_src_ids,
                 decoded_dst_ids,
-                graph_batch.batch,
+                results["updated_batched_graph"].batch,
             )
             # (batch)
+
+            # collect the results
+            results_list.append(
+                {
+                    "decoded_event_type_ids": decoded_event_type_ids,
+                    "decoded_event_src_ids": decoded_src_ids,
+                    "decoded_event_dst_ids": decoded_dst_ids,
+                    "decoded_event_label_ids": decoded_label_ids,
+                    "updated_batched_graph": results["updated_batched_graph"],
+                    "updated_memory": results["updated_memory"],
+                }
+            )
 
             # update the memory
             memory = results["updated_memory"]
 
+            # update the batched graph
+            batched_graph = results["updated_batched_graph"]
+
             # update the decoder hidden
             decoder_hidden = results["new_decoder_hidden"]
 
-            # update the encoded observation and previous action
+            # save update the encoded observation and previous action
             encoded_obs = results["encoded_obs"]
             encoded_prev_action = results["encoded_prev_action"]
-
-            # update the graphs
-            graphs = updated_graphs
 
             # update end_event_mask
             end_event_mask = end_event_mask.logical_or(
