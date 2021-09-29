@@ -365,41 +365,6 @@ def test_sldgu_get_edge_events(
 
 
 @pytest.mark.parametrize(
-    "timestamps,batch,edge_index,expected",
-    [
-        (
-            torch.tensor([2.0]),
-            torch.empty(0).long(),
-            torch.empty(2, 0).long(),
-            torch.empty(0),
-        ),
-        (
-            torch.tensor([2.0, 3.0, 4.0]),
-            torch.empty(0).long(),
-            torch.empty(2, 0).long(),
-            torch.empty(0),
-        ),
-        (
-            torch.tensor([2.0]),
-            torch.tensor([0, 0, 0]),
-            torch.tensor([[0, 2], [1, 1]]),
-            torch.tensor([2.0, 2.0]),
-        ),
-        (
-            torch.tensor([2.0, 3.0, 4.0]),
-            torch.tensor([0, 0, 0, 1, 1, 2, 2, 2, 2]),
-            torch.tensor([[0, 2, 4, 6, 8], [1, 1, 3, 7, 5]]),
-            torch.tensor([2.0, 2.0, 3.0, 4.0, 4.0]),
-        ),
-    ],
-)
-def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
-    assert StaticLabelDiscreteGraphUpdater.get_edge_timestamps(
-        timestamps, batch, edge_index
-    ).equal(expected)
-
-
-@pytest.mark.parametrize(
     "node_embeddings,batch,batch_size,expected_batch_node_embeddings,"
     "expected_batch_mask",
     [

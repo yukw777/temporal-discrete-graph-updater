@@ -919,23 +919,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return batch.split(split_size)
 
     @staticmethod
-    def get_edge_timestamps(
-        timestamps: torch.Tensor, batch: torch.Tensor, edge_index: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Assign an appropriate timestamp for each edge.
-
-        timestamps: (batch)
-        batch: (num_node)
-        edge_index: (2, num_edge)
-
-        output: (num_edge)
-        """
-        # figure out which batch element the source node belongs to
-        # then get the timestamps
-        return timestamps[batch[edge_index[0]]]
-
-    @staticmethod
     def batchify_node_embeddings(
         node_embeddings: torch.Tensor, batch: torch.Tensor, batch_size: int
     ) -> Tuple[torch.Tensor, torch.Tensor]:

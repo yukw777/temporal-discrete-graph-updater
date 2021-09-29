@@ -207,37 +207,22 @@ class TemporalGraphNetwork(nn.Module):
             # (num_node, memory_dim)
         }
 
-    def update_memory(
-        self,
-        memory: torch.Tensor,
-        delete_node_mask: torch.Tensor,
-        sorted_node_indices: torch.Tensor,
-        event_node_ids: torch.Tensor,
-        agg_msgs: torch.Tensor,
+    @staticmethod
+    def get_edge_timestamps(
+        timestamps: torch.Tensor, batch: torch.Tensor, edge_index: torch.Tensor
     ) -> torch.Tensor:
         """
-        Update the memory by resizing and setting new memories.
+        Assign an appropriate timestamp for each edge.
 
-        memory: (prev_num_node, memory_dim)
-            Node memories before the given graph events.
-        num_added_node: number of added nodes
-        delete_node_mask: mask for deleting nodes, (prev_num_node)
-        sorted_node_indices: sorted indices for nodes in the updated memory, (num_node)
-        event_node_ids: (2 * num_message), batched node IDs
-        agg_msgs: (max_event_node_id, message_dim)
+        timestamps: (batch)
+        batch: (num_node)
+        edge_index: (2, num_edge)
 
-        output: (num_node, memory_dim)
+        output: (num_edge)
         """
-        # mask out the deleted nodes, add new memories on the bottom then apply the new
-        # node ordering using the given indices.
-        updated_memory = memory[delete_node_mask]
-        # (prev_num_node - num_deleted_node)
-        num_added_node = int(sorted_node_indices.size(0) - updated_memory.size(0))
-        updated_memory = F.pad(updated_memory, (0, 0, 0, num_added_node))[
-            sorted_node_indices
-        ]
-        # (num_node, memory_dim)
-        # (prev_num_node - num_deleted_node + num_added_node, memory_dim)
+        # figure out which batch element the source node belongs to
+        # then get the timestamps
+        return timestamps[batch[edge_index[0]]]
 
     def get_event_messages(
         self,

@@ -764,3 +764,38 @@ def test_tgn_update_batched_graph_memory(
     )
     assert updated_memory.equal(expected_updated_memory)
     assert updated_batched_graph.x.size(0) == updated_memory.size(0)
+
+
+@pytest.mark.parametrize(
+    "timestamps,batch,edge_index,expected",
+    [
+        (
+            torch.tensor([2.0]),
+            torch.empty(0).long(),
+            torch.empty(2, 0).long(),
+            torch.empty(0),
+        ),
+        (
+            torch.tensor([2.0, 3.0, 4.0]),
+            torch.empty(0).long(),
+            torch.empty(2, 0).long(),
+            torch.empty(0),
+        ),
+        (
+            torch.tensor([2.0]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([[0, 2], [1, 1]]),
+            torch.tensor([2.0, 2.0]),
+        ),
+        (
+            torch.tensor([2.0, 3.0, 4.0]),
+            torch.tensor([0, 0, 0, 1, 1, 2, 2, 2, 2]),
+            torch.tensor([[0, 2, 4, 6, 8], [1, 1, 3, 7, 5]]),
+            torch.tensor([2.0, 2.0, 3.0, 4.0, 4.0]),
+        ),
+    ],
+)
+def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
+    assert TemporalGraphNetwork.get_edge_timestamps(
+        timestamps, batch, edge_index
+    ).equal(expected)
