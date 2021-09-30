@@ -153,9 +153,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         event_decoder = StaticLabelGraphEventDecoder(
             hidden_dim,
             hidden_dim,
+            word_emb_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
-            label_embeddings,
         )
         self.decoder = RNNGraphEventDecoder(4 * hidden_dim, hidden_dim, event_decoder)
 
@@ -178,66 +178,87 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def forward(  # type: ignore
         self,
-        obs_mask: torch.Tensor,
-        prev_action_mask: torch.Tensor,
-        timestamps: torch.Tensor,
+        # graph events
         event_type_ids: torch.Tensor,
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
         event_label_ids: torch.Tensor,
-        memory: torch.Tensor,
-        node_features: torch.Tensor,
-        node_memory_update_index: torch.Tensor,
-        node_memory_update_mask: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_features: torch.Tensor,
-        edge_last_update: torch.Tensor,
-        batch: torch.Tensor,
-        decoder_hidden: Optional[torch.Tensor] = None,
+        # game step
+        obs_mask: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+        timestamps: torch.Tensor,
         obs_word_ids: Optional[torch.Tensor] = None,
         prev_action_word_ids: Optional[torch.Tensor] = None,
         encoded_obs: Optional[torch.Tensor] = None,
         encoded_prev_action: Optional[torch.Tensor] = None,
+        # diagonally stacked graph BEFORE the given graph events
+        batched_graph: Optional[Batch] = None,
+        # memory
+        memory: Optional[torch.Tensor] = None,
+        # decoder hidden
+        decoder_hidden: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
-        obs_mask: (batch, obs_len)
-        prev_action_mask: (batch, prev_action_len)
-        timestamps: (batch)
-        event_type_ids: (batch)
-        event_src_ids: (batch)
-        event_dst_ids: (batch)
-        event_label_ids: (batch)
+        graph events: {
+            event_type_ids: (batch)
+            event_src_ids: (batch)
+            event_dst_ids: (batch)
+            event_label_ids: (batch)
+        }
+        batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
+            batch: (prev_num_node)
+            x: (prev_num_node, word_emb_dim)
+            edge_index: (2, prev_num_edge)
+            edge_attr: (prev_num_edge, word_emb_dim)
+            edge_last_update: (prev_num_edge)
+        )
         memory: (prev_num_node, memory_dim)
-        node_features: (num_node, event_embedding_dim)
-        node_memory_update_index: (prev_num_node)
-        node_memory_update_mask: (prev_num_node)
-        edge_index: (2, num_edge)
-        edge_features: (num_edge, event_embedding_dim)
-        edge_last_update: (num_edge)
-        batch: (num_node)
         decoder_hidden: (batch, hidden_dim)
 
+        game step {
+            obs_mask: (batch, obs_len)
+            prev_action_mask: (batch, prev_action_len)
+            timestamps: (batch)
+            obs_word_ids: (batch, obs_len)
+            prev_action_word_ids: (batch, prev_action_len)
+            encoded_obs: (batch, obs_len, hidden_dim)
+            encoded_prev_action: (batch, prev_action_len, hidden_dim)
+        }
         If encoded_obs and encoded_prev_action are given, they're used
         Otherwise, they are calculated from obs_word_ids, obs_mask,
         prev_action_word_ids and prev_action_mask.
 
-        obs_word_ids: (batch, obs_len)
-        prev_action_word_ids: (batch, prev_action_len)
-        encoded_obs: (batch, obs_len, hidden_dim)
-        encoded_prev_action: (batch, prev_action_len, hidden_dim)
-
         output:
         {
             event_type_logits: (batch, num_event_type)
-            src_logits: (batch, max_sub_graph_num_node)
-            dst_logits: (batch, max_sub_graph_num_node)
-            label_logits: (batch, num_label)
+            event_src_logits: (batch, max_sub_graph_num_node)
+            event_dst_logits: (batch, max_sub_graph_num_node)
+            event_label_logits: (batch, num_label)
             new_decoder_hidden: (batch, hidden_dim)
             encoded_obs: (batch, obs_len, hidden_dim)
             encoded_prev_action: (batch, prev_action_len, hidden_dim)
+            updated_batched_graph: Batch(
+                batch: (num_node)
+                x: (num_node, word_emb_dim)
+                edge_index: (2, num_edge)
+                edge_attr: (num_edge, word_emb_dim)
+                edge_last_update: (num_edge)
+            )
             updated_memory: (num_node, hidden_dim)
         }
         """
+        if batched_graph is None:
+            batched_graph = Batch(
+                batch=torch.empty(0, dtype=torch.long, device=self.device),
+                x=torch.empty(0, dtype=torch.long, device=self.device),
+                edge_index=torch.empty(2, 0, dtype=torch.long, device=self.device),
+                edge_attr=torch.empty(0, dtype=torch.long, device=self.device),
+                edge_last_update=torch.empty(0, dtype=torch.long, device=self.device),
+            )
+
+        if memory is None:
+            memory = torch.empty(0, self.tgn.memory_dim, device=self.device)
+
         if encoded_obs is None:
             assert obs_word_ids is not None
             encoded_obs = self.encode_text(obs_word_ids, obs_mask)
@@ -249,35 +270,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
             # (batch, prev_action_len, hidden_dim)
 
-        # separate graph events into node and edge events
-        edge_events = self.get_edge_events(
-            event_type_ids, event_src_ids, event_dst_ids, event_label_ids, timestamps
-        )
-
-        label_embeddings = (
-            self.decoder.graph_event_decoder.event_label_head.label_embeddings
-        )
         tgn_results = self.tgn(
-            edge_events["edge_event_type_ids"],
-            edge_events["edge_event_src_ids"],
-            edge_events["edge_event_dst_ids"],
-            label_embeddings(edge_events["edge_event_label_ids"]),
-            edge_events["edge_event_timestamps"],
+            event_type_ids,
+            event_src_ids,
+            event_dst_ids,
+            self.label_embeddings(event_label_ids),
+            timestamps,
+            batched_graph,
             memory,
-            node_memory_update_index,
-            node_memory_update_mask,
-            node_features,
-            edge_index,
-            edge_features,
-            self.get_edge_timestamps(timestamps, batch, edge_index),
-            edge_last_update,
         )
         # node_embeddings: (num_node, hidden_dim)
+        # updated_batched_graph
         # updated_memory: (num_node, hidden_dim)
 
         # batchify node_embeddings
         batch_node_embeddings, batch_node_mask = self.batchify_node_embeddings(
-            tgn_results["node_embeddings"], batch, obs_mask.size(0)
+            tgn_results["node_embeddings"],
+            tgn_results["updated_batched_graph"].batch,
+            obs_mask.size(0),
         )
         # batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
         # batch_node_mask: (batch, max_sub_graph_num_node)
@@ -292,14 +302,23 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         # (batch, 4 * hidden_dim)
 
-        results = self.decoder(delta_g, batch_node_embeddings, hidden=decoder_hidden)
-        results["new_decoder_hidden"] = results["new_hidden"]
-        del results["new_hidden"]
-        results["encoded_obs"] = encoded_obs
-        results["encoded_prev_action"] = encoded_prev_action
-        results["updated_memory"] = tgn_results["updated_memory"]
-
-        return results
+        decoder_results = self.decoder(
+            delta_g,
+            batch_node_embeddings,
+            self.label_embeddings.weight,
+            hidden=decoder_hidden,
+        )
+        return {
+            "event_type_logits": decoder_results["event_type_logits"],
+            "event_src_logits": decoder_results["src_logits"],
+            "event_dst_logits": decoder_results["dst_logits"],
+            "event_label_logits": decoder_results["label_logits"],
+            "new_decoder_hidden": decoder_results["new_hidden"],
+            "encoded_obs": encoded_obs,
+            "encoded_prev_action": encoded_prev_action,
+            "updated_batched_graph": tgn_results["updated_batched_graph"],
+            "updated_memory": tgn_results["updated_memory"],
+        }
 
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
