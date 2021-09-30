@@ -383,51 +383,65 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         step_input: TWCmdGenTemporalStepInput,
         graphical_input_seq: Sequence[TWCmdGenTemporalGraphicalInput],
-        memory: torch.Tensor,
-    ) -> List[Dict[str, torch.Tensor]]:
-        label_embeddings = (
-            self.decoder.graph_event_decoder.event_label_head.label_embeddings
-        )
+        batched_graph: Optional[Batch] = None,
+        memory: Optional[torch.Tensor] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        step_input: the current step input
+        graphical_input_seq: sequence of graphical inputs
+        batch_graph: diagonally stacked batch of current graphs
+        memory: (num_node, memory_dim)
+
+        output:
+        [{
+            event_type_logits: (batch, num_event_type)
+            event_src_logits: (batch, max_sub_graph_num_node)
+            event_dst_logits: (batch, max_sub_graph_num_node)
+            event_label_logits: (batch, num_label)
+            new_decoder_hidden: (batch, hidden_dim)
+            encoded_obs: (batch, obs_len, hidden_dim)
+            encoded_prev_action: (batch, prev_action_len, hidden_dim)
+            updated_batched_graph: diagonally stacked batch of updated graphs
+            updated_memory: (num_node, hidden_dim)
+        }, ...]
+        """
         decoder_hidden: Optional[torch.Tensor] = None
         encoded_obs: Optional[torch.Tensor] = None
         encoded_prev_action: Optional[torch.Tensor] = None
         results_list: List[Dict[str, torch.Tensor]] = []
         for graphical_input in graphical_input_seq:
             results = self(
-                step_input.obs_mask,
-                step_input.prev_action_mask,
-                step_input.timestamps,
                 graphical_input.tgt_event_type_ids,
                 graphical_input.tgt_event_src_ids,
                 graphical_input.tgt_event_dst_ids,
                 graphical_input.tgt_event_label_ids,
-                memory,
-                label_embeddings(graphical_input.node_label_ids),
-                graphical_input.node_memory_update_index,
-                graphical_input.node_memory_update_mask,
-                graphical_input.edge_index,
-                label_embeddings(graphical_input.edge_label_ids),
-                graphical_input.edge_last_update,
-                graphical_input.batch,
-                decoder_hidden=decoder_hidden,
+                step_input.obs_mask,
+                step_input.prev_action_mask,
+                step_input.timestamps,
                 obs_word_ids=step_input.obs_word_ids,
                 prev_action_word_ids=step_input.prev_action_word_ids,
                 encoded_obs=encoded_obs,
                 encoded_prev_action=encoded_prev_action,
+                batched_graph=batched_graph,
+                memory=memory,
+                decoder_hidden=decoder_hidden,
             )
 
-            # save the encoded obs and prev action
-            encoded_obs = results["encoded_obs"]
-            encoded_prev_action = results["encoded_prev_action"]
-
-            # update decoder hidden
-            decoder_hidden = results["new_decoder_hidden"]
+            # add results to the list
+            results_list.append(results)
 
             # update memory
             memory = results["updated_memory"]
 
-            # add results to the list
-            results_list.append(results)
+            # update the batched graph
+            batched_graph = results["updated_batched_graph"]
+
+            # update decoder hidden
+            decoder_hidden = results["new_decoder_hidden"]
+
+            # save the encoded obs and prev action
+            encoded_obs = results["encoded_obs"]
+            encoded_prev_action = results["encoded_prev_action"]
 
         return results_list
 
@@ -435,11 +449,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         event_type_logits: torch.Tensor,
         groundtruth_event_type_ids: torch.Tensor,
-        src_logits: torch.Tensor,
+        event_src_logits: torch.Tensor,
         groundtruth_event_src_ids: torch.Tensor,
-        dst_logits: torch.Tensor,
+        event_dst_logits: torch.Tensor,
         groundtruth_event_dst_ids: torch.Tensor,
-        label_logits: torch.Tensor,
+        event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
@@ -450,11 +464,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         event_type_logits: (batch, num_event_type)
         groundtruth_event_type_ids: (batch)
-        src_logits: (batch, num_node)
+        event_src_logits: (batch, num_node)
         groundtruth_event_src_ids: (batch)
-        dst_logits: (batch, num_node)
+        event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
-        label_logits: (batch, num_label)
+        event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
@@ -470,18 +484,18 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         if groundtruth_event_dst_mask.any():
             # source node loss
             loss += torch.sum(
-                self.criterion(src_logits, groundtruth_event_src_ids)
+                self.criterion(event_src_logits, groundtruth_event_src_ids)
                 * groundtruth_event_src_mask
             )
         if groundtruth_event_dst_mask.any():
             # destination node loss
             loss += torch.sum(
-                self.criterion(dst_logits, groundtruth_event_dst_ids)
+                self.criterion(event_dst_logits, groundtruth_event_dst_ids)
                 * groundtruth_event_dst_mask
             )
         # label loss
         loss += torch.sum(
-            self.criterion(label_logits, groundtruth_event_label_ids)
+            self.criterion(event_label_logits, groundtruth_event_label_ids)
             * groundtruth_event_mask
         )
         return loss
@@ -490,11 +504,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         event_type_logits: torch.Tensor,
         groundtruth_event_type_ids: torch.Tensor,
-        src_logits: torch.Tensor,
+        event_src_logits: torch.Tensor,
         groundtruth_event_src_ids: torch.Tensor,
-        dst_logits: torch.Tensor,
+        event_dst_logits: torch.Tensor,
         groundtruth_event_dst_ids: torch.Tensor,
-        label_logits: torch.Tensor,
+        event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
@@ -504,11 +518,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         event_type_logits: (batch, num_event_type)
         groundtruth_event_type_ids: (batch)
-        src_logits: (batch, num_node)
+        event_src_logits: (batch, num_node)
         groundtruth_event_src_ids: (batch)
-        dst_logits: (batch, num_node)
+        event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
-        label_logits: (batch, num_label)
+        event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
@@ -527,15 +541,17 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_mask = groundtruth_event_src_mask.bool()
         if src_mask.any():
             f1s["src_node_f1"] = self.src_node_f1(
-                src_logits[src_mask].softmax(dim=1), groundtruth_event_src_ids[src_mask]
+                event_src_logits[src_mask].softmax(dim=1),
+                groundtruth_event_src_ids[src_mask],
             )
         dst_mask = groundtruth_event_dst_mask.bool()
         if dst_mask.any():
             f1s["dst_node_f1"] = self.dst_node_f1(
-                dst_logits[dst_mask].softmax(dim=1), groundtruth_event_dst_ids[dst_mask]
+                event_dst_logits[dst_mask].softmax(dim=1),
+                groundtruth_event_dst_ids[dst_mask],
             )
         f1s["label_f1"] = self.label_f1(
-            label_logits.softmax(dim=1), groundtruth_event_label_ids
+            event_label_logits.softmax(dim=1), groundtruth_event_label_ids
         )
 
         return f1s
@@ -660,29 +676,37 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         batch: TWCmdGenTemporalBatch,
         batch_idx: int,
-        hiddens: Optional[torch.Tensor],
-    ) -> Dict[str, torch.Tensor]:
+        hiddens: Optional[Tuple[Batch, torch.Tensor]],
+    ) -> Dict[str, Any]:
         """
         batch: the batch data
         batch_idx: the batch id, unused for now
         hiddens: (num_node, memory_dim), memory from the last step
         """
+        batched_graph: Optional[Batch]
+        memory: Optional[torch.Tensor]
         if hiddens is None:
-            hiddens = torch.zeros(0, self.tgn.memory_dim, device=self.device)
+            batched_graph = None
+            memory = None
+        else:
+            batched_graph, memory = hiddens
         losses: List[torch.Tensor] = []
         for step_input, graphical_input_seq, _ in batch.data:
             results_list = self.teacher_force(
-                step_input, graphical_input_seq, hiddens  # type: ignore
+                step_input,
+                graphical_input_seq,
+                batched_graph=batched_graph,
+                memory=memory,
             )
             losses.extend(
                 self.calculate_loss(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
-                    results["src_logits"],
+                    results["event_src_logits"],
                     graphical_input.groundtruth_event_src_ids,
-                    results["dst_logits"],
+                    results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
-                    results["label_logits"],
+                    results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
@@ -690,11 +714,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
                 for results, graphical_input in zip(results_list, graphical_input_seq)
             )
-            hiddens = results_list[-1]["updated_memory"]
+            batched_graph = results_list[-1]["updated_batched_graph"]
+            memory = results_list[-1]["updated_memory"]
 
         loss = torch.stack(losses).mean()
         self.log("train_loss", loss, prog_bar=True)
-        return {"loss": loss, "hiddens": hiddens}
+        return {"loss": loss, "hiddens": (batched_graph, memory)}
 
     def eval_step(
         self, batch: TWCmdGenTemporalBatch, log_prefix: str
@@ -703,24 +728,28 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # id = (game|walkthrough_step|timestamp)
         table_data: List[Tuple[str, ...]] = []
 
-        tf_memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
-        gd_memory = torch.zeros(0, self.tgn.memory_dim, device=self.device)
-        gd_graphs = [nx.DiGraph() for _ in range(batch.data[0][0].obs_word_ids.size(0))]
+        tf_batched_graph: Optional[Batch] = None
+        tf_memory: Optional[torch.Tensor] = None
+        gd_batched_graph: Optional[Batch] = None
+        gd_memory: Optional[torch.Tensor] = None
         losses: List[torch.Tensor] = []
         for step_input, graphical_input_seq, step_groundtruth_cmds in batch.data:
             # calculate losses from teacher forcing
             tf_results_list = self.teacher_force(
-                step_input, graphical_input_seq, tf_memory
+                step_input,
+                graphical_input_seq,
+                batched_graph=tf_batched_graph,
+                memory=tf_memory,
             )
             losses.extend(
                 self.calculate_loss(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
-                    results["src_logits"],
+                    results["event_src_logits"],
                     graphical_input.groundtruth_event_src_ids,
-                    results["dst_logits"],
+                    results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
-                    results["label_logits"],
+                    results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
@@ -736,11 +765,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 f1s = self.calculate_f1s(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
-                    results["src_logits"],
+                    results["event_src_logits"],
                     graphical_input.groundtruth_event_src_ids,
-                    results["dst_logits"],
+                    results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
-                    results["label_logits"],
+                    results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
@@ -753,19 +782,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 self.log(log_prefix + "_label_f1", f1s["label_f1"])
 
             # calculate graph tuples from teacher forcing graph events
+            # handle source/destination logits for empty graphs by setting them to zeros
             tf_src_id_seq = [
-                results["src_logits"].argmax(dim=1)
-                if results["src_logits"].size(1) > 0
+                results["event_src_logits"].argmax(dim=1)
+                if results["event_src_logits"].size(1) > 0
                 else torch.zeros(
-                    results["src_logits"].size(0), dtype=torch.long, device=self.device
+                    results["event_src_logits"].size(0),
+                    dtype=torch.long,
+                    device=self.device,
                 )
                 for results in tf_results_list
             ]
             tf_dst_id_seq = [
-                results["dst_logits"].argmax(dim=1)
-                if results["dst_logits"].size(1) > 0
+                results["event_dst_logits"].argmax(dim=1)
+                if results["event_dst_logits"].size(1) > 0
                 else torch.zeros(
-                    results["dst_logits"].size(0), dtype=torch.long, device=self.device
+                    results["event_dst_logits"].size(0),
+                    dtype=torch.long,
+                    device=self.device,
                 )
                 for results in tf_results_list
             ]
@@ -775,23 +809,19 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         results["event_type_logits"].argmax(dim=1),
                         src_ids,
                         dst_ids,
-                        graphical_input.batch,
+                        results["updated_batched_graph"].batch,
                     )
-                    for results, src_ids, dst_ids, graphical_input in zip(
-                        tf_results_list,
-                        tf_src_id_seq,
-                        tf_dst_id_seq,
-                        graphical_input_seq,
+                    for results, src_ids, dst_ids in zip(
+                        tf_results_list, tf_src_id_seq, tf_dst_id_seq
                     )
                 ],
                 tf_src_id_seq,
                 tf_dst_id_seq,
-                [results["label_logits"].argmax(dim=1) for results in tf_results_list],
                 [
-                    graphical_input.node_label_ids
-                    for graphical_input in graphical_input_seq
+                    results["event_label_logits"].argmax(dim=1)
+                    for results in tf_results_list
                 ],
-                [graphical_input.batch for graphical_input in graphical_input_seq],
+                [results["updated_batched_graph"] for results in tf_results_list],
             )
 
             # collect groundtruth command tokens
@@ -827,16 +857,17 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
 
             # greedy decoding
-            gd_results_list = self.greedy_decode(step_input, gd_graphs, gd_memory)
+            gd_results_list = self.greedy_decode(
+                step_input, batched_graph=gd_batched_graph, memory=gd_memory
+            )
 
             # calculate graph tuples from greedy decoded graph events
             batch_gd_cmds, batch_gd_tokens = self.generate_batch_graph_triples_seq(
-                [results["event_type_ids"] for results in gd_results_list],
-                [results["src_ids"] for results in gd_results_list],
-                [results["dst_ids"] for results in gd_results_list],
-                [results["label_ids"] for results in gd_results_list],
-                [results["node_label_ids"] for results in gd_results_list],
-                [results["batch"] for results in gd_results_list],
+                [results["decoded_event_type_ids"] for results in gd_results_list],
+                [results["decoded_event_src_ids"] for results in gd_results_list],
+                [results["decoded_event_dst_ids"] for results in gd_results_list],
+                [results["decoded_event_label_ids"] for results in gd_results_list],
+                [results["updated_batched_graph"] for results in gd_results_list],
             )
 
             # log greedy decode graph based metrics
@@ -878,11 +909,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # update teacher forcing memory for the next step
             tf_memory = tf_results_list[-1]["updated_memory"]
 
+            # update greedy decode graphs for the next step
+            tf_batched_graph = tf_results_list[-1]["updated_batched_graph"]
+
             # update greedy decode memory for the next step
             gd_memory = gd_results_list[-1]["updated_memory"]
 
             # update greedy decode graphs for the next step
-            gd_graphs = gd_results_list[-1]["updated_graphs"]
+            gd_batched_graph = gd_results_list[-1]["updated_batched_graph"]
 
         loss = torch.stack(losses).mean()
         self.log(log_prefix + "_loss", loss, prog_bar=True)
