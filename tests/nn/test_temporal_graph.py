@@ -574,6 +574,35 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
         ),
         (
             Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor(
+                    [[6] * 4, [5] * 4, [4] * 4, [3] * 4, [2] * 4, [1] * 4]
+                ).float(),
+                edge_index=torch.tensor([[2, 5], [0, 4]]),
+                edge_attr=torch.tensor([[4] * 4, [5] * 4]).float(),
+                edge_last_update=torch.tensor([2.0, 3.0]),
+            ),
+            torch.tensor(
+                [[4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4, [9] * 4]
+            ).float(),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["node-delete"], EVENT_TYPE_ID_MAP["node-delete"]]
+            ),
+            torch.tensor([1, 0]),
+            torch.tensor([0, 0]),
+            torch.tensor([[5] * 4, [3] * 4]).float(),
+            torch.tensor([4.0, 5.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[6] * 4, [4] * 4, [2] * 4, [1] * 4]).float(),
+                edge_index=torch.tensor([[1, 3], [0, 2]]),
+                edge_attr=torch.tensor([[4] * 4, [5] * 4]).float(),
+                edge_last_update=torch.tensor([2.0, 3.0]),
+            ),
+            torch.tensor([[4] * 4, [6] * 4, [8] * 4, [9] * 4]).float(),
+        ),
+        (
+            Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
                 x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
                 edge_index=torch.empty(2, 0).long(),

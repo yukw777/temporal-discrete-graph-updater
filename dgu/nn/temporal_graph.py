@@ -404,73 +404,12 @@ class TemporalGraphNetwork(nn.Module):
             event_type_ids.size(0), batched_graph.batch
         )
         # (batch)
-
-        # take care of the edges first
-        # first turn existing edge_index into subgraph node IDs so that it's easier
-        # to manipulate
-        edge_index_batch = batched_graph.batch[batched_graph.edge_index[0]]
-        # (num_edge)
-        subgraph_edge_index = batched_graph.edge_index - node_id_offsets[
-            edge_index_batch
-        ].unsqueeze(0).expand(2, -1)
-        # (2, num_edge)
-
-        # collect edge add events
-        edge_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
-        # (batch)
-        added_edge_index_batch = edge_add_event_mask.nonzero().squeeze(-1)
-        # (num_added_edge)
-        added_edge_index = torch.stack(
-            [event_src_ids[edge_add_event_mask], event_dst_ids[edge_add_event_mask]]
-        )
-        # (2, num_added_edge)
-        added_edge_attr = event_embeddings[edge_add_event_mask]
-        # (num_added_edge, event_embedding_dim)
-        added_edge_last_update = event_timestamps[edge_add_event_mask]
-        # (num_added_edge)
-
-        # collect edge delete events
-        edge_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
-        # (batch)
         batch_src_ids = event_src_ids + node_id_offsets
         # (batch)
         batch_dst_ids = event_dst_ids + node_id_offsets
         # (batch)
-        deleted_edge_co_occur = get_edge_index_co_occurrence_matrix(
-            batched_graph.edge_index,
-            torch.stack(
-                [
-                    batch_src_ids[edge_delete_event_mask],
-                    batch_dst_ids[edge_delete_event_mask],
-                ]
-            ),
-        )
-        # (num_edge, num_deleted_edge)
-        deleted_edge_mask = torch.ones(
-            batched_graph.num_edges,
-            dtype=torch.bool,
-            device=deleted_edge_co_occur.device,
-        ).masked_fill(deleted_edge_co_occur.any(1), False)
-        # (num_edge)
 
-        new_edge_index_batch = torch.cat(
-            [edge_index_batch[deleted_edge_mask], added_edge_index_batch]
-        )
-        # (num_edge-num_deleted_edge+num_added_edge)
-        new_subgraph_edge_index = torch.cat(
-            [subgraph_edge_index[:, deleted_edge_mask], added_edge_index], dim=1
-        )
-        # (2, num_edge-num_deleted_edge+num_added_edge)
-        new_edge_attr = torch.cat(
-            [batched_graph.edge_attr[deleted_edge_mask], added_edge_attr]
-        )
-        # (num_edge-num_deleted_edge+num_added_edge, event_embedding_dim)
-        new_edge_last_update = torch.cat(
-            [batched_graph.edge_last_update[deleted_edge_mask], added_edge_last_update]
-        )
-        # (num_edge-num_deleted_edge+num_added_edge)
-
-        # take care of the nodes now
+        # take care of the nodes
         # collect node add events
         node_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
         # (batch)
@@ -491,7 +430,6 @@ class TemporalGraphNetwork(nn.Module):
         ).index_fill(0, node_delete_node_ids, False)
         # (num_node)
 
-        # take care of the nodes
         new_batch = torch.cat([batched_graph.batch[delete_node_mask], added_node_batch])
         # (num_node-num_deleted_node+num_added_node)
         new_x = torch.cat([batched_graph.x[delete_node_mask], added_x])
@@ -502,15 +440,70 @@ class TemporalGraphNetwork(nn.Module):
         # sorted_batch: (num_node-num_deleted_node+num_added_node)
         # sorted_node_indices: (num_node-num_deleted_node+num_added_node)
 
-        # update the new subgraph edge index to match the new sorted node indices
+        # take care of the edges
+        # collect edge add events
+        edge_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        # (batch)
+        added_edge_index_batch = edge_add_event_mask.nonzero().squeeze(-1)
+        # (num_added_edge)
+        added_edge_index = torch.stack(
+            [event_src_ids[edge_add_event_mask], event_dst_ids[edge_add_event_mask]]
+        )
+        # (2, num_added_edge)
+        added_edge_attr = event_embeddings[edge_add_event_mask]
+        # (num_added_edge, event_embedding_dim)
+        added_edge_last_update = event_timestamps[edge_add_event_mask]
+        # (num_added_edge)
+
+        # collect edge delete events
+        edge_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
+        # (batch)
+        deleted_edge_co_occur = get_edge_index_co_occurrence_matrix(
+            batched_graph.edge_index,
+            torch.stack(
+                [
+                    batch_src_ids[edge_delete_event_mask],
+                    batch_dst_ids[edge_delete_event_mask],
+                ]
+            ),
+        )
+        # (num_edge, num_deleted_edge)
+        deleted_edge_mask = torch.ones(
+            batched_graph.num_edges,
+            dtype=torch.bool,
+            device=deleted_edge_co_occur.device,
+        ).masked_fill(deleted_edge_co_occur.any(1), False)
+        # (num_edge)
+
+        # update edge index to reflect deleted nodes
+        delete_node_edge_index = (
+            batched_graph.edge_index
+            - torch.cumsum(~delete_node_mask, 0)[batched_graph.edge_index]
+        )
+        # batchify added edge index
         new_node_id_offsets = self.calculate_node_id_offsets(
             event_type_ids.size(0), sorted_batch
         )
         # (batch)
-        new_edge_index = new_subgraph_edge_index + new_node_id_offsets[
-            new_edge_index_batch
+        batch_added_edge_index = added_edge_index + new_node_id_offsets[
+            added_edge_index_batch
         ].unsqueeze(0).expand(2, -1)
+        # (2, num_added_edge)
+
+        # get the new edge index by removing deleted edges and adding new ones
+        new_edge_index = torch.cat(
+            [delete_node_edge_index[:, deleted_edge_mask], batch_added_edge_index],
+            dim=1,
+        )
         # (2, num_edge-num_deleted_edge+num_added_edge)
+        new_edge_attr = torch.cat(
+            [batched_graph.edge_attr[deleted_edge_mask], added_edge_attr]
+        )
+        # (num_edge-num_deleted_edge+num_added_edge, event_embedding_dim)
+        new_edge_last_update = torch.cat(
+            [batched_graph.edge_last_update[deleted_edge_mask], added_edge_last_update]
+        )
+        # (num_edge-num_deleted_edge+num_added_edge)
 
         # take care of the memory
         # first get the messages
