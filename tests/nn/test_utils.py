@@ -21,7 +21,7 @@ from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
     "batched_input,batched_mask,expected",
     [
         (torch.rand(3, 0, 8), torch.ones(3, 0), torch.zeros(3, 8)),
-        (torch.rand(3, 0, 8), torch.zeros(3, 0), torch.zeros(3, 8)),
+        (torch.rand(3, 0, 8), torch.zeros(3, 0).bool(), torch.zeros(3, 8)),
         (torch.rand(3, 1, 8), torch.zeros(3, 1), torch.zeros(3, 8)),
         (
             torch.tensor(

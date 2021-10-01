@@ -18,9 +18,9 @@ def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     output: (batch, hidden_dim)
     """
     return (input * mask.unsqueeze(-1)).sum(dim=1) / (
-        mask.sum(dim=1, keepdim=True).clamp(
-            min=torch.finfo(input.dtype).tiny
-        )  # clamp to avoid divide by 0
+        mask.float()
+        .sum(dim=1, keepdim=True)
+        .clamp(min=torch.finfo(input.dtype).tiny)  # clamp to avoid divide by 0
     )
 
 
