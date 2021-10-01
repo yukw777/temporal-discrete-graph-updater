@@ -32,7 +32,11 @@ def masked_softmax(
     """
     # replace the values to be ignored with the minimum value of the data type
     return F.softmax(
-        input.masked_fill(mask == 0, torch.finfo(input.dtype).min), dim=dim
+        input.masked_fill(
+            mask if mask.dtype == torch.bool else mask == 0,
+            torch.finfo(input.dtype).min,
+        ),
+        dim=dim,
     )
 
 

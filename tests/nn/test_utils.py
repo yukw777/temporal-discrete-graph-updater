@@ -68,6 +68,16 @@ def test_masked_mean(batched_input, batched_mask, expected):
             torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
             torch.zeros(3, 3),
         ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor(
+                [[True, True, False], [False, True, True], [True, True, True]]
+            ),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3).bool(),
+        ),
     ],
 )
 def test_masked_softmax(batched_input, batched_mask):
