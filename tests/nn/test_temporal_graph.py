@@ -1264,3 +1264,70 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
     assert TemporalGraphNetwork.get_edge_timestamps(
         timestamps, batch, edge_index
     ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "node_features,batch,delete_mask,added_features,added_batch,batch_size,"
+    "expected_updated_node_features,expected_added_node_mask",
+    [
+        (
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([True, False, True, True]),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0]),
+            1,
+            torch.tensor([0, 0, 0, 0, 0]),
+            torch.tensor([False, False, False, True, True]),
+        ),
+        (
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([False, True, True, True, False, True, True]),
+            torch.tensor([0, 4, 4]),
+            torch.tensor([0, 4, 4]),
+            6,
+            torch.tensor([0, 1, 2, 3, 3, 4, 4, 5]),
+            torch.tensor([True, False, False, False, False, True, True, False]),
+        ),
+        (
+            torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([True, False, True, True]),
+            torch.tensor([[5] * 4, [6] * 4]),
+            torch.tensor([0, 0]),
+            1,
+            torch.tensor([[4] * 4, [2] * 4, [1] * 4, [5] * 4, [6] * 4]),
+            torch.tensor([False, False, False, True, True]),
+        ),
+        (
+            torch.tensor(
+                [[1] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [3] * 4, [5] * 4]
+            ),
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([False, True, True, True, False, True, True]),
+            torch.tensor([[0] * 4, [4] * 4, [4] * 4]),
+            torch.tensor([0, 4, 4]),
+            6,
+            torch.tensor(
+                [[0] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [4] * 4, [4] * 4, [5] * 4]
+            ),
+            torch.tensor([True, False, False, False, False, True, True, False]),
+        ),
+    ],
+)
+def test_tgn_update_node_features(
+    node_features,
+    batch,
+    delete_mask,
+    added_features,
+    added_batch,
+    batch_size,
+    expected_updated_node_features,
+    expected_added_node_mask,
+):
+    updated_node_features, added_node_mask = TemporalGraphNetwork.update_node_features(
+        node_features, batch, delete_mask, added_features, added_batch, batch_size
+    )
+    assert updated_node_features.equal(expected_updated_node_features)
+    assert added_node_mask.equal(expected_added_node_mask)

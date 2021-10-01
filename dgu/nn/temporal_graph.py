@@ -8,7 +8,11 @@ from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_geometric.data import Batch
 
 from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.nn.utils import index_edge_attr, get_edge_index_co_occurrence_matrix
+from dgu.nn.utils import (
+    index_edge_attr,
+    get_edge_index_co_occurrence_matrix,
+    batchify_node_features,
+)
 
 
 class TransformerConvStack(nn.Module):
@@ -407,6 +411,61 @@ class TemporalGraphNetwork(nn.Module):
             subgraph_size_cumsum, (1, batch_size - subgraph_size_cumsum.size(0) - 1)
         )
 
+    @staticmethod
+    def update_node_features(
+        node_features: torch.Tensor,
+        batch: torch.Tensor,
+        delete_mask: torch.Tensor,
+        added_features: torch.Tensor,
+        added_batch: torch.Tensor,
+        batch_size: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Update the given node features using delete mask and added features.
+        We first delete the features using the delete mask, then append new
+        features for each graph in the batch. Also returns a mask for added
+        nodes.
+
+        node_features: (num_node, *)
+        batch: (num_node)
+        delete_mask: (num_node)
+        added_features: (num_added_node, *)
+        added_batch: (num_added_node)
+        batch_size: scalar
+
+        output:
+            updated_node_features: (num_node-num_deleted_node+num_added_node, *)
+            added_node_mask: (num_node-num_deleted_node+num_added_node)
+        """
+        batchified_features, batchified_features_mask = batchify_node_features(
+            node_features[delete_mask], batch[delete_mask], batch_size
+        )
+        # batchified_features: (batch, max_subgraph_num_node, *)
+        # batchified_features_mask: (batch, max_subgraph_num_node)
+        (
+            batchified_added_features,
+            batchified_added_features_mask,
+        ) = batchify_node_features(added_features, added_batch, batch_size)
+        # batchified_added_features: (batch, max_num_added_node, *)
+        # batchified_added_features_mask: (batch, max_num_added_node)
+        new_features = torch.cat(
+            [batchified_features, batchified_added_features], dim=1
+        ).flatten(end_dim=1)
+        new_features_mask = torch.cat(
+            [batchified_features_mask, batchified_added_features_mask], dim=1
+        ).flatten(end_dim=1)
+        added_node_mask = torch.cat(
+            [
+                torch.zeros_like(batchified_features_mask, dtype=torch.bool),
+                batchified_added_features_mask,
+            ],
+            dim=1,
+        ).flatten(end_dim=1)[new_features_mask]
+        # (num_node-num_deleted_node+num_added_node)
+
+        return new_features[new_features_mask], added_node_mask
+        # (num_node-num_deleted_node+num_added_node, *)
+
     def update_batched_graph_memory(
         self,
         batched_graph: Batch,
@@ -418,11 +477,9 @@ class TemporalGraphNetwork(nn.Module):
         event_timestamps: torch.Tensor,
     ) -> Tuple[Batch, torch.Tensor]:
         """
-        Update the given batch of graph events to the given batched graph.
-        Also returns the deleted node mask and sorted batch indices to be used
-        for updating the memory.
-        All the events are assumed to be valid, and each event in the batch is assuemd
-        to be applied only to the corresponding graph in the batched graph.
+        Update the given batched graph and memory based on the given batch of graph
+        events. All the events are assumed to be valid, and each event in the batch
+        is assuemd to be applied only to the corresponding graph in the batched graph.
 
         batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
             batch: (num_node)
@@ -472,15 +529,25 @@ class TemporalGraphNetwork(nn.Module):
         ).index_fill(0, node_delete_node_ids, False)
         # (num_node)
 
-        new_batch, sorted_node_indices = torch.cat(
-            [batched_graph.batch[delete_node_mask], added_node_batch]
-        ).sort()
-        # new_batch: (num_node-num_deleted_node+num_added_node)
-        # sorted_node_indices: (num_node-num_deleted_node+num_added_node)
+        batch_size = event_type_ids.size(0)
+        new_batch, added_node_mask = self.update_node_features(
+            batched_graph.batch,
+            batched_graph.batch,
+            delete_node_mask,
+            added_node_batch,
+            added_node_batch,
+            batch_size,
+        )
+        # (num_node-num_deleted_node+num_added_node)
 
-        new_x = torch.cat([batched_graph.x[delete_node_mask], added_x])[
-            sorted_node_indices
-        ]
+        new_x, _ = self.update_node_features(
+            batched_graph.x,
+            batched_graph.batch,
+            delete_node_mask,
+            added_x,
+            added_node_batch,
+            batch_size,
+        )
         # (num_node-num_deleted_node+num_added_node, event_embedding_dim)
 
         # update edge_index based on the added and deleted nodes
@@ -491,11 +558,9 @@ class TemporalGraphNetwork(nn.Module):
         )
         # (2, num_edge)
         # then add cumulative sum of the number of added nodes
-        updated_edge_index = deleted_node_edge_index + torch.cumsum(
-            sorted_node_indices
-            >= sorted_node_indices.size(0) - added_node_batch.size(0),
-            0,
-        )[deleted_node_edge_index]
+        updated_edge_index = (
+            deleted_node_edge_index + added_node_mask.cumsum(0)[deleted_node_edge_index]
+        )
         # (2, num_edge)
 
         # now, take care of the edges
@@ -620,9 +685,14 @@ class TemporalGraphNetwork(nn.Module):
         else:
             updated_memory = torch.empty(0, self.memory_dim, device=memory.device)
         # (num_added_node + num_edge_event_msg)
-        new_memory = torch.cat(
-            [memory[delete_node_mask], updated_memory[:num_node_add_msg]]
-        )[sorted_node_indices]
+        new_memory, _ = self.update_node_features(
+            memory,
+            batched_graph.batch,
+            delete_node_mask,
+            updated_memory[:num_node_add_msg],
+            added_node_batch,
+            batch_size,
+        )
         # (num_node-num_deleted_node+num_added_node, memory_dim)
         new_memory[
             edge_event_node_ids + new_node_id_offsets[edge_event_batch]
