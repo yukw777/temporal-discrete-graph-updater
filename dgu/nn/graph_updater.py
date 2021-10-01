@@ -249,9 +249,17 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         if batched_graph is None:
             batched_graph = Batch(
                 batch=torch.empty(0, dtype=torch.long, device=self.device),
-                x=torch.empty(0, dtype=torch.long, device=self.device),
+                x=torch.empty(
+                    0,
+                    self.hparams.word_emb_dim,  # type: ignore
+                    device=self.device,
+                ),
                 edge_index=torch.empty(2, 0, dtype=torch.long, device=self.device),
-                edge_attr=torch.empty(0, dtype=torch.long, device=self.device),
+                edge_attr=torch.empty(
+                    0,
+                    self.hparams.word_emb_dim,  # type: ignore
+                    device=self.device,
+                ),
                 edge_last_update=torch.empty(0, dtype=torch.long, device=self.device),
             )
 
