@@ -588,8 +588,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # we ignore last graphs without nodes, b/c they wouldn't produce valid
         # graph triples anyway
-        splits = batched_graph.batch.bincount()[:-1].cumsum(0).cpu()
-        batched_graph_node_label_ids = graph_node_label_ids.tensor_split(splits)
+        batched_graph_node_label_ids = graph_node_label_ids.split(
+            batched_graph.batch.bincount().tolist()
+        )
         # (batch - num_last_empty_graphs)
 
         cmds: List[str] = []
@@ -989,10 +990,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         bincount = batch.bincount()
         # we pad the bincount to the desired batch size in case the last graphs in
         # the batch don't have nodes.
-        bincount = F.pad(bincount, (0, max(0, batch_size - bincount.size(0))))
-        splits = bincount[:-1].cumsum(0).cpu()
+        split_size = F.pad(bincount, (0, batch_size - bincount.size(0))).tolist()
         batch_node_embeddings = pad_sequence(
-            node_embeddings.tensor_split(splits), batch_first=True  # type: ignore
+            node_embeddings.split(split_size), batch_first=True  # type: ignore
         )
         # (batch, num_node, hidden_dim)
 
@@ -1000,7 +1000,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         batch_node_mask = pad_sequence(
             torch.ones(  # type: ignore
                 bincount.sum(), device=batch_node_embeddings.device
-            ).tensor_split(splits),
+            ).split(split_size),
             batch_first=True,
         )
         return batch_node_embeddings, batch_node_mask
