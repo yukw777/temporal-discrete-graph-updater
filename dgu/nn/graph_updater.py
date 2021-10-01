@@ -11,12 +11,11 @@ from torch.optim import Adam, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
-from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Batch
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
-from dgu.nn.utils import masked_mean, load_fasttext
+from dgu.nn.utils import masked_mean, load_fasttext, batchify_node_features
 from dgu.nn.graph_event_decoder import (
     StaticLabelGraphEventDecoder,
     RNNGraphEventDecoder,
@@ -284,7 +283,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # updated_memory: (num_node, hidden_dim)
 
         # batchify node_embeddings
-        batch_node_embeddings, batch_node_mask = self.batchify_node_embeddings(
+        batch_node_embeddings, batch_node_mask = batchify_node_features(
             tgn_results["node_embeddings"],
             tgn_results["updated_batched_graph"].batch,
             obs_mask.size(0),
@@ -967,43 +966,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self, batch: TWCmdGenTemporalBatch, split_size: int
     ) -> List[TWCmdGenTemporalBatch]:
         return batch.split(split_size)
-
-    @staticmethod
-    def batchify_node_embeddings(
-        node_embeddings: torch.Tensor, batch: torch.Tensor, batch_size: int
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Batchify node embeddings from the mini-batched global graph so that
-        they can be used to calculate delta_g. It also calculates the corresponding
-        node mask. "batch" is assumed to be ascending order, which is what pytorch
-        geometric's Batch produces.
-
-        node_embeddings: (num_node, hidden_dim)
-        batch: (num_node)
-        batch_size: desired batch size
-
-        output:
-            batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
-            batch_node_mask: (batch, max_sub_graph_num_node)
-        """
-        # batchify node_embeddings based on batch
-        bincount = batch.bincount()
-        # we pad the bincount to the desired batch size in case the last graphs in
-        # the batch don't have nodes.
-        split_size = F.pad(bincount, (0, batch_size - bincount.size(0))).tolist()
-        batch_node_embeddings = pad_sequence(
-            node_embeddings.split(split_size), batch_first=True  # type: ignore
-        )
-        # (batch, num_node, hidden_dim)
-
-        # calculate node_mask
-        batch_node_mask = pad_sequence(
-            torch.ones(  # type: ignore
-                bincount.sum(), device=batch_node_embeddings.device
-            ).split(split_size),
-            batch_first=True,
-        )
-        return batch_node_embeddings, batch_node_mask
 
     def greedy_decode(
         self,

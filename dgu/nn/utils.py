@@ -192,3 +192,38 @@ def index_edge_attr(
     out[co_occur.any(1)] = edge_attr[pos]
     return out
     # (num_indexed_edge, *)
+
+
+def batchify_node_features(
+    node_features: torch.Tensor, batch: torch.Tensor, batch_size: int
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Batchify node features from the batched global graph. It also calculates
+    the corresponding node mask. "batch" is assumed to be ascending order.
+
+    node_features: (num_node, *)
+    batch: (num_node)
+    batch_size: desired batch size
+
+    output:
+        batch_node_embeddings: (batch, max_sub_graph_num_node, *)
+        batch_node_mask: (batch, max_sub_graph_num_node)
+    """
+    # batchify node_embeddings based on batch
+    bincount = batch.bincount()
+    # we pad the bincount to the desired batch size in case the last graphs in
+    # the batch don't have nodes.
+    split_size = F.pad(bincount, (0, batch_size - bincount.size(0))).tolist()
+    batch_node_features = pad_sequence(
+        node_features.split(split_size), batch_first=True  # type: ignore
+    )
+    # (batch, max_sub_graph_num_node, hidden_dim)
+
+    # calculate node_mask
+    batch_node_mask = pad_sequence(
+        torch.ones(  # type: ignore
+            bincount.sum(), device=batch_node_features.device, dtype=torch.bool
+        ).split(split_size),
+        batch_first=True,
+    )
+    return batch_node_features, batch_node_mask
