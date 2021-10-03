@@ -419,12 +419,11 @@ class TemporalGraphNetwork(nn.Module):
         added_features: torch.Tensor,
         added_batch: torch.Tensor,
         batch_size: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         Update the given node features using delete mask and added features.
         We first delete the features using the delete mask, then append new
-        features for each graph in the batch. Also returns a mask for added
-        nodes.
+        features for each graph in the batch.
 
         node_features: (num_node, *)
         batch: (num_node)
@@ -433,9 +432,7 @@ class TemporalGraphNetwork(nn.Module):
         added_batch: (num_added_node)
         batch_size: scalar
 
-        output:
-            updated_node_features: (num_node-num_deleted_node+num_added_node, *)
-            added_node_mask: (num_node-num_deleted_node+num_added_node)
+        output: (num_node-num_deleted_node+num_added_node, *)
         """
         batchified_features, batchified_features_mask = batchify_node_features(
             node_features[delete_mask], batch[delete_mask], batch_size
@@ -454,16 +451,8 @@ class TemporalGraphNetwork(nn.Module):
         new_features_mask = torch.cat(
             [batchified_features_mask, batchified_added_features_mask], dim=1
         ).flatten(end_dim=1)
-        added_node_mask = torch.cat(
-            [
-                torch.zeros_like(batchified_features_mask, dtype=torch.bool),
-                batchified_added_features_mask,
-            ],
-            dim=1,
-        ).flatten(end_dim=1)[new_features_mask]
-        # (num_node-num_deleted_node+num_added_node)
 
-        return new_features[new_features_mask], added_node_mask
+        return new_features[new_features_mask]
         # (num_node-num_deleted_node+num_added_node, *)
 
     def update_batched_graph_memory(
@@ -530,7 +519,7 @@ class TemporalGraphNetwork(nn.Module):
         # (num_node)
 
         batch_size = event_type_ids.size(0)
-        new_batch, added_node_mask = self.update_node_features(
+        new_batch = self.update_node_features(
             batched_graph.batch,
             batched_graph.batch,
             delete_node_mask,
@@ -540,7 +529,7 @@ class TemporalGraphNetwork(nn.Module):
         )
         # (num_node-num_deleted_node+num_added_node)
 
-        new_x, _ = self.update_node_features(
+        new_x = self.update_node_features(
             batched_graph.x,
             batched_graph.batch,
             delete_node_mask,
@@ -551,15 +540,11 @@ class TemporalGraphNetwork(nn.Module):
         # (num_node-num_deleted_node+num_added_node, event_embedding_dim)
 
         # update edge_index based on the added and deleted nodes
-        # first, subtract cumulative sum of the number of deleted nodes
-        deleted_node_edge_index = (
-            batched_graph.edge_index
-            - torch.cumsum(~delete_node_mask, 0)[batched_graph.edge_index]
-        )
-        # (2, num_edge)
-        # then add cumulative sum of the number of added nodes
-        updated_edge_index = (
-            deleted_node_edge_index + added_node_mask.cumsum(0)[deleted_node_edge_index]
+        updated_edge_index = self.update_edge_index(
+            batched_graph.edge_index,
+            batched_graph.batch,
+            delete_node_mask,
+            node_add_event_mask,
         )
         # (2, num_edge)
 
@@ -685,7 +670,7 @@ class TemporalGraphNetwork(nn.Module):
         else:
             updated_memory = torch.empty(0, self.memory_dim, device=memory.device)
         # (num_added_node + num_edge_event_msg)
-        new_memory, _ = self.update_node_features(
+        new_memory = self.update_node_features(
             memory,
             batched_graph.batch,
             delete_node_mask,
@@ -709,3 +694,35 @@ class TemporalGraphNetwork(nn.Module):
             ),
             new_memory,
         )
+
+    @staticmethod
+    def update_edge_index(
+        edge_index: torch.Tensor,
+        batch: torch.Tensor,
+        delete_node_mask: torch.Tensor,
+        node_add_event_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Update the given edge indices based on the added and deleted nodes.
+        Note that only deleted nodes can affect the subgraph indices as nodes
+        are added to the back.
+
+        edge_index: (2, num_edge)
+        batch: (num_node)
+        delete_node_mask: (num_node)
+        node_add_event_mask: (batch)
+
+        output: (2, num_edge)
+        """
+        # subtract cumulative sum of the number of deleted nodes
+        deleted_node_edge_index = (
+            edge_index - torch.cumsum(~delete_node_mask, 0)[edge_index]
+        )
+        # (2, num_edge)
+
+        # figure out the offsets caused by added nodes
+        added_node_offsets = F.pad(node_add_event_mask.cumsum(0), (1, -1))
+        # (batch)
+
+        return deleted_node_edge_index + added_node_offsets[batch[edge_index]]
+        # (2, num_edge)

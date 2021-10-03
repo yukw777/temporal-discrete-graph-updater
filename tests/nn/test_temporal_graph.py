@@ -1188,6 +1188,63 @@ def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
                 ]
             ).float(),
         ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4]
+                ).float(),
+                edge_index=torch.tensor([[0, 2, 4], [1, 3, 5]]),
+                edge_attr=torch.tensor([[3] * 4, [2] * 4, [1] * 4]).float(),
+                edge_last_update=torch.tensor([4.0, 3.0, 2.0]),
+            ),
+            torch.tensor(
+                [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
+            ).float(),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([[7] * 4, [8] * 4, [9] * 4]).float(),
+            torch.tensor([3.0, 5.0, 2.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+                x=torch.tensor(
+                    [
+                        [1] * 4,
+                        [2] * 4,
+                        [7] * 4,
+                        [3] * 4,
+                        [4] * 4,
+                        [8] * 4,
+                        [5] * 4,
+                        [6] * 4,
+                        [9] * 4,
+                    ]
+                ).float(),
+                edge_index=torch.tensor([[0, 3, 6], [1, 4, 7]]),
+                edge_attr=torch.tensor([[3] * 4, [2] * 4, [1] * 4]).float(),
+                edge_last_update=torch.tensor([4.0, 3.0, 2.0]),
+            ),
+            torch.tensor(
+                [
+                    [3] * 4,
+                    [4] * 4,
+                    [0, 0, 6, 7],
+                    [5] * 4,
+                    [6] * 4,
+                    [0, 0, 8, 8],
+                    [7] * 4,
+                    [8] * 4,
+                    [0, 0, 5, 9],
+                ]
+            ).float(),
+        ),
     ],
 )
 def test_tgn_update_batched_graph_memory(
@@ -1267,8 +1324,7 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
 
 
 @pytest.mark.parametrize(
-    "node_features,batch,delete_mask,added_features,added_batch,batch_size,"
-    "expected_updated_node_features,expected_added_node_mask",
+    "node_features,batch,delete_mask,added_features,added_batch,batch_size,expected",
     [
         (
             torch.tensor([0, 0, 0, 0]),
@@ -1278,7 +1334,6 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
             torch.tensor([0, 0]),
             1,
             torch.tensor([0, 0, 0, 0, 0]),
-            torch.tensor([False, False, False, True, True]),
         ),
         (
             torch.tensor([1, 1, 2, 3, 3, 3, 5]),
@@ -1288,7 +1343,6 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
             torch.tensor([0, 4, 4]),
             6,
             torch.tensor([0, 1, 2, 3, 3, 4, 4, 5]),
-            torch.tensor([True, False, False, False, False, True, True, False]),
         ),
         (
             torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]),
@@ -1298,7 +1352,6 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
             torch.tensor([0, 0]),
             1,
             torch.tensor([[4] * 4, [2] * 4, [1] * 4, [5] * 4, [6] * 4]),
-            torch.tensor([False, False, False, True, True]),
         ),
         (
             torch.tensor(
@@ -1312,7 +1365,6 @@ def test_sldgu_get_edge_timestamps(timestamps, batch, edge_index, expected):
             torch.tensor(
                 [[0] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [4] * 4, [4] * 4, [5] * 4]
             ),
-            torch.tensor([True, False, False, False, False, True, True, False]),
         ),
     ],
 )
@@ -1323,11 +1375,67 @@ def test_tgn_update_node_features(
     added_features,
     added_batch,
     batch_size,
-    expected_updated_node_features,
-    expected_added_node_mask,
+    expected,
 ):
-    updated_node_features, added_node_mask = TemporalGraphNetwork.update_node_features(
+    assert TemporalGraphNetwork.update_node_features(
         node_features, batch, delete_mask, added_features, added_batch, batch_size
-    )
-    assert updated_node_features.equal(expected_updated_node_features)
-    assert added_node_mask.equal(expected_added_node_mask)
+    ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "edge_index,batch,delete_node_mask,node_add_event_mask,expected_updated_edge_index",
+    [
+        (
+            torch.tensor([[1], [0]]),
+            torch.tensor([0, 0]),
+            torch.tensor([True, True]),
+            torch.tensor([True]),
+            torch.tensor([[1], [0]]),
+        ),
+        (
+            torch.tensor([[1], [0]]),
+            torch.tensor([0, 0]),
+            torch.tensor([True, True]),
+            torch.tensor([False]),
+            torch.tensor([[1], [0]]),
+        ),
+        (
+            torch.tensor([[0, 2, 4], [1, 3, 5]]),
+            torch.tensor([0, 0, 1, 1, 2, 2]),
+            torch.tensor([True] * 6),
+            torch.tensor([True] * 3),
+            torch.tensor([[0, 3, 6], [1, 4, 7]]),
+        ),
+        (
+            torch.tensor([[0, 2, 4], [1, 3, 5]]),
+            torch.tensor([0, 0, 1, 1, 2, 2]),
+            torch.tensor([True] * 6),
+            torch.tensor([False, True, True]),
+            torch.tensor([[0, 2, 5], [1, 3, 6]]),
+        ),
+        (
+            torch.tensor([[0, 3, 6], [2, 5, 8]]),
+            torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+            torch.tensor([True, False, True, True, False, True, True, False, True]),
+            torch.tensor([False, False, False]),
+            torch.tensor([[0, 2, 4], [1, 3, 5]]),
+        ),
+        (
+            torch.tensor([[6, 8], [8, 7]]),
+            torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+            torch.tensor([True, False, True, True, True, True, True, True, True]),
+            torch.tensor([False, True, True]),
+            torch.tensor([[6, 8], [8, 7]]),
+        ),
+    ],
+)
+def test_tgn_update_edge_index(
+    edge_index,
+    batch,
+    delete_node_mask,
+    node_add_event_mask,
+    expected_updated_edge_index,
+):
+    assert TemporalGraphNetwork.update_edge_index(
+        edge_index, batch, delete_node_mask, node_add_event_mask
+    ).equal(expected_updated_edge_index)
