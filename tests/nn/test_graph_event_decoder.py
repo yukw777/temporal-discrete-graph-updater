@@ -70,12 +70,12 @@ def test_event_static_label_head(
     batch,
 ):
     head = EventStaticLabelHead(
-        autoregressive_embedding_dim,
-        hidden_dim,
-        key_query_dim,
+        autoregressive_embedding_dim, label_embedding_dim, hidden_dim, key_query_dim
+    )
+    label_logits = head(
+        torch.rand(batch, autoregressive_embedding_dim),
         torch.rand(num_label, label_embedding_dim),
     )
-    label_logits = head(torch.rand(batch, autoregressive_embedding_dim))
     assert label_logits.size() == (batch, num_label)
 
 
@@ -101,13 +101,14 @@ def test_static_label_graph_event_decoder(
     decoder = StaticLabelGraphEventDecoder(
         graph_event_embedding_dim,
         node_embedding_dim,
+        label_embedding_dim,
         hidden_dim,
         key_query_dim,
-        torch.rand(num_label, label_embedding_dim),
     )
     results = decoder(
         torch.rand(batch, graph_event_embedding_dim),
         torch.rand(batch, num_node, node_embedding_dim),
+        torch.rand(num_label, label_embedding_dim),
     )
 
     assert results["event_type_logits"].size() == (batch, len(EVENT_TYPES))
@@ -130,17 +131,14 @@ def test_rnn_graph_event_decoder(hidden, input_dim, hidden_dim, batch, num_node)
         input_dim,
         hidden_dim,
         StaticLabelGraphEventDecoder(
-            hidden_dim,
-            node_embedding_dim,
-            8,
-            8,
-            torch.rand(num_label, label_embedding_dim),
+            hidden_dim, node_embedding_dim, label_embedding_dim, 8, 8
         ),
     )
 
     results = decoder(
         torch.rand(batch, input_dim),
         torch.rand(batch, num_node, node_embedding_dim),
+        torch.rand(num_label, label_embedding_dim),
         hidden=torch.rand(batch, hidden_dim) if hidden else None,
     )
 

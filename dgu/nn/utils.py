@@ -18,9 +18,9 @@ def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     output: (batch, hidden_dim)
     """
     return (input * mask.unsqueeze(-1)).sum(dim=1) / (
-        mask.sum(dim=1, keepdim=True).clamp(
-            min=torch.finfo(input.dtype).tiny
-        )  # clamp to avoid divide by 0
+        mask.float()
+        .sum(dim=1, keepdim=True)
+        .clamp(min=torch.finfo(input.dtype).tiny)  # clamp to avoid divide by 0
     )
 
 
@@ -32,7 +32,11 @@ def masked_softmax(
     """
     # replace the values to be ignored with the minimum value of the data type
     return F.softmax(
-        input.masked_fill(mask == 0, torch.finfo(input.dtype).min), dim=dim
+        input.masked_fill(
+            mask if mask.dtype == torch.bool else mask == 0,
+            torch.finfo(input.dtype).min,
+        ),
+        dim=dim,
     )
 
 
@@ -142,6 +146,20 @@ def pad_batch_seq_of_seq(
     )
 
 
+def get_edge_index_co_occurrence_matrix(
+    edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
+) -> torch.Tensor:
+    """
+    Calculate the co-occurrence matrix between two edge index matrices.
+
+    edge_index_a: (2, num_edge_a)
+    edge_index_b: (2, num_edge_b)
+
+    output: (num_edge_a, num_edge_b)
+    """
+    return torch.all(edge_index_a.t().unsqueeze(-1) == edge_index_b, dim=1)
+
+
 def index_edge_attr(
     edge_index: torch.Tensor, edge_attr: torch.Tensor, indices: torch.Tensor
 ) -> torch.Tensor:
@@ -156,16 +174,12 @@ def index_edge_attr(
 
     output: (num_indexed_edge, *)
     """
-    # transpose the indices
-    transposed_indices = indices.t().unsqueeze(-1)
-    # (num_indexed_edge, 2, 1)
-
-    # calculate the mask of the matching indices
-    mask = torch.all(edge_index == transposed_indices, dim=1)
-    # (num_edge, num_indexed_edge)
+    # calculate the co-occurrence matrix between edge_index and indices
+    co_occur = get_edge_index_co_occurrence_matrix(indices, edge_index)
+    # (num_indexed_edge, num_edge)
 
     # calculate positions of the matching indices
-    pos = mask.nonzero()[:, 1]
+    pos = co_occur.nonzero()[:, 1]
     # (num_indexed_edge)
 
     # create an empty
@@ -175,6 +189,57 @@ def index_edge_attr(
         device=edge_attr.device,
         dtype=edge_attr.dtype
     )
-    out[mask.any(dim=1)] = edge_attr[pos]
+    out[co_occur.any(1)] = edge_attr[pos]
     return out
     # (num_indexed_edge, *)
+
+
+def batchify_node_features(
+    node_features: torch.Tensor, batch: torch.Tensor, batch_size: int
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Batchify node features from the batched global graph. It also calculates
+    the corresponding node mask. "batch" is assumed to be ascending order.
+
+    node_features: (num_node, *)
+    batch: (num_node)
+    batch_size: desired batch size
+
+    output:
+        batch_node_embeddings: (batch, max_sub_graph_num_node, *)
+        batch_node_mask: (batch, max_sub_graph_num_node)
+    """
+    # batchify node_embeddings based on batch
+    bincount = batch.bincount()
+    # we pad the bincount to the desired batch size in case the last graphs in
+    # the batch don't have nodes.
+    split_size = F.pad(bincount, (0, batch_size - bincount.size(0))).tolist()
+    batch_node_features = pad_sequence(
+        node_features.split(split_size), batch_first=True  # type: ignore
+    )
+    # (batch, max_sub_graph_num_node, hidden_dim)
+
+    # calculate node_mask
+    batch_node_mask = pad_sequence(
+        torch.ones(  # type: ignore
+            bincount.sum(), device=batch_node_features.device, dtype=torch.bool
+        ).split(split_size),
+        batch_first=True,
+    )
+    return batch_node_features, batch_node_mask
+
+
+def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
+    """
+    Calculate the node id offsets for turning subgraph node IDs into a batched
+    graph node IDs.
+
+    batch_size: scalar
+    batch: (num_node)
+
+    output: (batch_size)
+    """
+    subgraph_size_cumsum = batch.bincount().cumsum(0)
+    return F.pad(
+        subgraph_size_cumsum, (1, batch_size - subgraph_size_cumsum.size(0) - 1)
+    )

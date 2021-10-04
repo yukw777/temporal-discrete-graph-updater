@@ -3,13 +3,11 @@ import pytorch_lightning as pl
 import torch
 import networkx as nx
 
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
-from torch_geometric.data import Data, Batch
-from copy import deepcopy
 
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.nn.utils import compute_masks_from_event_type_ids
@@ -30,6 +28,7 @@ class TWCmdGenTemporalDataset(Dataset):
                 "previous_action": "previous action...",
                 "timestamp": timestamp,
                 "target_commands": [graph commands, ...],
+                "graph_events": [graph events, ...],
             },
             ...
         ]
@@ -62,7 +61,12 @@ class TWCmdGenTemporalDataset(Dataset):
         ]
         random_examples = self.random_examples[(game, walkthrough_step)]
         data: List[Dict[str, Any]] = []
+        graph = nx.DiGraph()
         for timestamp, example in enumerate(walkthrough_examples + random_examples):
+            graph_events: List[Dict[str, Any]] = []
+            for cmd in example["target_commands"]:
+                sub_event_seq, graph = process_triplet_cmd(graph, timestamp, cmd)
+                graph_events.extend(sub_event_seq)
             data.append(
                 {
                     "game": game,
@@ -71,6 +75,7 @@ class TWCmdGenTemporalDataset(Dataset):
                     "previous_action": example["previous_action"],
                     "timestamp": timestamp,
                     "target_commands": example["target_commands"],
+                    "graph_events": graph_events,
                 }
             )
         return data
@@ -119,13 +124,6 @@ class TWCmdGenTemporalStepInput:
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalGraphicalInput:
-    node_label_ids: torch.Tensor = field(default_factory=empty_tensor)
-    node_memory_update_index: torch.Tensor = field(default_factory=empty_tensor)
-    node_memory_update_mask: torch.Tensor = field(default_factory=empty_tensor)
-    edge_index: torch.Tensor = field(default_factory=empty_tensor)
-    edge_label_ids: torch.Tensor = field(default_factory=empty_tensor)
-    edge_last_update: torch.Tensor = field(default_factory=empty_tensor)
-    batch: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
@@ -204,150 +202,6 @@ class TWCmdGenTemporalBatch:
         ]
 
 
-class TWCmdGenTemporalGraphData(Data):
-    def __inc__(self, key: str, value: torch.Tensor) -> int:
-        if key == "node_update_index":
-            return self.node_memory_update_mask.sum()
-        return super().__inc__(key, value)
-
-    @staticmethod
-    def calculate_node_memory_update_edge_index(
-        before_graph: nx.DiGraph,
-        after_graph: nx.DiGraph,
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Calculate the node memory update tensors and edge index tensor based on the
-        difference between the before and after graphs.
-
-        output: (
-            node_memory_update_index: (num_node_before),
-            node_memory_update_mask: (num_node_before),
-            edge_index: (2, num_edge_after),
-        )
-        """
-        node_id_map = {node: node_id for node_id, node in enumerate(after_graph.nodes)}
-        node_memory_update_index: List[int] = []
-        node_memory_update_mask: List[bool] = []
-        for before_node in before_graph.nodes:
-            if before_node in node_id_map:
-                node_memory_update_index.append(node_id_map[before_node])
-                node_memory_update_mask.append(True)
-            else:
-                node_memory_update_index.append(0)
-                node_memory_update_mask.append(False)
-        return (
-            torch.tensor(node_memory_update_index, device=device)
-            if node_memory_update_index
-            else torch.empty(0, dtype=torch.long, device=device),
-            torch.tensor(node_memory_update_mask, device=device)
-            if node_memory_update_mask
-            else torch.empty(0, dtype=torch.bool, device=device),
-            torch.tensor(
-                [
-                    (node_id_map[src], node_id_map[dst])
-                    for src, dst in after_graph.edges
-                ],
-                device=device,
-            ).t()
-            if after_graph.number_of_edges() > 0
-            else torch.empty(2, 0, dtype=torch.long, device=device),
-        )
-
-    @classmethod
-    def from_decoded_graph_event(
-        cls,
-        before_graph: nx.DiGraph,
-        after_graph: nx.DiGraph,
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> "TWCmdGenTemporalGraphData":
-        (
-            node_memory_update_index,
-            node_memory_update_mask,
-            edge_index,
-        ) = cls.calculate_node_memory_update_edge_index(
-            before_graph, after_graph, device=device
-        )
-
-        return cls(
-            # we set x for node_label_ids as that's how
-            # Data figures out how many nodes there are
-            x=torch.tensor(
-                [label_id for _, label_id in after_graph.nodes.data("label_id")],
-                device=device,
-            )
-            if after_graph.order() > 0
-            else torch.empty(0, dtype=torch.long, device=device),
-            node_memory_update_index=node_memory_update_index,
-            node_memory_update_mask=node_memory_update_mask,
-            edge_index=edge_index,
-            edge_attr=torch.tensor(
-                [label_id for _, _, label_id in after_graph.edges.data("label_id")],
-                device=device,
-            )
-            if after_graph.number_of_edges() > 0
-            else torch.empty(0, dtype=torch.long, device=device),
-            edge_last_update=torch.tensor(
-                [
-                    last_update
-                    for _, _, last_update in after_graph.edges.data("last_update")
-                ],
-                dtype=torch.float,
-                device=device,
-            )
-            if after_graph.number_of_edges() > 0
-            else torch.empty(0, device=device),
-        )
-
-    @classmethod
-    def from_graph_event(
-        cls,
-        before_graph: nx.DiGraph,
-        after_graph: nx.DiGraph,
-        label_id_map: Dict[str, int],
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> "TWCmdGenTemporalGraphData":
-        (
-            node_memory_update_index,
-            node_memory_update_mask,
-            edge_index,
-        ) = cls.calculate_node_memory_update_edge_index(
-            before_graph, after_graph, device=device
-        )
-
-        return cls(
-            # we set x for node_label_ids as that's how
-            # Data figures out how many nodes there are
-            x=torch.tensor(
-                [label_id_map[node.label] for node in after_graph.nodes], device=device
-            )
-            if after_graph.order() > 0
-            else torch.empty(0, dtype=torch.long, device=device),
-            node_memory_update_index=node_memory_update_index,
-            node_memory_update_mask=node_memory_update_mask,
-            edge_index=edge_index,
-            edge_attr=torch.tensor(
-                [
-                    label_id_map[label]
-                    for _, _, label in after_graph.edges.data("label")
-                ],
-                device=device,
-            )
-            if after_graph.number_of_edges() > 0
-            else torch.empty(0, dtype=torch.long, device=device),
-            edge_last_update=torch.tensor(
-                [
-                    last_update
-                    for _, _, last_update in after_graph.edges.data("last_update")
-                ],
-                dtype=torch.float,
-                device=device,
-            )
-            if after_graph.number_of_edges() > 0
-            else torch.empty(0, device=device),
-        )
-
-
 class TWCmdGenTemporalDataCollator:
     def __init__(
         self,
@@ -395,74 +249,31 @@ class TWCmdGenTemporalDataCollator:
         )
 
     def collate_graphical_inputs(
-        self, batch_graphs: List[nx.DiGraph], batch_step: List[Dict[str, Any]]
-    ) -> Tuple[List[TWCmdGenTemporalGraphicalInput], List[nx.DiGraph]]:
+        self, batch_step: List[Dict[str, Any]]
+    ) -> List[TWCmdGenTemporalGraphicalInput]:
         """
         Collate the graphical inputs of the given batch.
 
-        output: (
-            len([TWCmdGenTemporalGraphicalInput(
-                node_label_ids: (num_nodes),
-                node_memory_update_index: (prev_num_nodes),
-                node_memory_update_mask: (prev_num_nodes),
-                edge_index: (2, num_edges),
-                edge_label_ids: (num_edges),
-                edge_last_update: (num_edges),
-                batch: (num_nodes),
-                tgt_event_type_ids: (batch),
-                tgt_event_src_ids: (batch),
-                tgt_event_dst_ids: (batch),
-                tgt_event_label_ids: (batch),
-                groundtruth_event_type_ids: (batch),
-                groundtruth_event_src_ids: (batch),
-                groundtruth_event_src_mask: (batch),
-                groundtruth_event_dst_ids: (batch),
-                groundtruth_event_dst_mask: (batch),
-                groundtruth_event_label_ids: (batch),
-                groundtruth_event_mask: (batch),
-            ), ...]) = event_seq_len,
-            updated_batch_graphs
-        )
+        output: len([TWCmdGenTemporalGraphicalInput(
+            tgt_event_type_ids: (batch),
+            tgt_event_src_ids: (batch),
+            tgt_event_dst_ids: (batch),
+            tgt_event_label_ids: (batch),
+            groundtruth_event_type_ids: (batch),
+            groundtruth_event_src_ids: (batch),
+            groundtruth_event_src_mask: (batch),
+            groundtruth_event_dst_ids: (batch),
+            groundtruth_event_dst_mask: (batch),
+            groundtruth_event_label_ids: (batch),
+            groundtruth_event_mask: (batch),
+        ), ...]) = event_seq_len
         """
-        assert len(batch_graphs) == len(batch_step)
         batch_event_seq: List[List[Dict[str, Any]]] = []
         collated: List[TWCmdGenTemporalGraphicalInput] = []
-        updated_batch_graphs: List[nx.DiGraph] = []
-        for graph, step in zip(batch_graphs, batch_step):
-            if step == {}:
-                batch_event_seq.append(
-                    [
-                        {
-                            "type": "end",
-                            "timestamp": 0,
-                            "label": "",
-                            # graphs don't change after this event
-                            "before_graph": graph,
-                            "after_graph": graph,
-                        }
-                    ]
-                )
-                updated_batch_graphs.append(deepcopy(graph))
-                continue
-            curr_graph = graph
-            event_seq: List[Dict[str, Any]] = []
-            for cmd in step["target_commands"]:
-                sub_event_seq = process_triplet_cmd(curr_graph, step["timestamp"], cmd)
-                event_seq.extend(sub_event_seq)
-                curr_graph = sub_event_seq[-1]["after_graph"]
-            # add an end event
-            event_seq += [
-                {
-                    "type": "end",
-                    "timestamp": step["timestamp"],
-                    "label": "",
-                    # graphs don't change after this event
-                    "before_graph": curr_graph,
-                    "after_graph": curr_graph,
-                }
-            ]
-            batch_event_seq.append(event_seq)
-            updated_batch_graphs.append(curr_graph)
+        for step in batch_step:
+            batch_event_seq.append(
+                step.get("graph_events", []) + [{"type": "end", "label": ""}]
+            )
 
         max_event_seq_len = max(len(event_seq) for event_seq in batch_event_seq)
         batch_size = len(batch_step)
@@ -472,18 +283,12 @@ class TWCmdGenTemporalDataCollator:
         tgt_event_src_ids = torch.tensor([0] * batch_size)
         tgt_event_dst_ids = torch.tensor([0] * batch_size)
         tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
-        tgt_before_graphs = batch_graphs
         for seq_step_num in range(max_event_seq_len):
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
             batch_event_label_ids: List[int] = []
-            batch_event_timestamps: List[int] = []
-            batch_graph_data: List[TWCmdGenTemporalGraphData] = []
-            next_tgt_before_graphs: List[nx.DiGraph] = []
-            for (event_seq, tgt_before_graph) in zip(
-                batch_event_seq, tgt_before_graphs
-            ):
+            for event_seq in batch_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
                     event = event_seq[seq_step_num]
@@ -493,29 +298,11 @@ class TWCmdGenTemporalDataCollator:
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
                     batch_event_label_ids.append(self.label_id_map[event["label"]])
-                    batch_event_timestamps.append(event["timestamp"])
-                    tgt_after_graph = event["before_graph"]
-                    batch_graph_data.append(
-                        TWCmdGenTemporalGraphData.from_graph_event(
-                            tgt_before_graph, tgt_after_graph, self.label_id_map
-                        )
-                    )
-                    next_tgt_before_graphs.append(tgt_after_graph)
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
                     batch_event_label_ids.append(self.label_id_map[""])
-                    batch_event_timestamps.append(0)
-                    # we're done for this step for this batch item,
-                    # so keep the graph around for the next step
-                    tgt_graph = event_seq[-1]["after_graph"]
-                    batch_graph_data.append(
-                        TWCmdGenTemporalGraphData.from_graph_event(
-                            tgt_graph, tgt_graph, self.label_id_map
-                        )
-                    )
-                    next_tgt_before_graphs.append(tgt_graph)
             groundtruth_event_type_ids = torch.tensor(batch_event_type_ids)
             groundtruth_event_src_ids = torch.tensor(batch_event_src_ids)
             groundtruth_event_dst_ids = torch.tensor(batch_event_dst_ids)
@@ -525,16 +312,8 @@ class TWCmdGenTemporalDataCollator:
                 groundtruth_event_src_mask,
                 groundtruth_event_dst_mask,
             ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
-            graph_batch = Batch.from_data_list(batch_graph_data)
             collated.append(
                 TWCmdGenTemporalGraphicalInput(
-                    node_label_ids=graph_batch.x,
-                    node_memory_update_index=graph_batch.node_memory_update_index,
-                    node_memory_update_mask=graph_batch.node_memory_update_mask,
-                    edge_index=graph_batch.edge_index,
-                    edge_label_ids=graph_batch.edge_attr,
-                    edge_last_update=graph_batch.edge_last_update,
-                    batch=graph_batch.batch,
                     tgt_event_type_ids=tgt_event_type_ids,
                     tgt_event_src_ids=tgt_event_src_ids,
                     tgt_event_dst_ids=tgt_event_dst_ids,
@@ -555,9 +334,7 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_dst_ids = groundtruth_event_dst_ids
             tgt_event_label_ids = groundtruth_event_label_ids
 
-            # update the target before graphs
-            tgt_before_graphs = next_tgt_before_graphs
-        return collated, updated_batch_graphs
+        return collated
 
     def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
         """
@@ -610,12 +387,6 @@ class TWCmdGenTemporalDataCollator:
             )
         )
         """
-        batch_graphs = [
-            nx.DiGraph(
-                game=steps[0]["game"], walkthrough_step=steps[0]["walkthrough_step"]
-            )
-            for steps in batch
-        ]
         max_episode_len = max(len(episode) for episode in batch)
         collated_batch: List[
             Tuple[
@@ -624,7 +395,6 @@ class TWCmdGenTemporalDataCollator:
                 Tuple[Tuple[str, ...], ...],
             ]
         ] = []
-        updated_batch_graphs = batch_graphs
         for i in range(max_episode_len):
             batch_ith_step = [
                 episode[i] if i < len(episode) else {} for episode in batch
@@ -637,9 +407,7 @@ class TWCmdGenTemporalDataCollator:
                 [s_i.get("timestamp", 0) for s_i in batch_ith_step],
                 [len(s_i) > 0 for s_i in batch_ith_step],
             )
-            graph_events, updated_batch_graphs = self.collate_graphical_inputs(
-                updated_batch_graphs, batch_ith_step
-            )
+            graph_events = self.collate_graphical_inputs(batch_ith_step)
             cmds = tuple(
                 tuple(step.get("target_commands", [])) for step in batch_ith_step
             )

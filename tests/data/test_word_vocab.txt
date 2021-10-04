@@ -11,3 +11,6 @@ to
 of
 a
 in
+player
+inventory
+chopped

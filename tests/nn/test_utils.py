@@ -10,7 +10,10 @@ from dgu.nn.utils import (
     load_fasttext,
     find_indices,
     pad_batch_seq_of_seq,
+    get_edge_index_co_occurrence_matrix,
     index_edge_attr,
+    batchify_node_features,
+    calculate_node_id_offsets,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -20,7 +23,7 @@ from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
     "batched_input,batched_mask,expected",
     [
         (torch.rand(3, 0, 8), torch.ones(3, 0), torch.zeros(3, 8)),
-        (torch.rand(3, 0, 8), torch.zeros(3, 0), torch.zeros(3, 8)),
+        (torch.rand(3, 0, 8), torch.zeros(3, 0).bool(), torch.zeros(3, 8)),
         (torch.rand(3, 1, 8), torch.zeros(3, 1), torch.zeros(3, 8)),
         (
             torch.tensor(
@@ -66,6 +69,16 @@ def test_masked_mean(batched_input, batched_mask, expected):
         (
             torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
             torch.zeros(3, 3),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor(
+                [[True, True, False], [False, True, True], [True, True, True]]
+            ),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3).bool(),
         ),
     ],
 )
@@ -376,3 +389,181 @@ def test_pad_batch_seq_of_seq(
 )
 def test_index_edge_attr(edge_index, edge_attr, indices, expected):
     assert index_edge_attr(edge_index, edge_attr, indices).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "edge_index_a,edge_index_b,expected",
+    [
+        (torch.empty(2, 0).long(), torch.empty(2, 0).long(), torch.empty(0, 0).bool()),
+        (
+            torch.tensor([[0], [3]]),
+            torch.tensor([[0], [3]]),
+            torch.tensor([[True]]),
+        ),
+        (
+            torch.tensor([[0], [3]]),
+            torch.tensor([[0], [2]]),
+            torch.tensor([[False]]),
+        ),
+        (
+            torch.tensor([[0, 1, 3], [3, 2, 5]]),
+            torch.tensor([[0, 3], [4, 5]]),
+            torch.tensor([[False, False], [False, False], [False, True]]),
+        ),
+    ],
+)
+def test_get_edge_index_co_occurrence_matrix(edge_index_a, edge_index_b, expected):
+    assert get_edge_index_co_occurrence_matrix(edge_index_a, edge_index_b).equal(
+        expected
+    )
+
+
+@pytest.mark.parametrize(
+    "node_features,batch,batch_size,expected_batch_node_features,"
+    "expected_batch_node_mask",
+    [
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([0, 1, 1, 2, 2, 2]),
+            3,
+            torch.tensor(
+                [
+                    [[2] * 4, [0] * 4, [0] * 4],
+                    [[3] * 4, [4] * 4, [0] * 4],
+                    [[5] * 4, [6] * 4, [7] * 4],
+                ]
+            ).float(),
+            torch.tensor([[True, False, False], [True, True, False], [True] * 3]),
+        ),
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([0, 0, 0, 1, 2, 2]),
+            3,
+            torch.tensor(
+                [
+                    [[2] * 4, [3] * 4, [4] * 4],
+                    [[5] * 4, [0] * 4, [0] * 4],
+                    [[6] * 4, [7] * 4, [0] * 4],
+                ]
+            ).float(),
+            torch.tensor([[True] * 3, [True, False, False], [True, True, False]]),
+        ),
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([0, 0, 1, 1, 1, 1]),
+            4,
+            torch.tensor(
+                [
+                    [[2] * 4, [3] * 4, [0] * 4, [0] * 4],
+                    [[4] * 4, [5] * 4, [6] * 4, [7] * 4],
+                    [[0] * 4, [0] * 4, [0] * 4, [0] * 4],
+                    [[0] * 4, [0] * 4, [0] * 4, [0] * 4],
+                ]
+            ).float(),
+            torch.tensor(
+                [[True, True, False, False], [True] * 4, [False] * 4, [False] * 4]
+            ),
+        ),
+        (
+            torch.tensor(
+                [[2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4]
+            ).float(),
+            torch.tensor([1, 1, 1, 1, 2, 2]),
+            4,
+            torch.tensor(
+                [
+                    [[0] * 4, [0] * 4, [0] * 4, [0] * 4],
+                    [[2] * 4, [3] * 4, [4] * 4, [5] * 4],
+                    [[6] * 4, [7] * 4, [0] * 4, [0] * 4],
+                    [[0] * 4, [0] * 4, [0] * 4, [0] * 4],
+                ]
+            ).float(),
+            torch.tensor(
+                [
+                    [False] * 4,
+                    [True, True, True, True],
+                    [True, True, False, False],
+                    [False] * 4,
+                ]
+            ),
+        ),
+        (
+            torch.empty(0, 4),
+            torch.empty(0).long(),
+            4,
+            torch.zeros(4, 0, 4),
+            torch.zeros(4, 0).bool(),
+        ),
+        (
+            torch.tensor([2, 3, 4, 5, 6, 7]),
+            torch.tensor([0, 1, 1, 2, 2, 2]),
+            3,
+            torch.tensor([[2, 0, 0], [3, 4, 0], [5, 6, 7]]),
+            torch.tensor([[True, False, False], [True, True, False], [True] * 3]),
+        ),
+        (
+            torch.tensor([2, 3, 4, 5, 6, 7]),
+            torch.tensor([0, 0, 0, 1, 2, 2]),
+            3,
+            torch.tensor([[2, 3, 4], [5, 0, 0], [6, 7, 0]]),
+            torch.tensor([[True] * 3, [True, False, False], [True, True, False]]),
+        ),
+        (
+            torch.tensor([2, 3, 4, 5, 6, 7]),
+            torch.tensor([0, 0, 1, 1, 1, 1]),
+            4,
+            torch.tensor([[2, 3, 0, 0], [4, 5, 6, 7], [0, 0, 0, 0], [0, 0, 0, 0]]),
+            torch.tensor(
+                [[True, True, False, False], [True] * 4, [False] * 4, [False] * 4]
+            ),
+        ),
+        (
+            torch.tensor([2, 3, 4, 5, 6, 7]),
+            torch.tensor([1, 1, 1, 1, 2, 2]),
+            4,
+            torch.tensor([[0, 0, 0, 0], [2, 3, 4, 5], [6, 7, 0, 0], [0, 0, 0, 0]]),
+            torch.tensor(
+                [[False] * 4, [True] * 4, [True, True, False, False], [False] * 4]
+            ),
+        ),
+        (
+            torch.empty(0).long(),
+            torch.empty(0).long(),
+            4,
+            torch.zeros(4, 0).long(),
+            torch.zeros(4, 0).bool(),
+        ),
+    ],
+)
+def test_batchify_node_features(
+    node_features,
+    batch,
+    batch_size,
+    expected_batch_node_features,
+    expected_batch_node_mask,
+):
+    batch_node_features, batch_node_mask = batchify_node_features(
+        node_features, batch, batch_size
+    )
+    assert batch_node_features.equal(expected_batch_node_features)
+    assert batch_node_mask.equal(expected_batch_node_mask)
+
+
+@pytest.mark.parametrize(
+    "batch_size,batch,expected",
+    [
+        (1, torch.empty(0).long(), torch.tensor([0])),
+        (1, torch.tensor([0, 0, 0]), torch.tensor([0])),
+        (3, torch.tensor([0, 1, 1, 2, 2, 2]), torch.tensor([0, 1, 3])),
+        (5, torch.tensor([0, 2, 2, 3, 3, 3]), torch.tensor([0, 1, 1, 3, 6])),
+    ],
+)
+def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
+    node_id_offsets = calculate_node_id_offsets(batch_size, batch)
+    assert node_id_offsets.equal(expected)
