@@ -12,6 +12,7 @@ from dgu.nn.utils import (
     index_edge_attr,
     get_edge_index_co_occurrence_matrix,
     batchify_node_features,
+    calculate_node_id_offsets,
 )
 
 
@@ -396,22 +397,6 @@ class TemporalGraphNetwork(nn.Module):
         )
 
     @staticmethod
-    def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
-        """
-        Calculate the node id offsets for turning subgraph node IDs into a batched
-        graph node IDs.
-
-        batch_size: scalar
-        batch: (num_node)
-
-        output: (batch_size)
-        """
-        subgraph_size_cumsum = batch.bincount().cumsum(0)
-        return F.pad(
-            subgraph_size_cumsum, (1, batch_size - subgraph_size_cumsum.size(0) - 1)
-        )
-
-    @staticmethod
     def update_node_features(
         node_features: torch.Tensor,
         batch: torch.Tensor,
@@ -490,7 +475,7 @@ class TemporalGraphNetwork(nn.Module):
         )
         """
         # translate src_ids and dst_ids to batched versions
-        node_id_offsets = self.calculate_node_id_offsets(
+        node_id_offsets = calculate_node_id_offsets(
             event_type_ids.size(0), batched_graph.batch
         )
         # (batch)
@@ -556,7 +541,7 @@ class TemporalGraphNetwork(nn.Module):
         edge_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
         # (batch)
         # filter out duplicated added edges
-        new_node_id_offsets = self.calculate_node_id_offsets(
+        new_node_id_offsets = calculate_node_id_offsets(
             event_type_ids.size(0), new_batch
         )
         # (batch)

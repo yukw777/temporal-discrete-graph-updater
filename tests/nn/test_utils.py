@@ -13,6 +13,7 @@ from dgu.nn.utils import (
     get_edge_index_co_occurrence_matrix,
     index_edge_attr,
     batchify_node_features,
+    calculate_node_id_offsets,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -552,3 +553,17 @@ def test_batchify_node_features(
     )
     assert batch_node_features.equal(expected_batch_node_features)
     assert batch_node_mask.equal(expected_batch_node_mask)
+
+
+@pytest.mark.parametrize(
+    "batch_size,batch,expected",
+    [
+        (1, torch.empty(0).long(), torch.tensor([0])),
+        (1, torch.tensor([0, 0, 0]), torch.tensor([0])),
+        (3, torch.tensor([0, 1, 1, 2, 2, 2]), torch.tensor([0, 1, 3])),
+        (5, torch.tensor([0, 2, 2, 3, 3, 3]), torch.tensor([0, 1, 1, 3, 6])),
+    ],
+)
+def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
+    node_id_offsets = calculate_node_id_offsets(batch_size, batch)
+    assert node_id_offsets.equal(expected)

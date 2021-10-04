@@ -15,7 +15,12 @@ from torch_geometric.data import Batch
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
-from dgu.nn.utils import masked_mean, load_fasttext, batchify_node_features
+from dgu.nn.utils import (
+    masked_mean,
+    load_fasttext,
+    batchify_node_features,
+    calculate_node_id_offsets,
+)
 from dgu.nn.graph_event_decoder import (
     StaticLabelGraphEventDecoder,
     RNNGraphEventDecoder,
@@ -818,6 +823,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                         src_ids,
                         dst_ids,
                         results["updated_batched_graph"].batch,
+                        results["updated_batched_graph"].edge_index,
                     )
                     for results, src_ids, dst_ids in zip(
                         tf_results_list, tf_src_id_seq, tf_dst_id_seq
@@ -1075,6 +1081,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 decoded_src_ids,
                 decoded_dst_ids,
                 results["updated_batched_graph"].batch,
+                results["updated_batched_graph"].edge_index,
             )
             # (batch)
 
@@ -1120,15 +1127,25 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
         batch: torch.Tensor,
+        edge_index: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Filter out invalid events, e.g. deleting a non-existent node by setting them
-        to pad events.
+        Filter out invalid events by setting them to pad events.
+
+        node-add: all are valid
+        node-delete:
+            - nodes should exist
+            - nodes cannot have edges
+        edge-add:
+            - nodes should exist
+        edge-delete:
+            - nodes should exist
 
         event_type_ids: (batch)
         src_ids: (batch)
         dst_ids: (batch)
         batch: (num_node)
+        edge_index: (2, num_edge)
 
         output: filtered event_type_ids (batch)
         """
@@ -1143,18 +1160,23 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch)
         invalid_dst_mask = dst_ids >= subgraph_num_node
         # (batch)
-        self_loop_mask = src_ids == dst_ids
+
+        # node-delete
+        node_id_offsets = calculate_node_id_offsets(event_type_ids.size(0), batch)
         # (batch)
-        invalid_edge_mask = invalid_src_mask.logical_or(invalid_dst_mask).logical_or(
-            self_loop_mask
+        batch_src_ids = src_ids + node_id_offsets
+        # (batch)
+        nodes_with_edges = torch.any(
+            batch_src_ids.unsqueeze(-1) == edge_index.flatten(), dim=1
         )
         # (batch)
-
-        invalid_node_delete_event_mask = invalid_src_mask.logical_and(
-            event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
-        )
+        invalid_node_delete_event_mask = invalid_src_mask.logical_or(
+            nodes_with_edges
+        ).logical_and(event_type_ids == EVENT_TYPE_ID_MAP["node-delete"])
         # (batch)
 
+        invalid_edge_mask = invalid_src_mask.logical_or(invalid_dst_mask)
+        # (batch)
         invalid_edge_add_event_mask = invalid_edge_mask.logical_and(
             event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
         )

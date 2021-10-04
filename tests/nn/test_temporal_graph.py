@@ -654,20 +654,6 @@ class MockRNN(nn.Module):
 
 
 @pytest.mark.parametrize(
-    "batch_size,batch,expected",
-    [
-        (1, torch.empty(0).long(), torch.tensor([0])),
-        (1, torch.tensor([0, 0, 0]), torch.tensor([0])),
-        (3, torch.tensor([0, 1, 1, 2, 2, 2]), torch.tensor([0, 1, 3])),
-        (5, torch.tensor([0, 2, 2, 3, 3, 3]), torch.tensor([0, 1, 1, 3, 6])),
-    ],
-)
-def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
-    node_id_offsets = TemporalGraphNetwork.calculate_node_id_offsets(batch_size, batch)
-    assert node_id_offsets.equal(expected)
-
-
-@pytest.mark.parametrize(
     "batched_graphs,memory,event_type_ids,event_src_ids,event_dst_ids,event_embeddings,"
     "event_timestamps,expected_updated_batched_graph,expected_updated_memory",
     [

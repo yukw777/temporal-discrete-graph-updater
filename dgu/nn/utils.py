@@ -227,3 +227,19 @@ def batchify_node_features(
         batch_first=True,
     )
     return batch_node_features, batch_node_mask
+
+
+def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
+    """
+    Calculate the node id offsets for turning subgraph node IDs into a batched
+    graph node IDs.
+
+    batch_size: scalar
+    batch: (num_node)
+
+    output: (batch_size)
+    """
+    subgraph_size_cumsum = batch.bincount().cumsum(0)
+    return F.pad(
+        subgraph_size_cumsum, (1, batch_size - subgraph_size_cumsum.size(0) - 1)
+    )
