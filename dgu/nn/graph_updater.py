@@ -741,18 +741,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # id = (game|walkthrough_step|timestamp)
         table_data: List[Tuple[str, ...]] = []
 
-        tf_batched_graph: Optional[Batch] = None
-        tf_memory: Optional[torch.Tensor] = None
-        gd_batched_graph: Optional[Batch] = None
-        gd_memory: Optional[torch.Tensor] = None
+        batched_graph: Optional[Batch] = None
+        memory: Optional[torch.Tensor] = None
         losses: List[torch.Tensor] = []
         for step_input, graphical_input_seq, step_groundtruth_cmds in batch.data:
             # calculate losses from teacher forcing
             tf_results_list = self.teacher_force(
                 step_input,
                 graphical_input_seq,
-                batched_graph=tf_batched_graph,
-                memory=tf_memory,
+                batched_graph=batched_graph,
+                memory=memory,
             )
             losses.extend(
                 self.calculate_loss(
@@ -872,7 +870,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
             # greedy decoding
             gd_results_list = self.greedy_decode(
-                step_input, batched_graph=gd_batched_graph, memory=gd_memory
+                step_input,
+                batched_graph=batched_graph,
+                memory=None if memory is None else memory.clone(),
             )
 
             # calculate graph tuples from greedy decoded graph events
@@ -920,17 +920,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
             )
 
-            # update teacher forcing memory for the next step
-            tf_memory = tf_results_list[-1]["updated_memory"]
+            # update memory for the next step
+            memory = tf_results_list[-1]["updated_memory"]
 
-            # update greedy decode graphs for the next step
-            tf_batched_graph = tf_results_list[-1]["updated_batched_graph"]
-
-            # update greedy decode memory for the next step
-            gd_memory = gd_results_list[-1]["updated_memory"]
-
-            # update greedy decode graphs for the next step
-            gd_batched_graph = gd_results_list[-1]["updated_batched_graph"]
+            # update batched graph for the next step
+            batched_graph = tf_results_list[-1]["updated_batched_graph"]
 
         loss = torch.stack(losses).mean()
         self.log(log_prefix + "_loss", loss, prog_bar=True)
