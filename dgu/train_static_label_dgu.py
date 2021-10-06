@@ -2,7 +2,7 @@ import hydra
 import pytorch_lightning as pl
 
 from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate
+from hydra.utils import instantiate, to_absolute_path
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 
@@ -41,6 +41,14 @@ def main(cfg: DictConfig) -> None:
         node_vocab_path=cfg.data_module.node_vocab_path,
         relation_vocab_path=cfg.data_module.relation_vocab_path,
     )
+
+    if cfg.test_only:
+        trainer.test(
+            model=lm,
+            ckpt_path=to_absolute_path(cfg.trainer.resume_from_checkpoint),
+            datamodule=dm,
+        )
+        return
 
     # fit
     trainer.fit(lm, datamodule=dm)
