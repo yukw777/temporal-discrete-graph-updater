@@ -965,7 +965,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "Generated Graph Triplets Test")
+            self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
 
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
