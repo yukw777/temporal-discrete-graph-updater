@@ -100,9 +100,9 @@ def test_masked_softmax(batched_input, batched_mask):
                     ]
                 ]
             ),
-            torch.tensor([[1.0, 1.0, 0.0]]),
-            torch.zeros(1, 3),
-            torch.zeros(1, 3),
+            torch.tensor([[True, True, False]]),
+            torch.zeros(1, 3).bool(),
+            torch.zeros(1, 3).bool(),
         ),
         (
             torch.tensor(
@@ -113,9 +113,9 @@ def test_masked_softmax(batched_input, batched_mask):
                     ]
                 ]
             ),
-            torch.ones(1, 2),
-            torch.tensor([[0.0, 1.0]]),
-            torch.zeros(1, 2),
+            torch.ones(1, 2).bool(),
+            torch.tensor([[False, True]]),
+            torch.zeros(1, 2).bool(),
         ),
         (
             torch.tensor(
@@ -126,9 +126,9 @@ def test_masked_softmax(batched_input, batched_mask):
                     ]
                 ]
             ),
-            torch.ones(1, 2),
-            torch.ones(1, 2),
-            torch.ones(1, 2),
+            torch.ones(1, 2).bool(),
+            torch.ones(1, 2).bool(),
+            torch.ones(1, 2).bool(),
         ),
         (
             torch.tensor(
@@ -142,9 +142,9 @@ def test_masked_softmax(batched_input, batched_mask):
                     ]
                 ]
             ),
-            torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0]]),
-            torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0]]),
-            torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0]]),
+            torch.ones(1, 5).bool(),
+            torch.tensor([[False, False, True, True, True]]),
+            torch.tensor([[False, False, True, True, False]]),
         ),
         (
             torch.tensor(
@@ -165,9 +165,13 @@ def test_masked_softmax(batched_input, batched_mask):
                     ],
                 ]
             ),
-            torch.tensor([[1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 1.0]]),
-            torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0], [0.0, 1.0, 1.0, 1.0, 0.0]]),
-            torch.tensor([[0.0, 0.0, 1.0, 1.0, 0.0], [0.0, 1.0, 1.0, 0.0, 0.0]]),
+            torch.ones(2, 5).bool(),
+            torch.tensor(
+                [[False, False, True, True, True], [False, True, True, True, False]]
+            ),
+            torch.tensor(
+                [[False, False, True, True, False], [False, True, True, False, False]]
+            ),
         ),
     ],
 )

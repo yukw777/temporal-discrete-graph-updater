@@ -44,7 +44,7 @@ def compute_masks_from_event_type_ids(
     event_type_ids: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Compute three masks from the given event type ids tensor.
+    Compute three boolean masks from the given event type ids tensor.
     1. event mask: masks out pad event.
     2. source mask: masks out special events, as well as node-add
         as it is adding a new node.
@@ -66,11 +66,11 @@ def compute_masks_from_event_type_ids(
     )
     # (batch, event_seq_len)
 
-    event_mask = torch.logical_not(is_pad_event).float()
+    event_mask = torch.logical_not(is_pad_event)
     # (batch, event_seq_len)
-    src_mask = torch.logical_or(is_node_delete, is_edge_event).float()
+    src_mask = torch.logical_or(is_node_delete, is_edge_event)
     # (batch, event_seq_len)
-    dst_mask = is_edge_event.float()
+    dst_mask = is_edge_event
     # (batch, event_seq_len)
 
     return event_mask, src_mask, dst_mask
