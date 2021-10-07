@@ -257,11 +257,11 @@ class TWCmdGenTemporalDataCollator:
             timestamps=torch.tensor(timestamps, dtype=torch.float),
         )
 
-    def collate_graphical_inputs(
-        self, batch_step: List[Dict[str, Any]]
-    ) -> List[TWCmdGenTemporalGraphicalInput]:
+    def collate_graphical_input_seq(
+        self, batch: List[Dict[str, Any]]
+    ) -> Tuple[TWCmdGenTemporalGraphicalInput, ...]:
         """
-        Collate the graphical inputs of the given batch.
+        Collate the graphical input sequence of the given batch.
 
         output: len([TWCmdGenTemporalGraphicalInput(
             tgt_event_type_ids: (batch),
@@ -270,22 +270,22 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_label_ids: (batch),
             groundtruth_event_type_ids: (batch),
             groundtruth_event_src_ids: (batch),
-            groundtruth_event_src_mask: (batch),
+            groundtruth_event_src_mask: (batch), boolean
             groundtruth_event_dst_ids: (batch),
-            groundtruth_event_dst_mask: (batch),
+            groundtruth_event_dst_mask: (batch), boolean
             groundtruth_event_label_ids: (batch),
-            groundtruth_event_mask: (batch),
+            groundtruth_event_mask: (batch), boolean
         ), ...]) = event_seq_len
         """
         batch_event_seq: List[List[Dict[str, Any]]] = []
         collated: List[TWCmdGenTemporalGraphicalInput] = []
-        for step in batch_step:
+        for step in batch:
             batch_event_seq.append(
-                step.get("graph_events", []) + [{"type": "end", "label": ""}]
+                step["graph_events"] + [{"type": "end", "label": ""}]
             )
 
         max_event_seq_len = max(len(event_seq) for event_seq in batch_event_seq)
-        batch_size = len(batch_step)
+        batch_size = len(batch)
 
         # left shifted target events
         tgt_event_type_ids = torch.tensor([EVENT_TYPE_ID_MAP["start"]] * batch_size)
@@ -343,7 +343,7 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_dst_ids = groundtruth_event_dst_ids
             tgt_event_label_ids = groundtruth_event_label_ids
 
-        return collated
+        return tuple(collated)
 
     def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
         """
