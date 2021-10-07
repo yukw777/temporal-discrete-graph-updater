@@ -31,6 +31,9 @@ class TWCmdGenTemporalDataset(Dataset):
             "graph_events": [graph events, ...],
             "prev_graph_events": [prev graph events, ...],
         }
+
+    See dgu.graph for details on the graph event format. Note that graph events
+    under prev_graph_events contain timestamp information too.
     """
 
     def __init__(self, path: str) -> None:
@@ -73,6 +76,9 @@ class TWCmdGenTemporalDataset(Dataset):
                 # last step so break
                 break
             else:
+                # set the timestamps and add them to prev_graph_events
+                for event in graph_events:
+                    event["timestamp"] = timestamp
                 prev_graph_events.extend(graph_events)
         return {
             "game": game,
