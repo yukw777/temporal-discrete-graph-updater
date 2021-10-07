@@ -117,7 +117,6 @@ class TWCmdGenTemporalStepInput:
     prev_action_word_ids: torch.Tensor = field(default_factory=empty_tensor)
     prev_action_mask: torch.Tensor = field(default_factory=empty_tensor)
     timestamps: torch.Tensor = field(default_factory=empty_tensor)
-    mask: torch.Tensor = field(default_factory=empty_tensor)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalStepInput):
@@ -229,7 +228,6 @@ class TWCmdGenTemporalDataCollator:
         obs: List[str],
         prev_actions: List[str],
         timestamps: List[int],
-        mask: List[bool],
     ) -> TWCmdGenTemporalStepInput:
         """
         Collate step data such as observation, previous action and timestamp.
@@ -240,7 +238,6 @@ class TWCmdGenTemporalDataCollator:
             prev_action_word_ids: (batch, prev_action_len),
             prev_action_mask: (batch, prev_action_len),
             timestamps: (batch)
-            mask: (batch)
         )
         """
         # textual observation
@@ -258,7 +255,6 @@ class TWCmdGenTemporalDataCollator:
             prev_action_word_ids=prev_action_word_ids,
             prev_action_mask=prev_action_mask,
             timestamps=torch.tensor(timestamps, dtype=torch.float),
-            mask=torch.tensor(mask),
         )
 
     def collate_graphical_inputs(

@@ -58,13 +58,12 @@ def test_tw_cmd_gen_dataset_init():
 
 
 @pytest.mark.parametrize(
-    "obs,prev_actions,timestamps,mask,expected",
+    "obs,prev_actions,timestamps,expected",
     [
         (
             ["you are hungry ! let 's cook a delicious meal ."],
             ["drop knife"],
             [2],
-            [True],
             TWCmdGenTemporalStepInput(
                 obs_word_ids=torch.tensor(
                     [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
@@ -73,7 +72,6 @@ def test_tw_cmd_gen_dataset_init():
                 prev_action_word_ids=torch.tensor([[257, 404]]),
                 prev_action_mask=torch.ones(1, 2),
                 timestamps=torch.tensor([2.0]),
-                mask=torch.tensor([True]),
             ),
         ),
         (
@@ -83,7 +81,6 @@ def test_tw_cmd_gen_dataset_init():
             ],
             ["drop knife", "take knife from table"],
             [2, 3],
-            [True, True],
             TWCmdGenTemporalStepInput(
                 obs_word_ids=torch.tensor(
                     [
@@ -104,43 +101,15 @@ def test_tw_cmd_gen_dataset_init():
                     [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
                 ),
                 timestamps=torch.tensor([2.0, 3.0]),
-                mask=torch.tensor([True, True]),
-            ),
-        ),
-        (
-            [
-                "you are hungry ! let 's cook a delicious meal .",
-                "<bos> <eos>",
-            ],
-            ["drop knife", "<bos> <eos>"],
-            [2, 3],
-            [True, False],
-            TWCmdGenTemporalStepInput(
-                obs_word_ids=torch.tensor(
-                    [
-                        [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                        [2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    ]
-                ),
-                obs_mask=torch.tensor(
-                    [
-                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                        [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    ]
-                ),
-                prev_action_word_ids=torch.tensor([[257, 404], [2, 3]]),
-                prev_action_mask=torch.tensor([[1.0, 1.0], [1.0, 1.0]]),
-                timestamps=torch.tensor([2.0, 3.0]),
-                mask=torch.tensor([True, False]),
             ),
         ),
     ],
 )
 def test_tw_cmd_gen_collator_collate_step_inputs(
-    tw_cmd_gen_collator, obs, prev_actions, timestamps, mask, expected
+    tw_cmd_gen_collator, obs, prev_actions, timestamps, expected
 ):
     assert (
-        tw_cmd_gen_collator.collate_step_inputs(obs, prev_actions, timestamps, mask)
+        tw_cmd_gen_collator.collate_step_inputs(obs, prev_actions, timestamps)
         == expected
     )
 
