@@ -22,10 +22,10 @@ model:
   _target_: dgu.nn.graph_updater.StaticLabelDiscreteGraphUpdater
   hidden_dim: 64
   word_emb_dim: 300
-  tgn_event_type_emb_dim: 64
-  tgn_memory_dim: 64
-  tgn_time_enc_dim: 64
-  tgn_num_gnn_block: 6
+  tgn_event_type_emb_dim: 16
+  tgn_memory_dim: 16
+  tgn_time_enc_dim: 16
+  tgn_num_gnn_block: 1
   tgn_num_gnn_head: 1
   text_encoder_num_blocks: 1
   text_encoder_num_conv_layers: 5
