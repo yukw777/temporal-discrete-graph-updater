@@ -20,18 +20,17 @@ class TWCmdGenTemporalDataset(Dataset):
     TextWorld Command Generation temporal graph event dataset.
 
     Each data point contains the following information:
-        [
-            {
-                "game": "game name",
-                "walkthrough_step": walkthrough step,
-                "observation": "observation...",
-                "previous_action": "previous action...",
-                "timestamp": timestamp,
-                "target_commands": [graph commands, ...],
-                "graph_events": [graph events, ...],
-            },
-            ...
-        ]
+        {
+            "game": "game name",
+            "walkthrough_step": walkthrough step,
+            "random_step": random step,
+            "observation": "observation...",
+            "previous_action": "previous action...",
+            "timestamp": timestamp,
+            "target_commands": [graph commands, ...],
+            "graph_events": [graph events, ...],
+            "prev_graph_events": [prev graph events, ...],
+        }
     """
 
     def __init__(self, path: str) -> None:
@@ -42,10 +41,12 @@ class TWCmdGenTemporalDataset(Dataset):
         self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
             list
         )
+        self.idx_map: List[Tuple[str, int, int]] = []
 
         for example in raw_data["examples"]:
             game = example["game"]
             walkthrough_step, random_step = example["step"]
+            self.idx_map.append((game, walkthrough_step, random_step))
             if random_step == 0:
                 # walkthrough example
                 self.walkthrough_examples[(game, walkthrough_step)] = example
@@ -54,34 +55,39 @@ class TWCmdGenTemporalDataset(Dataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __getitem__(self, idx: int) -> List[Dict[str, Any]]:
-        game, walkthrough_step = self.walkthrough_example_ids[idx]
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        game, walkthrough_step, random_step = self.idx_map[idx]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
-        random_examples = self.random_examples[(game, walkthrough_step)]
-        data: List[Dict[str, Any]] = []
+        random_examples = self.random_examples[(game, walkthrough_step)][:random_step]
+        game_steps = walkthrough_examples + random_examples
+        prev_graph_events: List[Dict[str, Any]] = []
         graph = nx.DiGraph()
-        for timestamp, example in enumerate(walkthrough_examples + random_examples):
+        for timestamp, example in enumerate(game_steps):
             graph_events: List[Dict[str, Any]] = []
             for cmd in example["target_commands"]:
                 sub_event_seq, graph = process_triplet_cmd(graph, timestamp, cmd)
                 graph_events.extend(sub_event_seq)
-            data.append(
-                {
-                    "game": game,
-                    "walkthrough_step": walkthrough_step,
-                    "observation": example["observation"],
-                    "previous_action": example["previous_action"],
-                    "timestamp": timestamp,
-                    "target_commands": example["target_commands"],
-                    "graph_events": graph_events,
-                }
-            )
-        return data
+            if timestamp == len(game_steps) - 1:
+                # last step so break
+                break
+            else:
+                prev_graph_events.extend(graph_events)
+        return {
+            "game": game,
+            "walkthrough_step": walkthrough_step,
+            "random_step": random_step,
+            "observation": example["observation"],
+            "previous_action": example["previous_action"],
+            "timestamp": timestamp,
+            "target_commands": example["target_commands"],
+            "graph_events": graph_events,
+            "prev_graph_events": prev_graph_events,
+        }
 
     def __len__(self) -> int:
-        return len(self.walkthrough_example_ids)
+        return len(self.idx_map)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalDataset):
@@ -90,6 +96,7 @@ class TWCmdGenTemporalDataset(Dataset):
             self.walkthrough_examples == o.walkthrough_examples
             and self.walkthrough_example_ids == o.walkthrough_example_ids
             and self.random_examples == o.random_examples
+            and self.idx_map == o.idx_map
         )
 
 
