@@ -69,9 +69,9 @@ def test_tw_cmd_gen_dataset_init():
                 obs_word_ids=torch.tensor(
                     [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                 ),
-                obs_mask=torch.ones(1, 11),
+                obs_mask=torch.ones(1, 11).bool(),
                 prev_action_word_ids=torch.tensor([[257, 404]]),
-                prev_action_mask=torch.ones(1, 2),
+                prev_action_mask=torch.ones(1, 2).bool(),
                 timestamps=torch.tensor([2.0]),
             ),
         ),
@@ -89,18 +89,11 @@ def test_tw_cmd_gen_dataset_init():
                         [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
                     ]
                 ),
-                obs_mask=torch.tensor(
-                    [
-                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
-                    ]
-                ),
+                obs_mask=torch.tensor([[True] * 11, [True] * 8 + [False] * 3]),
                 prev_action_word_ids=torch.tensor(
                     [[257, 404, 0, 0], [663, 404, 315, 661]]
                 ),
-                prev_action_mask=torch.tensor(
-                    [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
-                ),
+                prev_action_mask=torch.tensor([[True, True, False, False], [True] * 4]),
                 timestamps=torch.tensor([2.0, 3.0]),
             ),
         ),
@@ -1019,9 +1012,9 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     obs_word_ids=torch.tensor(
                         [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                     ),
-                    obs_mask=torch.ones(1, 11),
+                    obs_mask=torch.ones(1, 11).bool(),
                     prev_action_word_ids=torch.tensor([[257, 404]]),
-                    prev_action_mask=torch.ones(1, 2),
+                    prev_action_mask=torch.ones(1, 2).bool(),
                     timestamps=torch.tensor([2.0]),
                 ),
                 graphical_input_seq=(
@@ -1163,9 +1156,9 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     obs_word_ids=torch.tensor(
                         [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                     ),
-                    obs_mask=torch.ones(1, 11),
+                    obs_mask=torch.ones(1, 11).bool(),
                     prev_action_word_ids=torch.tensor([[257, 404]]),
-                    prev_action_mask=torch.ones(1, 2),
+                    prev_action_mask=torch.ones(1, 2).bool(),
                     timestamps=torch.tensor([9.0]),
                 ),
                 graphical_input_seq=(
@@ -1419,41 +1412,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                             [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
                         ]
                     ),
-                    obs_mask=torch.tensor(
-                        [
-                            [
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                            ],
-                            [
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                1.0,
-                                0.0,
-                                0.0,
-                                0.0,
-                            ],
-                        ]
-                    ),
+                    obs_mask=torch.tensor([[True] * 11, [True] * 8 + [False] * 3]),
                     prev_action_word_ids=torch.tensor(
                         [[257, 404, 0, 0], [663, 404, 315, 661]]
                     ),
                     prev_action_mask=torch.tensor(
-                        [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
+                        [[True, True, False, False], [True] * 4]
                     ),
                     timestamps=torch.tensor([6.0, 9.0]),
                 ),

@@ -53,7 +53,7 @@ class SpacyPreprocessor:
                     for word_ids in unpadded_batch
                 ],
                 device=device,
-                dtype=torch.float,
+                dtype=torch.bool,
             ),
         )
 

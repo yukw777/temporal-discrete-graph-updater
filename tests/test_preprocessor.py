@@ -10,17 +10,17 @@ from dgu.preprocessor import SpacyPreprocessor
         (
             ["My name is Peter"],
             torch.tensor([[2, 3, 4, 5]]),
-            torch.tensor([[1, 1, 1, 1]]).float(),
+            torch.tensor([[True] * 4]),
         ),
         (
             ["my name is peter"],
             torch.tensor([[2, 3, 4, 5]]),
-            torch.tensor([[1, 1, 1, 1]]).float(),
+            torch.tensor([[True] * 4]),
         ),
         (
             ["My name is Peter", "Is my name David?"],
             torch.tensor([[2, 3, 4, 5, 0], [4, 2, 3, 1, 1]]),
-            torch.tensor([[1, 1, 1, 1, 0], [1, 1, 1, 1, 1]]).float(),
+            torch.tensor([[True, True, True, True, False], [True] * 5]),
         ),
     ],
 )
@@ -136,17 +136,17 @@ def test_spacy_preprocessor_clean(raw_str, cleaned, batch_size):
         (
             ["$$$$$$$ My name is Peter"],
             torch.tensor([[2, 3, 4, 5]]),
-            torch.tensor([[1, 1, 1, 1]]).float(),
+            torch.tensor([[True] * 4]),
         ),
         (
             ["my   name     is  peter"],
             torch.tensor([[2, 3, 4, 5]]),
-            torch.tensor([[1, 1, 1, 1]]).float(),
+            torch.tensor([[True] * 4]),
         ),
         (
             ["My    name\n is Peter", "$$$$$$$Is   my name \n\nDavid?"],
             torch.tensor([[2, 3, 4, 5, 0], [4, 2, 3, 1, 1]]),
-            torch.tensor([[1, 1, 1, 1, 0], [1, 1, 1, 1, 1]]).float(),
+            torch.tensor([[True, True, True, True, False], [True] * 5]),
         ),
     ],
 )
