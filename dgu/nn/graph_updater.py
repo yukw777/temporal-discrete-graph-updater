@@ -167,7 +167,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             4 * hidden_dim, graph_event_decoder_hidden_dim, event_decoder
         )
 
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.criterion = nn.CrossEntropyLoss()
 
         self.event_type_f1 = torchmetrics.F1(ignore_index=EVENT_TYPE_ID_MAP["pad"])
         self.src_node_f1 = torchmetrics.F1()
@@ -512,26 +512,26 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         output: (batch)
         """
         # event type loss
-        loss = torch.sum(
-            self.criterion(event_type_logits, groundtruth_event_type_ids)
-            * groundtruth_event_mask
+        loss = self.criterion(
+            event_type_logits[groundtruth_event_mask],
+            groundtruth_event_type_ids[groundtruth_event_mask],
         )
         if groundtruth_event_dst_mask.any():
             # source node loss
-            loss += torch.sum(
-                self.criterion(event_src_logits, groundtruth_event_src_ids)
-                * groundtruth_event_src_mask
+            loss += self.criterion(
+                event_src_logits[groundtruth_event_src_mask],
+                groundtruth_event_src_ids[groundtruth_event_src_mask],
             )
         if groundtruth_event_dst_mask.any():
             # destination node loss
-            loss += torch.sum(
-                self.criterion(event_dst_logits, groundtruth_event_dst_ids)
-                * groundtruth_event_dst_mask
+            loss += self.criterion(
+                event_dst_logits[groundtruth_event_dst_mask],
+                groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
         # label loss
-        loss += torch.sum(
-            self.criterion(event_label_logits, groundtruth_event_label_ids)
-            * groundtruth_event_mask
+        loss += self.criterion(
+            event_label_logits[groundtruth_event_mask],
+            groundtruth_event_label_ids[groundtruth_event_mask],
         )
         return loss
 
