@@ -6,7 +6,7 @@ from torch_geometric.data.batch import Batch
 
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
-from dgu.data import TWCmdGenTemporalStepInput
+from dgu.data import TWCmdGenTemporalStepInput, TWCmdGenTemporalGraphEvent
 
 
 class MockUUID:
@@ -2169,4 +2169,203 @@ def test_sldgu_generate_predict_table_rows(ids, batch_cmds, expected):
     assert (
         StaticLabelDiscreteGraphUpdater.generate_predict_table_rows(ids, *batch_cmds)
         == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "graph_events,batched_graph_memory,expected_batched_graph",
+    [
+        (
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([0]),
+                    event_label_ids=torch.tensor([1]),
+                    event_timestamps=torch.tensor([2.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([0]),
+                    event_label_ids=torch.tensor([3]),
+                    event_timestamps=torch.tensor([3.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([1]),
+                    event_label_ids=torch.tensor([5]),
+                    event_timestamps=torch.tensor([3.0]),
+                ),
+            ),
+            None,
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([[9.0] * 300, [11.0] * 300]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([[3.0] * 300]),
+                edge_last_update=torch.tensor([3.0]),
+            ),
+        ),
+        (
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([0]),
+                    event_label_ids=torch.tensor([1]),
+                    event_timestamps=torch.tensor([4.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([0]),
+                    event_label_ids=torch.tensor([2]),
+                    event_timestamps=torch.tensor([5.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                    event_src_ids=torch.tensor([2]),
+                    event_dst_ids=torch.tensor([3]),
+                    event_label_ids=torch.tensor([4]),
+                    event_timestamps=torch.tensor([6.0]),
+                ),
+            ),
+            (
+                Batch(
+                    batch=torch.tensor([0, 0]),
+                    x=torch.tensor([[9.0] * 300, [11.0] * 300]),
+                    edge_index=torch.tensor([[0], [1]]),
+                    edge_attr=torch.tensor([[3.0] * 300]),
+                    edge_last_update=torch.tensor([3.0]),
+                ),
+                torch.rand(2, 8),
+            ),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 0]),
+                x=torch.tensor([[9.0] * 300, [11.0] * 300, [9.0] * 300, [10.0] * 300]),
+                edge_index=torch.tensor([[0, 2], [1, 3]]),
+                edge_attr=torch.tensor([[3.0] * 300, [8.0] * 300]),
+                edge_last_update=torch.tensor([3.0, 6.0]),
+            ),
+        ),
+        (
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([1, 1]),
+                    event_timestamps=torch.tensor([2.0, 3.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([3, 2]),
+                    event_timestamps=torch.tensor([3.0, 5.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-add"]]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([1, 1]),
+                    event_label_ids=torch.tensor([5, 4]),
+                    event_timestamps=torch.tensor([3.0, 6.0]),
+                ),
+            ),
+            None,
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[9.0] * 300, [11.0] * 300, [9.0] * 300, [10.0] * 300]),
+                edge_index=torch.tensor([[0, 2], [1, 3]]),
+                edge_attr=torch.tensor([[3.0] * 300, [8.0] * 300]),
+                edge_last_update=torch.tensor([3.0, 6.0]),
+            ),
+        ),
+        (
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([1, 1]),
+                    event_timestamps=torch.tensor([4.0, 5.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([2, 3]),
+                    event_timestamps=torch.tensor([5.0, 6.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-add"]]
+                    ),
+                    event_src_ids=torch.tensor([2, 2]),
+                    event_dst_ids=torch.tensor([3, 3]),
+                    event_label_ids=torch.tensor([4, 5]),
+                    event_timestamps=torch.tensor([6.0, 7.0]),
+                ),
+            ),
+            (
+                Batch(
+                    batch=torch.tensor([0, 0, 1, 1]),
+                    x=torch.tensor(
+                        [[9.0] * 300, [11.0] * 300, [9.0] * 300, [10.0] * 300]
+                    ),
+                    edge_index=torch.tensor([[0, 2], [1, 3]]),
+                    edge_attr=torch.tensor([[3.0] * 300, [8.0] * 300]),
+                    edge_last_update=torch.tensor([3.0, 6.0]),
+                ),
+                torch.rand(4, 8),
+            ),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1]),
+                x=torch.tensor(
+                    [
+                        [9.0] * 300,
+                        [11.0] * 300,
+                        [9.0] * 300,
+                        [10.0] * 300,
+                        [9.0] * 300,
+                        [10.0] * 300,
+                        [9.0] * 300,
+                        [11.0] * 300,
+                    ]
+                ),
+                edge_index=torch.tensor([[0, 4, 2, 6], [1, 5, 3, 7]]),
+                edge_attr=torch.tensor(
+                    [[3.0] * 300, [8.0] * 300, [8.0] * 300, [3.0] * 300]
+                ),
+                edge_last_update=torch.tensor([3.0, 6.0, 6.0, 7.0]),
+            ),
+        ),
+    ],
+)
+def test_sldgu_get_updated_batched_graph_and_memory(
+    sldgu, graph_events, batched_graph_memory, expected_batched_graph
+):
+    batched_graph, memory = sldgu.get_updated_batched_graph_and_memory(
+        graph_events, batched_graph_memory=batched_graph_memory
+    )
+    assert batched_graph.batch.equal(expected_batched_graph.batch)
+    assert batched_graph.x.equal(expected_batched_graph.x)
+    assert batched_graph.edge_index.equal(expected_batched_graph.edge_index)
+    assert batched_graph.edge_attr.equal(expected_batched_graph.edge_attr)
+    assert batched_graph.edge_last_update.equal(expected_batched_graph.edge_last_update)
+    assert memory.size() == (
+        expected_batched_graph.num_nodes,
+        sldgu.hparams.tgn_memory_dim,
     )

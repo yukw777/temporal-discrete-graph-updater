@@ -29,6 +29,7 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import (
     TWCmdGenTemporalBatch,
+    TWCmdGenTemporalGraphEvent,
     TWCmdGenTemporalGraphicalInput,
     TWCmdGenTemporalStepInput,
     read_label_vocab_files,
@@ -394,6 +395,45 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         return torch.cat([mean_h_og, mean_h_go, mean_h_ag, mean_h_ga], dim=1)
         # (batch, 4 * hidden_dim)
+
+    def get_updated_batched_graph_and_memory(
+        self,
+        graph_events: Sequence[TWCmdGenTemporalGraphEvent],
+        batched_graph_memory: Optional[Tuple[Batch, torch.Tensor]] = None,
+    ) -> Tuple[Batch, torch.Tensor]:
+        if batched_graph_memory is None:
+            # initialize empty batch graph and memory
+            batched_graph = Batch(
+                batch=torch.empty(0, dtype=torch.long, device=self.device),
+                x=torch.empty(
+                    0,
+                    self.hparams.word_emb_dim,  # type: ignore
+                    device=self.device,
+                ),
+                edge_index=torch.empty(2, 0, dtype=torch.long, device=self.device),
+                edge_attr=torch.empty(
+                    0,
+                    self.hparams.word_emb_dim,  # type: ignore
+                    device=self.device,
+                ),
+                edge_last_update=torch.empty(0, device=self.device),
+            )
+            memory = torch.empty(0, self.tgn.memory_dim, device=self.device)
+        else:
+            batched_graph, memory = batched_graph_memory
+
+        # apply graph events
+        for graph_event in graph_events:
+            batched_graph, memory = self.tgn.update_batched_graph_memory(
+                batched_graph,
+                memory,
+                graph_event.event_type_ids,
+                graph_event.event_src_ids,
+                graph_event.event_dst_ids,
+                self.label_embeddings(graph_event.event_label_ids),
+                graph_event.event_timestamps,
+            )
+        return batched_graph, memory
 
     def teacher_force(
         self,
