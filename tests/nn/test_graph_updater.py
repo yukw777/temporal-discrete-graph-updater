@@ -2114,12 +2114,10 @@ def test_sldgu_greedy_decode(
 
 
 @pytest.mark.parametrize(
-    "ids,timestamps,mask,batch_cmds,expected",
+    "ids,batch_cmds,expected",
     [
         (
-            (("g0", 0),),
-            torch.tensor([1.0]),
-            [True],
+            (("g0", 0, 1),),
             [
                 (("add , player , kitchen , in", "add , table , kitchen , in"),),
                 [["add , player , kitchen , in", "add , fire , kitchen , in"]],
@@ -2135,23 +2133,18 @@ def test_sldgu_greedy_decode(
             ],
         ),
         (
-            (("g0", 0), ("g1", 2), ("g2", 1)),
-            torch.tensor([1.0, 2.0, 3.0]),
-            [True, False, True],
+            (("g0", 0, 1), ("g2", 1, 2)),
             [
                 (
                     ("add , player , kitchen , in", "add , table , kitchen , in"),
-                    (),
                     ("add , player , livingroom , in", "add , sofa , livingroom , in"),
                 ),
                 [
                     ["add , player , kitchen , in", "add , fire , kitchen , in"],
-                    ["add , player , garage , in"],
                     ["add , player , livingroom , in", "add , TV , livingroom , in"],
                 ],
                 [
                     ["add , player , kitchen , in", "delete , player , kitchen , in"],
-                    ["add , desk , garage , in"],
                     ["add , player , garage , in", "add , sofa , livingroom , in"],
                 ],
             ],
@@ -2163,7 +2156,7 @@ def test_sldgu_greedy_decode(
                     "add , player , kitchen , in | delete , player , kitchen , in",
                 ),
                 (
-                    "g2|1|3",
+                    "g2|1|2",
                     "add , player , livingroom , in | add , sofa , livingroom , in",
                     "add , player , livingroom , in | add , TV , livingroom , in",
                     "add , player , garage , in | add , sofa , livingroom , in",
@@ -2172,10 +2165,8 @@ def test_sldgu_greedy_decode(
         ),
     ],
 )
-def test_sldgu_generate_predict_table_rows(ids, timestamps, mask, batch_cmds, expected):
+def test_sldgu_generate_predict_table_rows(ids, batch_cmds, expected):
     assert (
-        StaticLabelDiscreteGraphUpdater.generate_predict_table_rows(
-            ids, timestamps, mask, *batch_cmds
-        )
+        StaticLabelDiscreteGraphUpdater.generate_predict_table_rows(ids, *batch_cmds)
         == expected
     )

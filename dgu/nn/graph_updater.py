@@ -1196,35 +1196,22 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     @staticmethod
     def generate_predict_table_rows(
-        ids: Sequence[Tuple[str, int]],
-        timestamps: torch.Tensor,
-        mask: Sequence[bool],
-        *args: Sequence[Sequence[str]],
+        ids: Sequence[Tuple[str, int, int]], *args: Sequence[Sequence[str]]
     ) -> List[Tuple[str, ...]]:
         """
         Generate rows for the prediction table.
 
-        ids: len([(game, walkthrough_step), ...]) = batch
-        timestamps: (batch)
-        mask: (batch)
+        ids: len([(game, walkthrough_step, random_step), ...]) = batch
         args: various commands of shape (batch, event_seq_len)
 
         output: [
-            ('game|walkthrough_step|timestamp', groundtruth_cmd, tf_cmd, gd_cmd),
+            ('game|walkthrough_step|random_step', groundtruth_cmd, tf_cmd, gd_cmd),
             ...
         ]
         """
-        return [
-            data[1:]
-            for data in zip(
-                mask,
-                [
-                    "|".join([game, str(walkthrough_step), str(int(timestamp))])
-                    for (game, walkthrough_step), timestamp in zip(
-                        ids, timestamps.tolist()
-                    )
-                ],
+        return list(
+            zip(
+                ["|".join(map(str, step_id)) for step_id in ids],
                 *[[" | ".join(cmds) for cmds in batch_cmds] for batch_cmds in args],
             )
-            if data[0]
-        ]
+        )
