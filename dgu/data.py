@@ -188,6 +188,41 @@ class TWCmdGenTemporalGraphEvent:
         )
 
 
+@dataclass(frozen=True)
+class TWCmdGenTemporalBatch:
+    ids: Tuple[Tuple[str, int, int], ...]
+    step_input: TWCmdGenTemporalStepInput
+    graphical_input_seq: Tuple[TWCmdGenTemporalGraphicalInput, ...]
+    prev_graph_events: Tuple[TWCmdGenTemporalGraphEvent, ...]
+    graph_commands: Tuple[Tuple[str, ...], ...]
+
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
+        return TWCmdGenTemporalBatch(
+            ids=self.ids,
+            step_input=self.step_input.to(*args, **kwargs),
+            graphical_input_seq=tuple(
+                graphical.to(*args, **kwargs) for graphical in self.graphical_input_seq
+            ),
+            prev_graph_events=tuple(
+                prev.to(*args, **kwargs) for prev in self.prev_graph_events
+            ),
+            graph_commands=self.graph_commands,
+        )
+
+    def pin_memory(self) -> "TWCmdGenTemporalBatch":
+        return TWCmdGenTemporalBatch(
+            ids=self.ids,
+            step_input=self.step_input.pin_memory(),
+            graphical_input_seq=tuple(
+                graphical.pin_memory() for graphical in self.graphical_input_seq
+            ),
+            prev_graph_events=tuple(
+                prev.pin_memory() for prev in self.prev_graph_events
+            ),
+            graph_commands=self.graph_commands,
+        )
+
+
 class TWCmdGenTemporalDataCollator:
     def __init__(
         self,
@@ -377,91 +412,75 @@ class TWCmdGenTemporalDataCollator:
 
         return tuple(collated)
 
-    def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
+    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenTemporalBatch:
         """
-        Each element in the collated batch is a batched step. Each step
-        has a dictionary of textual inputs and another dictionary
-        of graph event inputs.
+        Each batch has a batch of IDs, batched textual input, batched graphical
+        input, batched previous graph events and ground-truth graph commands.
+
         TWCmdGenTemporalBatch(
             ids=(
-                ('game', 'walkthrough_step'),
+                (game, walkthrough_step, random_step),
                 ...
             ),
-            data=(
+            step_input=TWCmdGenTemporalStepInput(
+                obs_word_ids: (batch, obs_len),
+                obs_mask: (batch, obs_len),
+                prev_action_word_ids: (batch, prev_action_len),
+                prev_action_mask: (batch, prev_action_len),
+                timestamps: (batch)
+            ),
+            graphical_input_seq=(
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids: (batch),
+                    tgt_event_src_ids: (batch),
+                    tgt_event_dst_ids: (batch),
+                    tgt_event_label_ids: (batch),
+                    groundtruth_event_type_ids: (batch),
+                    groundtruth_event_src_ids: (batch),
+                    groundtruth_event_src_mask: (batch),
+                    groundtruth_event_dst_ids: (batch),
+                    groundtruth_event_dst_mask: (batch),
+                    groundtruth_event_label_ids: (batch),
+                    groundtruth_event_mask: (batch),
+                ),
+                ...
+            ),
+            prev_graph_events=(
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids: (batch),
+                    event_src_ids: (batch),
+                    event_dst_ids: (batch),
+                    event_label_ids: (batch),
+                    event_timestamps: (batch),
+                ),
+                ...
+            ),
+            graph_commands=(
                 (
-                    TWCmdGenTemporalStepInput(
-                        obs_word_ids: (batch, obs_len),
-                        obs_mask: (batch, obs_len),
-                        prev_action_word_ids: (batch, prev_action_len),
-                        prev_action_mask: (batch, prev_action_len),
-                        timestamps: (batch)
-                    ),
-                    (
-                        TWCmdGenTemporalGraphicalInput(
-                            node_label_ids: (num_nodes),
-                            node_memory_update_index: (prev_num_nodes),
-                            node_memory_update_mask: (prev_num_nodes),
-                            edge_index: (2, num_edges),
-                            edge_label_ids: (num_edges),
-                            edge_last_update: (num_edges),
-                            batch: (num_nodes),
-                            tgt_event_type_ids: (batch),
-                            tgt_event_src_ids: (batch),
-                            tgt_event_dst_ids: (batch),
-                            tgt_event_label_ids: (batch),
-                            groundtruth_event_type_ids: (batch),
-                            groundtruth_event_src_ids: (batch),
-                            groundtruth_event_src_mask: (batch),
-                            groundtruth_event_dst_ids: (batch),
-                            groundtruth_event_dst_mask: (batch),
-                            groundtruth_event_label_ids: (batch),
-                            groundtruth_event_mask: (batch),
-                        ),
-                        ...
-                    ),
-                    (
-                        (commands, ...),
-                        ...
-                    )
+                    (commands, ...),
+                    ...
                 ),
                 ...
             )
         )
         """
-        max_episode_len = max(len(episode) for episode in batch)
-        collated_batch: List[
-            Tuple[
-                TWCmdGenTemporalStepInput,
-                List[TWCmdGenTemporalGraphicalInput],
-                Tuple[Tuple[str, ...], ...],
-            ]
-        ] = []
-        for i in range(max_episode_len):
-            batch_ith_step = [
-                episode[i] if i < len(episode) else {} for episode in batch
-            ]
-            step = self.collate_step_inputs(
-                # use "<bos> <eos>" for empty observations and previous actions
-                # to prevent nan's when encoding.
-                [s_i.get("observation", "<bos> <eos>") for s_i in batch_ith_step],
-                [s_i.get("previous_action", "<bos> <eos>") for s_i in batch_ith_step],
-                [s_i.get("timestamp", 0) for s_i in batch_ith_step],
-                [len(s_i) > 0 for s_i in batch_ith_step],
-            )
-            graph_events = self.collate_graphical_inputs(batch_ith_step)
-            cmds = tuple(
-                tuple(step.get("target_commands", [])) for step in batch_ith_step
-            )
-            collated_batch.append((step, graph_events, cmds))
         return TWCmdGenTemporalBatch(
             ids=tuple(
-                (str(steps[0]["game"]), int(steps[0]["walkthrough_step"]))
-                for steps in batch
+                (
+                    str(step["game"]),
+                    int(step["walkthrough_step"]),
+                    int(step["random_step"]),
+                )
+                for step in batch
             ),
-            data=tuple(
-                (step, tuple(graph_events), cmds)
-                for step, graph_events, cmds in collated_batch
+            step_input=self.collate_step_inputs(
+                [step["observation"] for step in batch],
+                [step["previous_action"] for step in batch],
+                [step["timestamp"] for step in batch],
             ),
+            graphical_input_seq=self.collate_graphical_input_seq(batch),
+            prev_graph_events=self.collate_prev_graph_events(batch),
+            graph_commands=tuple(tuple(step["target_commands"]) for step in batch),
         )
 
 
