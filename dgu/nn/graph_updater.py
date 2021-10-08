@@ -86,7 +86,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "learning_rate",
             "truncated_bptt_steps",
         )
-        self.truncated_bptt_steps = truncated_bptt_steps
         # preprocessor
         if word_vocab_path is None:
             # just load with special tokens
@@ -710,73 +709,36 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return batch_groundtruth_tokens
 
     def training_step(  # type: ignore
-        self,
-        batch: TWCmdGenTemporalBatch,
-        batch_idx: int,
-        hiddens: Optional[Tuple[Batch, torch.Tensor]],
-    ) -> Dict[str, Any]:
+        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+    ) -> torch.Tensor:
         """
         batch: the batch data
-        batch_idx: the batch id, unused for now
-        hiddens: (num_node, memory_dim), memory from the last step
+        batch_idx: the batch id, unused
         """
-        batched_graph: Optional[Batch]
-        memory: Optional[torch.Tensor]
-        if hiddens is None:
-            batched_graph = None
-            memory = None
-        else:
-            batched_graph, memory = hiddens
-        losses: List[torch.Tensor] = []
-        for step_input, graphical_input_seq, _ in batch.data:
-            results_list = self.teacher_force(
-                step_input,
-                graphical_input_seq,
-                batched_graph=batched_graph,
-                memory=memory,
+        # update the batched graph and memory up to tbptt steps without gradient
+        with torch.no_grad():
+            batched_graph, memory = self.get_updated_batched_graph_and_memory(
+                batch.prev_graph_events[
+                    : -self.hparams.truncated_bptt_steps  # type: ignore
+                ]
             )
-            losses.extend(
-                self.calculate_loss(
-                    results["event_type_logits"],
-                    graphical_input.groundtruth_event_type_ids,
-                    results["event_src_logits"],
-                    graphical_input.groundtruth_event_src_ids,
-                    results["event_dst_logits"],
-                    graphical_input.groundtruth_event_dst_ids,
-                    results["event_label_logits"],
-                    graphical_input.groundtruth_event_label_ids,
-                    graphical_input.groundtruth_event_mask,
-                    graphical_input.groundtruth_event_src_mask,
-                    graphical_input.groundtruth_event_dst_mask,
-                )
-                for results, graphical_input in zip(results_list, graphical_input_seq)
-            )
-            batched_graph = results_list[-1]["updated_batched_graph"]
-            memory = results_list[-1]["updated_memory"]
 
-        loss = torch.stack(losses).mean()
-        self.log("train_loss", loss, prog_bar=True)
-        return {"loss": loss, "hiddens": (batched_graph, memory)}
+        # update the batched graph and memory with gradient for tbptt steps
+        batched_graph, memory = self.get_updated_batched_graph_and_memory(
+            batch.prev_graph_events[
+                -self.hparams.truncated_bptt_steps :  # type: ignore
+            ],
+            batched_graph_memory=(batched_graph, memory),
+        )
 
-    def eval_step(
-        self, batch: TWCmdGenTemporalBatch, log_prefix: str
-    ) -> List[Tuple[str, ...]]:
-        # [(id, groundtruth commands, teacher-force commands, greedy-decode commands)]
-        # id = (game|walkthrough_step|timestamp)
-        table_data: List[Tuple[str, ...]] = []
-
-        batched_graph: Optional[Batch] = None
-        memory: Optional[torch.Tensor] = None
-        losses: List[torch.Tensor] = []
-        for step_input, graphical_input_seq, step_groundtruth_cmds in batch.data:
-            # calculate losses from teacher forcing
-            tf_results_list = self.teacher_force(
-                step_input,
-                graphical_input_seq,
-                batched_graph=batched_graph,
-                memory=memory,
-            )
-            losses.extend(
+        results_list = self.teacher_force(
+            batch.step_input,
+            batch.graphical_input_seq,
+            batched_graph=batched_graph,
+            memory=memory,
+        )
+        loss = torch.stack(
+            [
                 self.calculate_loss(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
@@ -791,13 +753,35 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_dst_mask,
                 )
                 for results, graphical_input in zip(
-                    tf_results_list, graphical_input_seq
+                    results_list, batch.graphical_input_seq
                 )
-            )
+            ]
+        ).mean()
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
 
-            # log classification F1s from teacher forcing
-            for results, graphical_input in zip(tf_results_list, graphical_input_seq):
-                f1s = self.calculate_f1s(
+    def eval_step(
+        self, batch: TWCmdGenTemporalBatch, log_prefix: str
+    ) -> List[Tuple[str, ...]]:
+        # [(id, groundtruth commands, teacher-force commands, greedy-decode commands)]
+        # id = (game|walkthrough_step|random_step)
+        table_data: List[Tuple[str, ...]] = []
+
+        # update the batched graph and memory to the current timestamp
+        batched_graph, memory = self.get_updated_batched_graph_and_memory(
+            batch.prev_graph_events
+        )
+
+        # loss from teacher forcing
+        tf_results_list = self.teacher_force(
+            batch.step_input,
+            batch.graphical_input_seq,
+            batched_graph=batched_graph,
+            memory=memory,
+        )
+        loss = torch.stack(
+            [
+                self.calculate_loss(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
                     results["event_src_logits"],
@@ -806,152 +790,150 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_dst_ids,
                     results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
                 )
-                self.log(log_prefix + "_event_type_f1", f1s["event_type_f1"])
-                if "src_node_f1" in f1s:
-                    self.log(log_prefix + "_src_node_f1", f1s["src_node_f1"])
-                if "dst_node_f1" in f1s:
-                    self.log(log_prefix + "_dst_node_f1", f1s["dst_node_f1"])
-                self.log(log_prefix + "_label_f1", f1s["label_f1"])
-
-            # calculate graph tuples from teacher forcing graph events
-            # handle source/destination logits for empty graphs by setting them to zeros
-            tf_src_id_seq = [
-                results["event_src_logits"].argmax(dim=1)
-                if results["event_src_logits"].size(1) > 0
-                else torch.zeros(
-                    results["event_src_logits"].size(0),
-                    dtype=torch.long,
-                    device=self.device,
+                for results, graphical_input in zip(
+                    tf_results_list, batch.graphical_input_seq
                 )
-                for results in tf_results_list
             ]
-            tf_dst_id_seq = [
-                results["event_dst_logits"].argmax(dim=1)
-                if results["event_dst_logits"].size(1) > 0
-                else torch.zeros(
-                    results["event_dst_logits"].size(0),
-                    dtype=torch.long,
-                    device=self.device,
-                )
-                for results in tf_results_list
-            ]
-            batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
-                [
-                    self.filter_invalid_events(
-                        results["event_type_logits"].argmax(dim=1),
-                        src_ids,
-                        dst_ids,
-                        results["updated_batched_graph"].batch,
-                        results["updated_batched_graph"].edge_index,
-                    )
-                    for results, src_ids, dst_ids in zip(
-                        tf_results_list, tf_src_id_seq, tf_dst_id_seq
-                    )
-                ],
-                tf_src_id_seq,
-                tf_dst_id_seq,
-                [
-                    results["event_label_logits"].argmax(dim=1)
-                    for results in tf_results_list
-                ],
-                [results["updated_batched_graph"] for results in tf_results_list],
-            )
-
-            # collect groundtruth command tokens
-            batch_groundtruth_tokens = (
-                self.generate_batch_groundtruth_graph_triple_tokens(
-                    step_groundtruth_cmds
-                )
-            )
-
-            # log teacher force graph based metrics
-            step_mask = step_input.mask.tolist()
-            self.log(
-                log_prefix + "_graph_tf_em",
-                self.graph_tf_exact_match(
-                    batch_tf_cmds, step_groundtruth_cmds, step_mask
-                ),
-            )
-            self.log(
-                log_prefix + "_graph_tf_f1",
-                self.graph_tf_f1(batch_tf_cmds, step_groundtruth_cmds, step_mask),
-            )
-
-            # log teacher force token based metrics
-            self.log(
-                log_prefix + "_token_tf_em",
-                self.token_tf_exact_match(
-                    batch_tf_tokens, batch_groundtruth_tokens, step_mask
-                ),
-            )
-            self.log(
-                log_prefix + "_token_tf_f1",
-                self.token_tf_f1(batch_tf_tokens, batch_groundtruth_tokens, step_mask),
-            )
-
-            # greedy decoding
-            gd_results_list = self.greedy_decode(
-                step_input,
-                batched_graph=batched_graph,
-                memory=None if memory is None else memory.clone(),
-            )
-
-            # calculate graph tuples from greedy decoded graph events
-            batch_gd_cmds, batch_gd_tokens = self.generate_batch_graph_triples_seq(
-                [results["decoded_event_type_ids"] for results in gd_results_list],
-                [results["decoded_event_src_ids"] for results in gd_results_list],
-                [results["decoded_event_dst_ids"] for results in gd_results_list],
-                [results["decoded_event_label_ids"] for results in gd_results_list],
-                [results["updated_batched_graph"] for results in gd_results_list],
-            )
-
-            # log greedy decode graph based metrics
-            self.log(
-                log_prefix + "_graph_gd_em",
-                self.graph_gd_exact_match(
-                    batch_gd_cmds, step_groundtruth_cmds, step_mask
-                ),
-            )
-            self.log(
-                log_prefix + "_graph_gd_f1",
-                self.graph_gd_f1(batch_gd_cmds, step_groundtruth_cmds, step_mask),
-            )
-
-            # log greedy decode token based metrics
-            self.log(
-                log_prefix + "_token_gd_em",
-                self.token_gd_exact_match(
-                    batch_gd_tokens, batch_groundtruth_tokens, step_mask
-                ),
-            )
-            self.log(
-                log_prefix + "_token_gd_f1",
-                self.token_gd_f1(batch_gd_tokens, batch_groundtruth_tokens, step_mask),
-            )
-
-            # collect graph triple table data
-            table_data.extend(
-                self.generate_predict_table_rows(
-                    batch.ids,
-                    step_input.timestamps,
-                    step_mask,
-                    step_groundtruth_cmds,
-                    batch_tf_cmds,
-                    batch_gd_cmds,
-                )
-            )
-
-            # update memory for the next step
-            memory = tf_results_list[-1]["updated_memory"]
-
-            # update batched graph for the next step
-            batched_graph = tf_results_list[-1]["updated_batched_graph"]
-
-        loss = torch.stack(losses).mean()
+        ).mean()
         self.log(log_prefix + "_loss", loss, prog_bar=True)
+
+        # log classification F1s from teacher forcing
+        for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
+            f1s = self.calculate_f1s(
+                results["event_type_logits"],
+                graphical_input.groundtruth_event_type_ids,
+                results["event_src_logits"],
+                graphical_input.groundtruth_event_src_ids,
+                results["event_dst_logits"],
+                graphical_input.groundtruth_event_dst_ids,
+                results["event_label_logits"],
+                graphical_input.groundtruth_event_label_ids,
+                graphical_input.groundtruth_event_src_mask,
+                graphical_input.groundtruth_event_dst_mask,
+            )
+            self.log(log_prefix + "_event_type_f1", f1s["event_type_f1"])
+            if "src_node_f1" in f1s:
+                self.log(log_prefix + "_src_node_f1", f1s["src_node_f1"])
+            if "dst_node_f1" in f1s:
+                self.log(log_prefix + "_dst_node_f1", f1s["dst_node_f1"])
+            self.log(log_prefix + "_label_f1", f1s["label_f1"])
+
+        # calculate graph tuples from teacher forcing graph events
+        # handle source/destination logits for empty graphs by setting them to zeros
+        tf_src_id_seq = [
+            results["event_src_logits"].argmax(dim=1)
+            if results["event_src_logits"].size(1) > 0
+            else torch.zeros(
+                results["event_src_logits"].size(0),
+                dtype=torch.long,
+                device=self.device,
+            )
+            for results in tf_results_list
+        ]
+        tf_dst_id_seq = [
+            results["event_dst_logits"].argmax(dim=1)
+            if results["event_dst_logits"].size(1) > 0
+            else torch.zeros(
+                results["event_dst_logits"].size(0),
+                dtype=torch.long,
+                device=self.device,
+            )
+            for results in tf_results_list
+        ]
+        batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
+            [
+                self.filter_invalid_events(
+                    results["event_type_logits"].argmax(dim=1),
+                    src_ids,
+                    dst_ids,
+                    results["updated_batched_graph"].batch,
+                    results["updated_batched_graph"].edge_index,
+                )
+                for results, src_ids, dst_ids in zip(
+                    tf_results_list, tf_src_id_seq, tf_dst_id_seq
+                )
+            ],
+            tf_src_id_seq,
+            tf_dst_id_seq,
+            [
+                results["event_label_logits"].argmax(dim=1)
+                for results in tf_results_list
+            ],
+            [results["updated_batched_graph"] for results in tf_results_list],
+        )
+
+        # collect groundtruth command tokens
+        batch_groundtruth_tokens = self.generate_batch_groundtruth_graph_triple_tokens(
+            batch.graph_commands
+        )
+
+        # log teacher force graph based metrics
+        self.log(
+            log_prefix + "_graph_tf_em",
+            self.graph_tf_exact_match(batch_tf_cmds, batch.graph_commands),
+        )
+        self.log(
+            log_prefix + "_graph_tf_f1",
+            self.graph_tf_f1(batch_tf_cmds, batch.graph_commands),
+        )
+
+        # log teacher force token based metrics
+        self.log(
+            log_prefix + "_token_tf_em",
+            self.token_tf_exact_match(batch_tf_tokens, batch_groundtruth_tokens),
+        )
+        self.log(
+            log_prefix + "_token_tf_f1",
+            self.token_tf_f1(batch_tf_tokens, batch_groundtruth_tokens),
+        )
+
+        # greedy decoding
+        gd_results_list = self.greedy_decode(
+            batch.step_input,
+            batched_graph=batched_graph,
+            memory=None if memory is None else memory.clone(),
+        )
+
+        # calculate graph tuples from greedy decoded graph events
+        batch_gd_cmds, batch_gd_tokens = self.generate_batch_graph_triples_seq(
+            [results["decoded_event_type_ids"] for results in gd_results_list],
+            [results["decoded_event_src_ids"] for results in gd_results_list],
+            [results["decoded_event_dst_ids"] for results in gd_results_list],
+            [results["decoded_event_label_ids"] for results in gd_results_list],
+            [results["updated_batched_graph"] for results in gd_results_list],
+        )
+
+        # log greedy decode graph based metrics
+        self.log(
+            log_prefix + "_graph_gd_em",
+            self.graph_gd_exact_match(batch_gd_cmds, batch.graph_commands),
+        )
+        self.log(
+            log_prefix + "_graph_gd_f1",
+            self.graph_gd_f1(batch_gd_cmds, batch.graph_commands),
+        )
+
+        # log greedy decode token based metrics
+        self.log(
+            log_prefix + "_token_gd_em",
+            self.token_gd_exact_match(batch_gd_tokens, batch_groundtruth_tokens),
+        )
+        self.log(
+            log_prefix + "_token_gd_f1",
+            self.token_gd_f1(batch_gd_tokens, batch_groundtruth_tokens),
+        )
+
+        # collect graph triple table data
+        table_data.extend(
+            self.generate_predict_table_rows(
+                batch.ids, batch.graph_commands, batch_tf_cmds, batch_gd_cmds
+            )
+        )
+
         return table_data
 
     def validation_step(  # type: ignore
