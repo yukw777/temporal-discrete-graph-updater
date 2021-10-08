@@ -643,6 +643,354 @@ def test_read_label_vocab_files():
     [
         (
             [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 2,
+                    "target_commands": [],
+                    "prev_graph_events": [],
+                }
+            ],
+            tuple(),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 2,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 2},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                    ],
+                }
+            ],
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([0]),
+                    event_label_ids=torch.tensor([1]),
+                    event_timestamps=torch.tensor([2.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([0]),
+                    event_label_ids=torch.tensor([14]),
+                    event_timestamps=torch.tensor([3.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                    event_src_ids=torch.tensor([0]),
+                    event_dst_ids=torch.tensor([1]),
+                    event_label_ids=torch.tensor([100]),
+                    event_timestamps=torch.tensor([3.0]),
+                ),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 2,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 1},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 2},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 4,
+                    "target_commands": ["add , player , livingroom , in"],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 4},
+                        {"type": "node-add", "label": "livingroom", "timestamp": 5},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 6,
+                        },
+                    ],
+                },
+            ],
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([1, 1]),
+                    event_timestamps=torch.tensor([1.0, 4.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([14, 16]),
+                    event_timestamps=torch.tensor([2.0, 5.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([1, 1]),
+                    event_label_ids=torch.tensor([100, 100]),
+                    event_timestamps=torch.tensor([3.0, 6.0]),
+                ),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 3,
+                    "target_commands": [
+                        "add , player , kitchen , in",
+                        "add , chicken leg , kitchen , in",
+                        "delete , player , kitchen , in",
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 1},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 2},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 4,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 5,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 2,
+                            "label": "player",
+                            "timestamp": 5,
+                        },
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 1,
+                    "target_commands": [
+                        "add , chicken leg , kitchen , in",
+                        "add , player , livingroom , in",
+                        "delete , chicken leg , kitchen , in",
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 2},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {"type": "node-add", "label": "player", "timestamp": 5},
+                        {"type": "node-add", "label": "livingroom", "timestamp": 6},
+                        {
+                            "type": "edge-add",
+                            "src_id": 4,
+                            "dst_id": 5,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 3,
+                            "label": "kitchen",
+                            "timestamp": 8,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 2,
+                            "label": "chicken leg",
+                            "timestamp": 8,
+                        },
+                    ],
+                },
+            ],
+            (
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([1, 34]),
+                    event_timestamps=torch.tensor([1.0, 2.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([14, 14]),
+                    event_timestamps=torch.tensor([2.0, 3.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([2, 2]),
+                    event_dst_ids=torch.tensor([3, 3]),
+                    event_label_ids=torch.tensor([100, 100]),
+                    event_timestamps=torch.tensor([3.0, 4.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 0]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([34, 1]),
+                    event_timestamps=torch.tensor([3.0, 5.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([4, 0]),
+                    event_dst_ids=torch.tensor([3, 0]),
+                    event_label_ids=torch.tensor([100, 16]),
+                    event_timestamps=torch.tensor([4.0, 6.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([2, 4]),
+                    event_dst_ids=torch.tensor([3, 5]),
+                    event_label_ids=torch.tensor([100, 100]),
+                    event_timestamps=torch.tensor([5.0, 7.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([2, 2]),
+                    event_dst_ids=torch.tensor([0, 3]),
+                    event_label_ids=torch.tensor([1, 100]),
+                    event_timestamps=torch.tensor([5.0, 7.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["pad"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 3]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([0, 14]),
+                    event_timestamps=torch.tensor([0.0, 8.0]),
+                ),
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["pad"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    event_src_ids=torch.tensor([0, 2]),
+                    event_dst_ids=torch.tensor([0, 0]),
+                    event_label_ids=torch.tensor([0, 34]),
+                    event_timestamps=torch.tensor([0.0, 8.0]),
+                ),
+            ),
+        ),
+    ],
+)
+def test_tw_cmd_gen_collator_collate_prev_graph_events(
+    tw_cmd_gen_collator, batch, expected
+):
+    assert tw_cmd_gen_collator.collate_prev_graph_events(batch) == expected
+
+
+@pytest.mark.parametrize(
+    "batch,expected",
+    [
+        (
+            [
                 [
                     {
                         "game": "g1",

@@ -165,53 +165,27 @@ class TWCmdGenTemporalGraphicalInput:
 
 
 @dataclass(frozen=True)
-class TWCmdGenTemporalBatch:
-    ids: Tuple[Tuple[str, int], ...] = field(default_factory=tuple)
-    data: Tuple[
-        Tuple[
-            TWCmdGenTemporalStepInput,
-            Tuple[TWCmdGenTemporalGraphicalInput, ...],
-            Tuple[Tuple[str, ...], ...],
-        ],
-        ...,
-    ] = field(default_factory=tuple)
+class TWCmdGenTemporalGraphEvent:
+    event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
+    event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
+    event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
+    event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
 
-    def __len__(self) -> int:
-        return len(self.data)
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenTemporalGraphEvent):
+            return False
+        return all(getattr(self, f).equal(getattr(o, f)) for f in self.__annotations__)
 
-    def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
-        return TWCmdGenTemporalBatch(
-            ids=self.ids,
-            data=tuple(
-                (
-                    step.to(*args, **kwargs),
-                    tuple(graphical.to(*args, **kwargs) for graphical in graphicals),
-                    commands,
-                )
-                for step, graphicals, commands in self.data
-            ),
+    def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphEvent":
+        return TWCmdGenTemporalGraphEvent(
+            **{f: getattr(self, f).to(*args, **kwargs) for f in self.__annotations__}
         )
 
-    def pin_memory(self) -> "TWCmdGenTemporalBatch":
-        return TWCmdGenTemporalBatch(
-            ids=self.ids,
-            data=tuple(
-                (
-                    step.pin_memory(),
-                    tuple(graphical.pin_memory() for graphical in graphicals),
-                    commands,
-                )
-                for step, graphicals, commands in self.data
-            ),
+    def pin_memory(self) -> "TWCmdGenTemporalGraphEvent":
+        return TWCmdGenTemporalGraphEvent(
+            **{f: getattr(self, f).pin_memory() for f in self.__annotations__}
         )
-
-    def split(self, split_size: int) -> List["TWCmdGenTemporalBatch"]:
-        return [
-            TWCmdGenTemporalBatch(
-                ids=self.ids, data=self.data[ndx : min(ndx + split_size, len(self))]
-            )
-            for ndx in range(0, len(self), split_size)
-        ]
 
 
 class TWCmdGenTemporalDataCollator:
@@ -342,6 +316,64 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_src_ids = groundtruth_event_src_ids
             tgt_event_dst_ids = groundtruth_event_dst_ids
             tgt_event_label_ids = groundtruth_event_label_ids
+
+        return tuple(collated)
+
+    def collate_prev_graph_events(
+        self, batch: List[Dict[str, Any]]
+    ) -> Tuple[TWCmdGenTemporalGraphEvent, ...]:
+        """
+        Collate the previous graph events of the given batch.
+
+        output: len([TWCmdGenTemporalGraphEvent(
+                event_type_ids: (batch),
+                event_src_ids: (batch),
+                event_dst_ids: (batch),
+                event_label_ids: (batch),
+                event_timestamps: (batch),
+            ), ...]) = prev_event_seq_len
+        """
+        batch_prev_event_seq: List[List[Dict[str, Any]]] = []
+        collated: List[TWCmdGenTemporalGraphEvent] = []
+        for step in batch:
+            batch_prev_event_seq.append(step["prev_graph_events"])
+
+        max_prev_event_seq_len = max(
+            len(event_seq) for event_seq in batch_prev_event_seq
+        )
+
+        for seq_step_num in range(max_prev_event_seq_len):
+            batch_event_type_ids: List[int] = []
+            batch_event_src_ids: List[int] = []
+            batch_event_dst_ids: List[int] = []
+            batch_event_label_ids: List[int] = []
+            batch_event_timestamps: List[float] = []
+            for event_seq in batch_prev_event_seq:
+                # collect event data for all the items in the batch at event i
+                if seq_step_num < len(event_seq):
+                    event = event_seq[seq_step_num]
+                    batch_event_type_ids.append(EVENT_TYPE_ID_MAP[event["type"]])
+                    batch_event_src_ids.append(
+                        event.get("src_id", event.get("node_id", 0))
+                    )
+                    batch_event_dst_ids.append(event.get("dst_id", 0))
+                    batch_event_label_ids.append(self.label_id_map[event["label"]])
+                    batch_event_timestamps.append(float(event["timestamp"]))
+                else:
+                    batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
+                    batch_event_src_ids.append(0)
+                    batch_event_dst_ids.append(0)
+                    batch_event_label_ids.append(self.label_id_map[""])
+                    batch_event_timestamps.append(0.0)
+            collated.append(
+                TWCmdGenTemporalGraphEvent(
+                    event_type_ids=torch.tensor(batch_event_type_ids),
+                    event_src_ids=torch.tensor(batch_event_src_ids),
+                    event_dst_ids=torch.tensor(batch_event_dst_ids),
+                    event_label_ids=torch.tensor(batch_event_label_ids),
+                    event_timestamps=torch.tensor(batch_event_timestamps),
+                )
+            )
 
         return tuple(collated)
 
