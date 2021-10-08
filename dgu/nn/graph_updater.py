@@ -192,6 +192,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
         event_label_ids: torch.Tensor,
+        # diagonally stacked graph BEFORE the given graph events
+        batched_graph: Batch,
+        # memory BEFORE the given graph events
+        memory: torch.Tensor,
         # game step
         obs_mask: torch.Tensor,
         prev_action_mask: torch.Tensor,
@@ -200,10 +204,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_action_word_ids: Optional[torch.Tensor] = None,
         encoded_obs: Optional[torch.Tensor] = None,
         encoded_prev_action: Optional[torch.Tensor] = None,
-        # diagonally stacked graph BEFORE the given graph events
-        batched_graph: Optional[Batch] = None,
-        # memory
-        memory: Optional[torch.Tensor] = None,
         # decoder hidden
         decoder_hidden: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
@@ -256,26 +256,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             updated_memory: (num_node, hidden_dim)
         }
         """
-        if batched_graph is None:
-            batched_graph = Batch(
-                batch=torch.empty(0, dtype=torch.long, device=self.device),
-                x=torch.empty(
-                    0,
-                    self.hparams.word_emb_dim,  # type: ignore
-                    device=self.device,
-                ),
-                edge_index=torch.empty(2, 0, dtype=torch.long, device=self.device),
-                edge_attr=torch.empty(
-                    0,
-                    self.hparams.word_emb_dim,  # type: ignore
-                    device=self.device,
-                ),
-                edge_last_update=torch.empty(0, dtype=torch.long, device=self.device),
-            )
-
-        if memory is None:
-            memory = torch.empty(0, self.tgn.memory_dim, device=self.device)
-
         if encoded_obs is None:
             assert obs_word_ids is not None
             encoded_obs = self.encode_text(obs_word_ids, obs_mask)
@@ -471,6 +451,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.tgt_event_src_ids,
                 graphical_input.tgt_event_dst_ids,
                 graphical_input.tgt_event_label_ids,
+                batched_graph,
+                memory,
                 step_input.obs_mask,
                 step_input.prev_action_mask,
                 step_input.timestamps,
@@ -478,8 +460,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 prev_action_word_ids=step_input.prev_action_word_ids,
                 encoded_obs=encoded_obs,
                 encoded_prev_action=encoded_prev_action,
-                batched_graph=batched_graph,
-                memory=memory,
                 decoder_hidden=decoder_hidden,
             )
 
@@ -1017,8 +997,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def greedy_decode(
         self,
         step_input: TWCmdGenTemporalStepInput,
-        batched_graph: Optional[Batch] = None,
-        memory: Optional[torch.Tensor] = None,
+        batched_graph: Batch,
+        memory: torch.Tensor,
     ) -> List[Dict[str, Any]]:
         """
         step_input: the current step input
@@ -1059,6 +1039,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 decoded_src_ids,
                 decoded_dst_ids,
                 decoded_label_ids,
+                batched_graph,
+                memory,
                 step_input.obs_mask,
                 step_input.prev_action_mask,
                 step_input.timestamps,
@@ -1066,8 +1048,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 prev_action_word_ids=step_input.prev_action_word_ids,
                 encoded_obs=encoded_obs,
                 encoded_prev_action=encoded_prev_action,
-                batched_graph=batched_graph,
-                memory=memory,
                 decoder_hidden=decoder_hidden,
             )
 

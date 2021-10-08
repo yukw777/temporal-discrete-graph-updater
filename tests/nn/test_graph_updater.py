@@ -295,6 +295,8 @@ def test_sldgu_forward(
         event_src_ids,
         event_dst_ids,
         torch.randint(len(sldgu.labels), (batch_size,)),
+        batched_graph,
+        torch.rand(batched_graph.num_nodes, sldgu.tgn.memory_dim),
         torch.randint(2, (batch_size, obs_len)).float(),
         torch.randint(2, (batch_size, prev_action_len)).float(),
         torch.randint(10, (batch_size,)).float(),
@@ -310,8 +312,6 @@ def test_sldgu_forward(
         ),
         encoded_obs=encoded_obs,
         encoded_prev_action=encoded_prev_action,
-        batched_graph=batched_graph,
-        memory=torch.rand(batched_graph.num_nodes, sldgu.tgn.memory_dim),
         decoder_hidden=torch.rand(batch_size, sldgu.hparams.hidden_dim)
         if decoder_hidden
         else None,
