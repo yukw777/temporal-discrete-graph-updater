@@ -974,11 +974,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
     def configure_optimizers(self) -> Optimizer:
         return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
-    def tbptt_split_batch(  # type: ignore
-        self, batch: TWCmdGenTemporalBatch, split_size: int
-    ) -> List[TWCmdGenTemporalBatch]:
-        return batch.split(split_size)
-
     def greedy_decode(
         self,
         step_input: TWCmdGenTemporalStepInput,
