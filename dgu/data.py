@@ -70,7 +70,7 @@ class TWCmdGenTemporalDataset(Dataset):
         for timestamp, example in enumerate(game_steps):
             graph_events: List[Dict[str, Any]] = []
             for cmd in example["target_commands"]:
-                sub_event_seq, graph = process_triplet_cmd(graph, timestamp, cmd)
+                sub_event_seq = process_triplet_cmd(graph, timestamp, cmd)
                 graph_events.extend(sub_event_seq)
             if timestamp == len(game_steps) - 1:
                 # last step so break
