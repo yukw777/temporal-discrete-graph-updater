@@ -7,7 +7,7 @@ import wandb
 import dgu.metrics
 
 from typing import Optional, Dict, List, Sequence, Tuple, Any
-from torch.optim import Adam, Optimizer
+from torch.optim import AdamW, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
@@ -974,7 +974,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
 
     def configure_optimizers(self) -> Optimizer:
-        return Adam(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
+        return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
     def greedy_decode(
         self,
