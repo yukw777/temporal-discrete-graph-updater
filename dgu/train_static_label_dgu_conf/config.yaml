@@ -7,13 +7,13 @@ data_module:
   _target_: dgu.data.TWCmdGenTemporalDataModule
   train_path: data/cmd_gen.0.2/train.json
   train_batch_size: 128
-  train_num_worker: 8
+  train_num_worker: 4
   val_path: data/cmd_gen.0.2/valid.json
   val_batch_size: 512
-  val_num_worker: 8
+  val_num_worker: 4
   test_path: data/cmd_gen.0.2/test.json
   test_batch_size: 512
-  test_num_worker: 8
+  test_num_worker: 4
   word_vocab_path: vocabs/word_vocab.txt
   node_vocab_path: vocabs/node_vocab.txt
   relation_vocab_path: vocabs/relation_vocab.txt
