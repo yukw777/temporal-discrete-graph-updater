@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from pathlib import Path
+from torch_geometric.data import Batch
 
 from dgu.nn.utils import (
     masked_mean,
@@ -14,6 +15,9 @@ from dgu.nn.utils import (
     index_edge_attr,
     batchify_node_features,
     calculate_node_id_offsets,
+    update_batched_graph,
+    update_node_features,
+    update_edge_index,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -568,6 +572,651 @@ def test_batchify_node_features(
         (5, torch.tensor([0, 2, 2, 3, 3, 3]), torch.tensor([0, 1, 1, 3, 6])),
     ],
 )
-def test_tgn_calculate_node_id_offsets(batch_size, batch, expected):
+def test_calculate_node_id_offsets(batch_size, batch, expected):
     node_id_offsets = calculate_node_id_offsets(batch_size, batch)
     assert node_id_offsets.equal(expected)
+
+
+@pytest.mark.parametrize(
+    "batched_graphs,event_type_ids,event_src_ids,event_dst_ids,event_embeddings,"
+    "event_timestamps,expected_updated_batched_graph",
+    [
+        (
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 4),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 4),
+                edge_last_update=torch.empty(0),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+            torch.zeros(3).long(),
+            torch.zeros(3).long(),
+            torch.zeros(3, 4),
+            torch.zeros(3),
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 4),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 4),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor(
+                    [[6] * 4, [5] * 4, [4] * 4, [3] * 4, [2] * 4, [1] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[2, 5], [0, 4]]),
+                edge_attr=torch.tensor([[4] * 4, [5] * 4]).float(),
+                edge_last_update=torch.tensor([2.0, 3.0]),
+            ),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["node-delete"], EVENT_TYPE_ID_MAP["node-delete"]]
+            ),
+            torch.tensor([1, 0]),
+            torch.tensor([0, 0]),
+            torch.tensor([[5] * 4, [3] * 4]).float(),
+            torch.tensor([4.0, 5.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[6] * 4, [4] * 4, [2] * 4, [1] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[1, 3], [0, 2]]),
+                edge_attr=torch.tensor([[4] * 4, [5] * 4]).float(),
+                edge_last_update=torch.tensor([2.0, 3.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 4),
+                edge_last_update=torch.empty(0),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
+            torch.tensor([[5] * 4, [6] * 4]).float(),
+            torch.tensor([3.0, 5.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1]),
+                x=torch.tensor([[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[4], [3]]),
+                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_last_update=torch.tensor([5.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1]),
+                x=torch.tensor([[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[4], [3]]),
+                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_last_update=torch.tensor([5.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([2, 1]),
+            torch.tensor([0, 0]),
+            torch.tensor([[5] * 4, [6] * 4]),
+            torch.tensor([2.0, 3.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 4),
+                edge_last_update=torch.empty(0),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 4),
+                edge_last_update=torch.empty(0),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([0, 1, 0]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([[5] * 4, [6] * 4, [7] * 4]).float(),
+            torch.tensor([3.0, 5.0, 4.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4, [7] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 3.0, 5.0, 6.0, 4.0]),
+                edge_index=torch.tensor([[4], [3]]),
+                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_last_update=torch.tensor([5.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4, [7] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 3.0, 5.0, 6.0, 4.0]),
+                edge_index=torch.tensor([[4], [3]]),
+                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_last_update=torch.tensor([5.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([1, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([[3] * 4, [8] * 4, [9] * 4]).float(),
+            torch.tensor([2.0, 3.0, 4.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [5] * 4, [2] * 4, [1] * 4, [8] * 4, [7] * 4, [9] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 6.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_last_update=torch.tensor([5.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [5] * 4, [2] * 4, [1] * 4, [8] * 4, [7] * 4, [9] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 6.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_last_update=torch.tensor([5.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+            torch.tensor([0, 1, 0]),
+            torch.tensor([0, 0, 1]),
+            torch.tensor([[10] * 4, [6] * 4, [11] * 4]).float(),
+            torch.tensor([5.0, 3.0, 2.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [10] * 4,
+                        [2] * 4,
+                        [1] * 4,
+                        [8] * 4,
+                        [7] * 4,
+                        [9] * 4,
+                    ]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 5.0, 6.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[6], [7]]),
+                edge_attr=torch.tensor([[11] * 4]).float(),
+                edge_last_update=torch.tensor([2.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [10] * 4,
+                        [2] * 4,
+                        [1] * 4,
+                        [8] * 4,
+                        [7] * 4,
+                        [9] * 4,
+                    ]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 5.0, 6.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[6], [7]]),
+                edge_attr=torch.tensor([[11] * 4]).float(),
+                edge_last_update=torch.tensor([2.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([2, 1, 0]),
+            torch.tensor([0, 0, 1]),
+            torch.tensor([[12] * 4, [1] * 4, [11] * 4]).float(),
+            torch.tensor([3.0, 1.0, 6.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [5] * 4, [10] * 4, [2] * 4, [8] * 4, [7] * 4, [9] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[2], [0]]),
+                edge_attr=torch.tensor([[12] * 4]).float(),
+                edge_last_update=torch.tensor([3.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [5] * 4, [10] * 4, [2] * 4, [8] * 4, [7] * 4, [9] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[2], [0]]),
+                edge_attr=torch.tensor([[12] * 4]).float(),
+                edge_last_update=torch.tensor([3.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+            torch.tensor([2, 0, 1]),
+            torch.tensor([0, 1, 0]),
+            torch.tensor([[12] * 4, [13] * 4, [14] * 4]).float(),
+            torch.tensor([2.0, 8.0, 7.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[4] * 4, [5] * 4, [10] * 4, [2] * 4, [8] * 4, [7] * 4, [9] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 3.0, 5.0, 5.0, 3.0, 4.0, 4.0]),
+                edge_index=torch.tensor([[3, 6], [4, 5]]),
+                edge_attr=torch.tensor([[13] * 4, [14] * 4]).float(),
+                edge_last_update=torch.tensor([8.0, 7.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor(
+                    [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[2, 5], [0, 3]]),
+                edge_attr=torch.tensor([[1] * 4, [2] * 4]).float(),
+                edge_last_update=torch.tensor([3.0, 2.0]),
+            ),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+            ),
+            torch.tensor([0, 2]),
+            torch.tensor([1, 0]),
+            torch.tensor([[7] * 4, [8] * 4]).float(),
+            torch.tensor([5.0, 3.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor(
+                    [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[2, 0], [0, 1]]),
+                edge_attr=torch.tensor([[1] * 4, [7] * 4]).float(),
+                edge_last_update=torch.tensor([3.0, 5.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+                x=torch.tensor(
+                    [
+                        [1] * 4,
+                        [2] * 4,
+                        [3] * 4,
+                        [4] * 4,
+                        [5] * 4,
+                        [6] * 4,
+                        [7] * 4,
+                        [8] * 4,
+                        [9] * 4,
+                    ]
+                ).float(),
+                node_last_update=torch.tensor(
+                    [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+                ),
+                edge_index=torch.tensor([[2, 5], [0, 3]]),
+                edge_attr=torch.tensor([[1] * 4, [2] * 4]).float(),
+                edge_last_update=torch.tensor([3.0, 2.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([2, 2, 2, 0]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4, [10] * 4]).float(),
+            torch.tensor([5.0, 3.0, 2.0, 1.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 3]),
+                x=torch.tensor(
+                    [
+                        [1] * 4,
+                        [2] * 4,
+                        [3] * 4,
+                        [4] * 4,
+                        [5] * 4,
+                        [6] * 4,
+                        [7] * 4,
+                        [8] * 4,
+                        [9] * 4,
+                        [10] * 4,
+                    ]
+                ).float(),
+                node_last_update=torch.tensor(
+                    [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 1.0]
+                ),
+                edge_index=torch.tensor([[2, 5, 8], [0, 3, 6]]),
+                edge_attr=torch.tensor([[1] * 4, [2] * 4, [3] * 4]).float(),
+                edge_last_update=torch.tensor([3.0, 2.0, 2.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([2, 2, 3, 3]),
+                x=torch.tensor([[3] * 4, [4] * 4, [5] * 4, [6] * 4]).float(),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0, 4.0]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=torch.tensor([[1] * 4]).float(),
+                edge_last_update=torch.tensor([4.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([0, 0, 1, 0]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4, [4] * 4]).float(),
+            torch.tensor([3.0, 5.0, 2.0, 3.0]),
+            Batch(
+                batch=torch.tensor([0, 1, 2, 2, 3, 3, 3]),
+                x=torch.tensor(
+                    [[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [4] * 4]
+                ).float(),
+                node_last_update=torch.tensor([3.0, 5.0, 1.0, 2.0, 3.0, 4.0, 3.0]),
+                edge_index=torch.tensor([[5, 3], [4, 2]]),
+                edge_attr=torch.tensor([[1] * 4, [3] * 4]).float(),
+                edge_last_update=torch.tensor([4.0, 2.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1, 2, 2]),
+                x=torch.tensor(
+                    [[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4]
+                ).float(),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[0, 2, 4], [1, 3, 5]]),
+                edge_attr=torch.tensor([[3] * 4, [2] * 4, [1] * 4]).float(),
+                edge_last_update=torch.tensor([4.0, 3.0, 2.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([[7] * 4, [8] * 4, [9] * 4]).float(),
+            torch.tensor([3.0, 5.0, 2.0]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+                x=torch.tensor(
+                    [
+                        [1] * 4,
+                        [2] * 4,
+                        [7] * 4,
+                        [3] * 4,
+                        [4] * 4,
+                        [8] * 4,
+                        [5] * 4,
+                        [6] * 4,
+                        [9] * 4,
+                    ]
+                ).float(),
+                node_last_update=torch.tensor(
+                    [1.0, 2.0, 3.0, 3.0, 4.0, 5.0, 5.0, 6.0, 2.0]
+                ),
+                edge_index=torch.tensor([[0, 3, 6], [1, 4, 7]]),
+                edge_attr=torch.tensor([[3] * 4, [2] * 4, [1] * 4]).float(),
+                edge_last_update=torch.tensor([4.0, 3.0, 2.0]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([2, 2, 3, 3]),
+                x=torch.tensor([3, 4, 5, 6]).float(),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0, 4.0]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=torch.tensor([1]).float(),
+                edge_last_update=torch.tensor([4.0]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([0, 0, 1, 0]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([1, 2, 3, 4]).float(),
+            torch.tensor([3.0, 5.0, 2.0, 3.0]),
+            Batch(
+                batch=torch.tensor([0, 1, 2, 2, 3, 3, 3]),
+                x=torch.tensor([1, 2, 3, 4, 5, 6, 4]).float(),
+                node_last_update=torch.tensor([3.0, 5.0, 1.0, 2.0, 3.0, 4.0, 3.0]),
+                edge_index=torch.tensor([[5, 3], [4, 2]]),
+                edge_attr=torch.tensor([1, 3]).float(),
+                edge_last_update=torch.tensor([4.0, 2.0]),
+            ),
+        ),
+    ],
+)
+def test_update_batched_graph(
+    batched_graphs,
+    event_type_ids,
+    event_src_ids,
+    event_dst_ids,
+    event_embeddings,
+    event_timestamps,
+    expected_updated_batched_graph,
+):
+    updated_batched_graph = update_batched_graph(
+        batched_graphs,
+        event_type_ids,
+        event_src_ids,
+        event_dst_ids,
+        event_embeddings,
+        event_timestamps,
+    )
+    assert updated_batched_graph.batch.equal(expected_updated_batched_graph.batch)
+    assert updated_batched_graph.x.equal(expected_updated_batched_graph.x)
+    assert updated_batched_graph.node_last_update.equal(
+        expected_updated_batched_graph.node_last_update
+    )
+    assert updated_batched_graph.edge_index.equal(
+        expected_updated_batched_graph.edge_index
+    )
+    assert updated_batched_graph.edge_attr.equal(
+        expected_updated_batched_graph.edge_attr
+    )
+    assert updated_batched_graph.edge_last_update.equal(
+        expected_updated_batched_graph.edge_last_update
+    )
+
+
+@pytest.mark.parametrize(
+    "node_features,batch,delete_mask,added_features,added_batch,batch_size,expected",
+    [
+        (
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([True, False, True, True]),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0]),
+            1,
+            torch.tensor([0, 0, 0, 0, 0]),
+        ),
+        (
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([False, True, True, True, False, True, True]),
+            torch.tensor([0, 4, 4]),
+            torch.tensor([0, 4, 4]),
+            6,
+            torch.tensor([0, 1, 2, 3, 3, 4, 4, 5]),
+        ),
+        (
+            torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([True, False, True, True]),
+            torch.tensor([[5] * 4, [6] * 4]),
+            torch.tensor([0, 0]),
+            1,
+            torch.tensor([[4] * 4, [2] * 4, [1] * 4, [5] * 4, [6] * 4]),
+        ),
+        (
+            torch.tensor(
+                [[1] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [3] * 4, [5] * 4]
+            ),
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([False, True, True, True, False, True, True]),
+            torch.tensor([[0] * 4, [4] * 4, [4] * 4]),
+            torch.tensor([0, 4, 4]),
+            6,
+            torch.tensor(
+                [[0] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [4] * 4, [4] * 4, [5] * 4]
+            ),
+        ),
+    ],
+)
+def test_update_node_features(
+    node_features,
+    batch,
+    delete_mask,
+    added_features,
+    added_batch,
+    batch_size,
+    expected,
+):
+    assert update_node_features(
+        node_features, batch, delete_mask, added_features, added_batch, batch_size
+    ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "edge_index,batch,delete_node_mask,node_add_event_mask,expected_updated_edge_index",
+    [
+        (
+            torch.tensor([[1], [0]]),
+            torch.tensor([0, 0]),
+            torch.tensor([True, True]),
+            torch.tensor([True]),
+            torch.tensor([[1], [0]]),
+        ),
+        (
+            torch.tensor([[1], [0]]),
+            torch.tensor([0, 0]),
+            torch.tensor([True, True]),
+            torch.tensor([False]),
+            torch.tensor([[1], [0]]),
+        ),
+        (
+            torch.tensor([[0, 2, 4], [1, 3, 5]]),
+            torch.tensor([0, 0, 1, 1, 2, 2]),
+            torch.tensor([True] * 6),
+            torch.tensor([True] * 3),
+            torch.tensor([[0, 3, 6], [1, 4, 7]]),
+        ),
+        (
+            torch.tensor([[0, 2, 4], [1, 3, 5]]),
+            torch.tensor([0, 0, 1, 1, 2, 2]),
+            torch.tensor([True] * 6),
+            torch.tensor([False, True, True]),
+            torch.tensor([[0, 2, 5], [1, 3, 6]]),
+        ),
+        (
+            torch.tensor([[0, 3, 6], [2, 5, 8]]),
+            torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+            torch.tensor([True, False, True, True, False, True, True, False, True]),
+            torch.tensor([False, False, False]),
+            torch.tensor([[0, 2, 4], [1, 3, 5]]),
+        ),
+        (
+            torch.tensor([[6, 8], [8, 7]]),
+            torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
+            torch.tensor([True, False, True, True, True, True, True, True, True]),
+            torch.tensor([False, True, True]),
+            torch.tensor([[6, 8], [8, 7]]),
+        ),
+    ],
+)
+def test_update_edge_index(
+    edge_index,
+    batch,
+    delete_node_mask,
+    node_add_event_mask,
+    expected_updated_edge_index,
+):
+    assert update_edge_index(
+        edge_index, batch, delete_node_mask, node_add_event_mask
+    ).equal(expected_updated_edge_index)
