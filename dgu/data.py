@@ -8,9 +8,10 @@ from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
+from torch_geometric.data import Batch
 
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.nn.utils import compute_masks_from_event_type_ids
+from dgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.graph import process_triplet_cmd
 
@@ -165,35 +166,11 @@ class TWCmdGenTemporalGraphicalInput:
 
 
 @dataclass(frozen=True)
-class TWCmdGenTemporalGraphEvent:
-    event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
-    event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
-    event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
-    event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
-    event_timestamps: torch.Tensor = field(default_factory=empty_tensor)
-
-    def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalGraphEvent):
-            return False
-        return all(getattr(self, f).equal(getattr(o, f)) for f in self.__annotations__)
-
-    def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphEvent":
-        return TWCmdGenTemporalGraphEvent(
-            **{f: getattr(self, f).to(*args, **kwargs) for f in self.__annotations__}
-        )
-
-    def pin_memory(self) -> "TWCmdGenTemporalGraphEvent":
-        return TWCmdGenTemporalGraphEvent(
-            **{f: getattr(self, f).pin_memory() for f in self.__annotations__}
-        )
-
-
-@dataclass(frozen=True)
 class TWCmdGenTemporalBatch:
     ids: Tuple[Tuple[str, int, int], ...]
     step_input: TWCmdGenTemporalStepInput
     graphical_input_seq: Tuple[TWCmdGenTemporalGraphicalInput, ...]
-    prev_graph_events: Tuple[TWCmdGenTemporalGraphEvent, ...]
+    prev_batched_graph: Batch
     graph_commands: Tuple[Tuple[str, ...], ...]
 
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
@@ -203,9 +180,7 @@ class TWCmdGenTemporalBatch:
             graphical_input_seq=tuple(
                 graphical.to(*args, **kwargs) for graphical in self.graphical_input_seq
             ),
-            prev_graph_events=tuple(
-                prev.to(*args, **kwargs) for prev in self.prev_graph_events
-            ),
+            prev_batched_graph=self.prev_batched_graph.to(*args, **kwargs),
             graph_commands=self.graph_commands,
         )
 
@@ -216,9 +191,7 @@ class TWCmdGenTemporalBatch:
             graphical_input_seq=tuple(
                 graphical.pin_memory() for graphical in self.graphical_input_seq
             ),
-            prev_graph_events=tuple(
-                prev.pin_memory() for prev in self.prev_graph_events
-            ),
+            prev_batched_graph=self.prev_batched_graph.pin_memory(),
             graph_commands=self.graph_commands,
         )
 
@@ -354,22 +327,30 @@ class TWCmdGenTemporalDataCollator:
 
         return tuple(collated)
 
-    def collate_prev_graph_events(
-        self, batch: List[Dict[str, Any]]
-    ) -> Tuple[TWCmdGenTemporalGraphEvent, ...]:
+    def collate_prev_graph_events(self, batch: List[Dict[str, Any]]) -> Batch:
         """
-        Collate the previous graph events of the given batch.
+        Collate the previous graph events of the given batch into a single
+        batched global graph.
 
-        output: len([TWCmdGenTemporalGraphEvent(
-                event_type_ids: (batch),
-                event_src_ids: (batch),
-                event_dst_ids: (batch),
-                event_label_ids: (batch),
-                event_timestamps: (batch),
-            ), ...]) = prev_event_seq_len
+        output: Batch(
+            batch: (num_node)
+            x: (num_node)
+            node_last_update: (num_node)
+            edge_index: (2, num_edge)
+            edge_attr: (num_edge)
+            edge_last_update: (num_edge)
+        )
         """
         batch_prev_event_seq: List[List[Dict[str, Any]]] = []
-        collated: List[TWCmdGenTemporalGraphEvent] = []
+        # initialize empty batch graph and memory
+        batched_graph = Batch(
+            batch=torch.empty(0, dtype=torch.long),
+            x=torch.empty(0, dtype=torch.long),
+            node_last_update=torch.empty(0),
+            edge_index=torch.empty(2, 0, dtype=torch.long),
+            edge_attr=torch.empty(0, dtype=torch.long),
+            edge_last_update=torch.empty(0),
+        )
         for step in batch:
             batch_prev_event_seq.append(step["prev_graph_events"])
 
@@ -400,17 +381,16 @@ class TWCmdGenTemporalDataCollator:
                     batch_event_dst_ids.append(0)
                     batch_event_label_ids.append(self.label_id_map[""])
                     batch_event_timestamps.append(0.0)
-            collated.append(
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(batch_event_type_ids),
-                    event_src_ids=torch.tensor(batch_event_src_ids),
-                    event_dst_ids=torch.tensor(batch_event_dst_ids),
-                    event_label_ids=torch.tensor(batch_event_label_ids),
-                    event_timestamps=torch.tensor(batch_event_timestamps),
-                )
+            batched_graph = update_batched_graph(
+                batched_graph,
+                torch.tensor(batch_event_type_ids),
+                torch.tensor(batch_event_src_ids),
+                torch.tensor(batch_event_dst_ids),
+                torch.tensor(batch_event_label_ids),
+                torch.tensor(batch_event_timestamps),
             )
 
-        return tuple(collated)
+        return batched_graph
 
     def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenTemporalBatch:
         """
@@ -479,7 +459,7 @@ class TWCmdGenTemporalDataCollator:
                 [step["timestamp"] for step in batch],
             ),
             graphical_input_seq=self.collate_graphical_input_seq(batch),
-            prev_graph_events=self.collate_prev_graph_events(batch),
+            prev_batched_graph=self.collate_prev_graph_events(batch),
             graph_commands=tuple(tuple(step["target_commands"]) for step in batch),
         )
 

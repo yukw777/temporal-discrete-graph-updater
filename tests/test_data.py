@@ -3,11 +3,12 @@ import json
 import torch
 import shutil
 
+from torch_geometric.data import Batch
+
 from dgu.data import (
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
     TWCmdGenTemporalDataCollator,
-    TWCmdGenTemporalGraphEvent,
     read_label_vocab_files,
     TWCmdGenTemporalStepInput,
     TWCmdGenTemporalBatch,
@@ -645,7 +646,14 @@ def test_read_label_vocab_files():
                     "prev_graph_events": [],
                 }
             ],
-            tuple(),
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, dtype=torch.long),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
         ),
         (
             [
@@ -667,28 +675,13 @@ def test_read_label_vocab_files():
                     ],
                 }
             ],
-            (
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-                    event_src_ids=torch.tensor([0]),
-                    event_dst_ids=torch.tensor([0]),
-                    event_label_ids=torch.tensor([1]),
-                    event_timestamps=torch.tensor([2.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-                    event_src_ids=torch.tensor([0]),
-                    event_dst_ids=torch.tensor([0]),
-                    event_label_ids=torch.tensor([14]),
-                    event_timestamps=torch.tensor([3.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
-                    event_src_ids=torch.tensor([0]),
-                    event_dst_ids=torch.tensor([1]),
-                    event_label_ids=torch.tensor([100]),
-                    event_timestamps=torch.tensor([3.0]),
-                ),
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([1, 14]),
+                node_last_update=torch.tensor([2.0, 3.0]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([100]),
+                edge_last_update=torch.tensor([3.0]),
             ),
         ),
         (
@@ -728,43 +721,13 @@ def test_read_label_vocab_files():
                     ],
                 },
             ],
-            (
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["node-add"],
-                            EVENT_TYPE_ID_MAP["node-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 0]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([1, 1]),
-                    event_timestamps=torch.tensor([1.0, 4.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["node-add"],
-                            EVENT_TYPE_ID_MAP["node-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 0]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([14, 16]),
-                    event_timestamps=torch.tensor([2.0, 5.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["edge-add"],
-                            EVENT_TYPE_ID_MAP["edge-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 0]),
-                    event_dst_ids=torch.tensor([1, 1]),
-                    event_label_ids=torch.tensor([100, 100]),
-                    event_timestamps=torch.tensor([3.0, 6.0]),
-                ),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([1, 14, 1, 16]),
+                node_last_update=torch.tensor([1.0, 2.0, 4.0, 5.0]),
+                edge_index=torch.tensor([[0, 2], [1, 3]]),
+                edge_attr=torch.tensor([100, 100]),
+                edge_last_update=torch.tensor([3.0, 6.0]),
             ),
         ),
         (
@@ -783,29 +746,29 @@ def test_read_label_vocab_files():
                         {"type": "node-add", "label": "kitchen", "timestamp": 2},
                         {
                             "type": "edge-add",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 3,
                         },
                         {"type": "node-add", "label": "chicken leg", "timestamp": 3},
                         {
                             "type": "edge-add",
-                            "src_id": 4,
-                            "dst_id": 3,
+                            "src_id": 2,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 4,
                         },
                         {
                             "type": "edge-delete",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 5,
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 2,
+                            "node_id": 0,
                             "label": "player",
                             "timestamp": 5,
                         },
@@ -825,8 +788,8 @@ def test_read_label_vocab_files():
                         {"type": "node-add", "label": "kitchen", "timestamp": 3},
                         {
                             "type": "edge-add",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 4,
                         },
@@ -834,142 +797,40 @@ def test_read_label_vocab_files():
                         {"type": "node-add", "label": "livingroom", "timestamp": 6},
                         {
                             "type": "edge-add",
-                            "src_id": 4,
-                            "dst_id": 5,
-                            "label": "in",
-                            "timestamp": 7,
-                        },
-                        {
-                            "type": "edge-delete",
                             "src_id": 2,
                             "dst_id": 3,
                             "label": "in",
                             "timestamp": 7,
                         },
                         {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
                             "type": "node-delete",
-                            "node_id": 3,
+                            "node_id": 1,
                             "label": "kitchen",
                             "timestamp": 8,
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 2,
+                            "node_id": 0,
                             "label": "chicken leg",
                             "timestamp": 8,
                         },
                     ],
                 },
             ],
-            (
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["node-add"],
-                            EVENT_TYPE_ID_MAP["node-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 0]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([1, 34]),
-                    event_timestamps=torch.tensor([1.0, 2.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["node-add"],
-                            EVENT_TYPE_ID_MAP["node-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 0]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([14, 14]),
-                    event_timestamps=torch.tensor([2.0, 3.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["edge-add"],
-                            EVENT_TYPE_ID_MAP["edge-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([2, 2]),
-                    event_dst_ids=torch.tensor([3, 3]),
-                    event_label_ids=torch.tensor([100, 100]),
-                    event_timestamps=torch.tensor([3.0, 4.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["node-add"],
-                            EVENT_TYPE_ID_MAP["node-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 0]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([34, 1]),
-                    event_timestamps=torch.tensor([3.0, 5.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["edge-add"],
-                            EVENT_TYPE_ID_MAP["node-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([4, 0]),
-                    event_dst_ids=torch.tensor([3, 0]),
-                    event_label_ids=torch.tensor([100, 16]),
-                    event_timestamps=torch.tensor([4.0, 6.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["edge-delete"],
-                            EVENT_TYPE_ID_MAP["edge-add"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([2, 4]),
-                    event_dst_ids=torch.tensor([3, 5]),
-                    event_label_ids=torch.tensor([100, 100]),
-                    event_timestamps=torch.tensor([5.0, 7.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["node-delete"],
-                            EVENT_TYPE_ID_MAP["edge-delete"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([2, 2]),
-                    event_dst_ids=torch.tensor([0, 3]),
-                    event_label_ids=torch.tensor([1, 100]),
-                    event_timestamps=torch.tensor([5.0, 7.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["pad"],
-                            EVENT_TYPE_ID_MAP["node-delete"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 3]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([0, 14]),
-                    event_timestamps=torch.tensor([0.0, 8.0]),
-                ),
-                TWCmdGenTemporalGraphEvent(
-                    event_type_ids=torch.tensor(
-                        [
-                            EVENT_TYPE_ID_MAP["pad"],
-                            EVENT_TYPE_ID_MAP["node-delete"],
-                        ]
-                    ),
-                    event_src_ids=torch.tensor([0, 2]),
-                    event_dst_ids=torch.tensor([0, 0]),
-                    event_label_ids=torch.tensor([0, 34]),
-                    event_timestamps=torch.tensor([0.0, 8.0]),
-                ),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([14, 34, 1, 16]),
+                node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[1, 2], [0, 3]]),
+                edge_attr=torch.tensor([100, 100]),
+                edge_last_update=torch.tensor([4.0, 7.0]),
             ),
         ),
     ],
@@ -977,7 +838,14 @@ def test_read_label_vocab_files():
 def test_tw_cmd_gen_collator_collate_prev_graph_events(
     tw_cmd_gen_collator, batch, expected
 ):
-    assert tw_cmd_gen_collator.collate_prev_graph_events(batch) == expected
+    collated = tw_cmd_gen_collator.collate_prev_graph_events(batch)
+
+    assert collated.batch.equal(expected.batch)
+    assert collated.x.equal(expected.x)
+    assert collated.node_last_update.equal(expected.node_last_update)
+    assert collated.edge_index.equal(expected.edge_index)
+    assert collated.edge_attr.equal(expected.edge_attr)
+    assert collated.edge_last_update.equal(expected.edge_last_update)
 
 
 @pytest.mark.parametrize(
@@ -1085,7 +953,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_mask=torch.tensor([True]),
                     ),
                 ),
-                prev_graph_events=tuple(),
+                prev_batched_graph=Batch(
+                    batch=torch.empty(0, dtype=torch.long),
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0),
+                ),
                 graph_commands=(("add , player , kitchen , in",),),
             ),
         ),
@@ -1114,8 +989,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-add", "label": "kitchen", "timestamp": 3},
                         {
                             "type": "edge-add",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 4,
                         },
@@ -1123,27 +998,27 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-add", "label": "livingroom", "timestamp": 6},
                         {
                             "type": "edge-add",
-                            "src_id": 4,
-                            "dst_id": 5,
-                            "label": "in",
-                            "timestamp": 7,
-                        },
-                        {
-                            "type": "edge-delete",
                             "src_id": 2,
                             "dst_id": 3,
                             "label": "in",
                             "timestamp": 7,
                         },
                         {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
                             "type": "node-delete",
-                            "node_id": 3,
+                            "node_id": 1,
                             "label": "kitchen",
                             "timestamp": 8,
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 2,
+                            "node_id": 0,
                             "label": "chicken leg",
                             "timestamp": 8,
                         },
@@ -1229,70 +1104,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_mask=torch.tensor([True]),
                     ),
                 ),
-                prev_graph_events=(
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-                        event_src_ids=torch.tensor([0]),
-                        event_dst_ids=torch.tensor([0]),
-                        event_label_ids=torch.tensor([34]),
-                        event_timestamps=torch.tensor([2.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-                        event_src_ids=torch.tensor([0]),
-                        event_dst_ids=torch.tensor([0]),
-                        event_label_ids=torch.tensor([14]),
-                        event_timestamps=torch.tensor([3.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
-                        event_src_ids=torch.tensor([2]),
-                        event_dst_ids=torch.tensor([3]),
-                        event_label_ids=torch.tensor([100]),
-                        event_timestamps=torch.tensor([4.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-                        event_src_ids=torch.tensor([0]),
-                        event_dst_ids=torch.tensor([0]),
-                        event_label_ids=torch.tensor([1]),
-                        event_timestamps=torch.tensor([5.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
-                        event_src_ids=torch.tensor([0]),
-                        event_dst_ids=torch.tensor([0]),
-                        event_label_ids=torch.tensor([16]),
-                        event_timestamps=torch.tensor([6.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
-                        event_src_ids=torch.tensor([4]),
-                        event_dst_ids=torch.tensor([5]),
-                        event_label_ids=torch.tensor([100]),
-                        event_timestamps=torch.tensor([7.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
-                        event_src_ids=torch.tensor([2]),
-                        event_dst_ids=torch.tensor([3]),
-                        event_label_ids=torch.tensor([100]),
-                        event_timestamps=torch.tensor([7.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
-                        event_src_ids=torch.tensor([3]),
-                        event_dst_ids=torch.tensor([0]),
-                        event_label_ids=torch.tensor([14]),
-                        event_timestamps=torch.tensor([8.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
-                        event_src_ids=torch.tensor([2]),
-                        event_dst_ids=torch.tensor([0]),
-                        event_label_ids=torch.tensor([34]),
-                        event_timestamps=torch.tensor([8.0]),
-                    ),
+                prev_batched_graph=Batch(
+                    batch=torch.tensor([0, 0]),
+                    x=torch.tensor([1, 16]),
+                    node_last_update=torch.tensor([5.0, 6.0]),
+                    edge_index=torch.tensor([[0], [1]]),
+                    edge_attr=torch.tensor([100]),
+                    edge_last_update=torch.tensor([7.0]),
                 ),
                 graph_commands=(("add , player , kitchen , in",),),
             ),
@@ -1316,29 +1134,29 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-add", "label": "kitchen", "timestamp": 2},
                         {
                             "type": "edge-add",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 3,
                         },
                         {"type": "node-add", "label": "chicken leg", "timestamp": 3},
                         {
                             "type": "edge-add",
-                            "src_id": 4,
-                            "dst_id": 3,
+                            "src_id": 2,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 4,
                         },
                         {
                             "type": "edge-delete",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 5,
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 2,
+                            "node_id": 0,
                             "label": "player",
                             "timestamp": 5,
                         },
@@ -1367,8 +1185,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-add", "label": "kitchen", "timestamp": 3},
                         {
                             "type": "edge-add",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 0,
+                            "dst_id": 1,
                             "label": "in",
                             "timestamp": 4,
                         },
@@ -1376,27 +1194,27 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-add", "label": "livingroom", "timestamp": 6},
                         {
                             "type": "edge-add",
-                            "src_id": 4,
-                            "dst_id": 5,
-                            "label": "in",
-                            "timestamp": 7,
-                        },
-                        {
-                            "type": "edge-delete",
                             "src_id": 2,
                             "dst_id": 3,
                             "label": "in",
                             "timestamp": 7,
                         },
                         {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
                             "type": "node-delete",
-                            "node_id": 3,
+                            "node_id": 1,
                             "label": "kitchen",
                             "timestamp": 8,
                         },
                         {
                             "type": "node-delete",
-                            "node_id": 2,
+                            "node_id": 0,
                             "label": "chicken leg",
                             "timestamp": 8,
                         },
@@ -1512,115 +1330,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_mask=torch.tensor([False, True]),
                     ),
                 ),
-                prev_graph_events=(
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["node-add"],
-                                EVENT_TYPE_ID_MAP["node-add"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([0, 0]),
-                        event_dst_ids=torch.tensor([0, 0]),
-                        event_label_ids=torch.tensor([1, 34]),
-                        event_timestamps=torch.tensor([1.0, 2.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["node-add"],
-                                EVENT_TYPE_ID_MAP["node-add"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([0, 0]),
-                        event_dst_ids=torch.tensor([0, 0]),
-                        event_label_ids=torch.tensor([14, 14]),
-                        event_timestamps=torch.tensor([2.0, 3.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["edge-add"],
-                                EVENT_TYPE_ID_MAP["edge-add"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([2, 2]),
-                        event_dst_ids=torch.tensor([3, 3]),
-                        event_label_ids=torch.tensor([100, 100]),
-                        event_timestamps=torch.tensor([3.0, 4.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["node-add"],
-                                EVENT_TYPE_ID_MAP["node-add"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([0, 0]),
-                        event_dst_ids=torch.tensor([0, 0]),
-                        event_label_ids=torch.tensor([34, 1]),
-                        event_timestamps=torch.tensor([3.0, 5.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["edge-add"],
-                                EVENT_TYPE_ID_MAP["node-add"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([4, 0]),
-                        event_dst_ids=torch.tensor([3, 0]),
-                        event_label_ids=torch.tensor([100, 16]),
-                        event_timestamps=torch.tensor([4.0, 6.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["edge-delete"],
-                                EVENT_TYPE_ID_MAP["edge-add"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([2, 4]),
-                        event_dst_ids=torch.tensor([3, 5]),
-                        event_label_ids=torch.tensor([100, 100]),
-                        event_timestamps=torch.tensor([5.0, 7.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["node-delete"],
-                                EVENT_TYPE_ID_MAP["edge-delete"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([2, 2]),
-                        event_dst_ids=torch.tensor([0, 3]),
-                        event_label_ids=torch.tensor([1, 100]),
-                        event_timestamps=torch.tensor([5.0, 7.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["pad"],
-                                EVENT_TYPE_ID_MAP["node-delete"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([0, 3]),
-                        event_dst_ids=torch.tensor([0, 0]),
-                        event_label_ids=torch.tensor([0, 14]),
-                        event_timestamps=torch.tensor([0.0, 8.0]),
-                    ),
-                    TWCmdGenTemporalGraphEvent(
-                        event_type_ids=torch.tensor(
-                            [
-                                EVENT_TYPE_ID_MAP["pad"],
-                                EVENT_TYPE_ID_MAP["node-delete"],
-                            ]
-                        ),
-                        event_src_ids=torch.tensor([0, 2]),
-                        event_dst_ids=torch.tensor([0, 0]),
-                        event_label_ids=torch.tensor([0, 34]),
-                        event_timestamps=torch.tensor([0.0, 8.0]),
-                    ),
+                prev_batched_graph=Batch(
+                    batch=torch.tensor([0, 0, 1, 1]),
+                    x=torch.tensor([14, 34, 1, 16]),
+                    node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                    edge_index=torch.tensor([[1, 2], [0, 3]]),
+                    edge_attr=torch.tensor([100, 100]),
+                    edge_last_update=torch.tensor([4.0, 7.0]),
                 ),
                 graph_commands=(
                     ("add , player , kitchen , in",),
@@ -1631,4 +1347,21 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
     ],
 )
 def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
-    assert tw_cmd_gen_collator(batch) == expected
+    collated = tw_cmd_gen_collator(batch)
+    assert collated.ids == expected.ids
+    assert collated.step_input == expected.step_input
+    assert collated.prev_batched_graph.batch.equal(expected.prev_batched_graph.batch)
+    assert collated.prev_batched_graph.x.equal(expected.prev_batched_graph.x)
+    assert collated.prev_batched_graph.node_last_update.equal(
+        expected.prev_batched_graph.node_last_update
+    )
+    assert collated.prev_batched_graph.edge_index.equal(
+        expected.prev_batched_graph.edge_index
+    )
+    assert collated.prev_batched_graph.edge_attr.equal(
+        expected.prev_batched_graph.edge_attr
+    )
+    assert collated.prev_batched_graph.edge_last_update.equal(
+        expected.prev_batched_graph.edge_last_update
+    )
+    assert collated.graph_commands == expected.graph_commands
