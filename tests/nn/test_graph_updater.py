@@ -375,9 +375,9 @@ def test_sldgu_calculate_loss(sldgu, batch, num_node):
             torch.randint(num_node, (batch,)),
             torch.rand(batch, len(sldgu.labels)),
             torch.randint(len(sldgu.labels), (batch,)),
-            torch.randint(2, (batch,)),
-            torch.randint(2, (batch,)),
-            torch.randint(2, (batch,)),
+            torch.randint(2, (batch,)).bool(),
+            torch.randint(2, (batch,)).bool(),
+            torch.randint(2, (batch,)).bool(),
         ).size()
         == tuple()
     )
