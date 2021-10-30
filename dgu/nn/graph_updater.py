@@ -573,17 +573,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             tokens: len([[token, ...], ...]) = batch
         )
         """
-        # figure out the label IDs for the nodes in the batched graph
-        # we compare the node features, which are label embeddings, with the
-        # whole label embeddings and figure out the correct IDs.
-        graph_node_label_ids = torch.all(
-            batched_graph.x.unsqueeze(-1) == self.label_embeddings.weight.t(), dim=1
-        ).nonzero()[:, 1]
-        # (num_node)
-
         # we ignore last graphs without nodes, b/c they wouldn't produce valid
         # graph triples anyway
-        batched_graph_node_label_ids = graph_node_label_ids.split(
+        batched_graph_node_label_ids = batched_graph.x.split(
             batched_graph.batch.bincount().tolist()
         )
         # (batch - num_last_empty_graphs)

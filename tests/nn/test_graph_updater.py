@@ -407,7 +407,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1]),  # player
             Batch(
                 batch=torch.tensor([0]),
-                x=torch.tensor([[9] * 300]).float(),
+                x=torch.tensor([1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -421,7 +422,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1]),  # player
             Batch(
                 batch=torch.tensor([0]),
-                x=torch.tensor([[9] * 300]).float(),
+                x=torch.tensor([1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -435,7 +437,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([5]),  # is
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                x=torch.tensor([3, 1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -449,7 +452,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([5]),  # is
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                x=torch.tensor([3, 1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -468,19 +472,11 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([5, 4]),  # [is, in]
             Batch(
                 batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                x=torch.tensor(
-                    [
-                        [11] * 300,
-                        [9] * 300,
-                        [9] * 300,
-                        [10] * 300,
-                        [9] * 300,
-                        [10] * 300,
-                    ]
-                ).float(),
-                edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
-                edge_last_update=torch.empty(0),
+                x=torch.tensor([[3], [1], [1], [2], [1], [2]]),
+                node_last_update=torch.tensor([1.0, 1.0, 1.0, 1.0, 2.0, 2.0]),
+                edge_index=torch.tensor([[4, 5]]),
+                edge_attr=torch.tensor([4]),
+                edge_last_update=torch.tensor([1.0]),
             ),
             (
                 ["add , player , chopped , is", "delete , player , inventory , in"],
@@ -520,9 +516,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0]),
-                    x=torch.tensor([[9] * 300]).float(),
+                    x=torch.tensor([1]),
+                    node_last_update=torch.tensor([1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -536,9 +533,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0]),
-                    x=torch.tensor([[9] * 300]).float(),
+                    x=torch.tensor([9]),
+                    node_last_update=torch.tensor([1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -552,9 +550,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                    x=torch.tensor([3, 1]),
+                    node_last_update=torch.tensor([1.0, 2.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -571,9 +570,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                    x=torch.tensor([3, 1]),
+                    node_last_update=torch.tensor([1.0, 2.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -597,34 +597,18 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                    x=torch.tensor(
-                        [
-                            [11] * 300,
-                            [9] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                        ]
-                    ).float(),
+                    x=torch.tensor([3, 1, 1, 2, 1, 2]),
+                    node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 ),
                 Batch(
                     batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                    x=torch.tensor(
-                        [
-                            [9] * 300,
-                            [11] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                        ]
-                    ).float(),
+                    x=torch.tensor([1, 3, 1, 2, 1, 2]),
+                    node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 ),
             ],
