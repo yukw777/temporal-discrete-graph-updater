@@ -23,7 +23,6 @@ model:
   hidden_dim: 64
   word_emb_dim: 300
   tgn_event_type_emb_dim: 16
-  tgn_memory_dim: 16
   tgn_time_enc_dim: 16
   tgn_num_gnn_block: 1
   tgn_num_gnn_head: 1
