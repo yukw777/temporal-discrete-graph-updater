@@ -198,13 +198,39 @@ class TWCmdGenTemporalGraphicalInput:
 class TWCmdGenTemporalBatch:
     ids: Tuple[Tuple[str, int, int], ...]
     step_input: TWCmdGenTemporalStepInput
+    initial_batched_graph: Batch
     graphical_input_seq: Tuple[TWCmdGenTemporalGraphicalInput, ...]
     graph_commands: Tuple[Tuple[str, ...], ...]
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenTemporalBatch):
+            return False
+        return all(
+            getattr(self, f) == getattr(o, f)
+            for f in self.__annotations__
+            if f != "initial_batched_graph"
+        ) and (
+            self.initial_batched_graph.batch.equal(o.initial_batched_graph.batch)
+            and self.initial_batched_graph.x.equal(o.initial_batched_graph.x)
+            and self.initial_batched_graph.node_last_update.equal(
+                o.initial_batched_graph.node_last_update
+            )
+            and self.initial_batched_graph.edge_index.equal(
+                o.initial_batched_graph.edge_index
+            )
+            and self.initial_batched_graph.edge_attr.equal(
+                o.initial_batched_graph.edge_attr
+            )
+            and self.initial_batched_graph.edge_last_update.equal(
+                o.initial_batched_graph.edge_last_update
+            )
+        )
 
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
         return TWCmdGenTemporalBatch(
             ids=self.ids,
             step_input=self.step_input.to(*args, **kwargs),
+            initial_batched_graph=self.initial_batched_graph.to(*args, **kwargs),
             graphical_input_seq=tuple(
                 graphical.to(*args, **kwargs) for graphical in self.graphical_input_seq
             ),
@@ -215,6 +241,7 @@ class TWCmdGenTemporalBatch:
         return TWCmdGenTemporalBatch(
             ids=self.ids,
             step_input=self.step_input.pin_memory(),
+            initial_batched_graph=self.initial_batched_graph.pin_memory(),
             graphical_input_seq=tuple(
                 graphical.pin_memory() for graphical in self.graphical_input_seq
             ),
@@ -473,6 +500,7 @@ class TWCmdGenTemporalDataCollator:
             )
         )
         """
+        initial_batched_graph = self.collate_prev_graph_events(batch)
         return TWCmdGenTemporalBatch(
             ids=tuple(
                 (
@@ -487,8 +515,9 @@ class TWCmdGenTemporalDataCollator:
                 [step["previous_action"] for step in batch],
                 [step["timestamp"] for step in batch],
             ),
+            initial_batched_graph=initial_batched_graph,
             graphical_input_seq=self.collate_graphical_input_seq(
-                batch, self.collate_prev_graph_events(batch)
+                batch, initial_batched_graph
             ),
             graph_commands=tuple(tuple(step["target_commands"]) for step in batch),
         )

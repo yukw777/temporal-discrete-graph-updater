@@ -1442,6 +1442,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     prev_action_mask=torch.ones(1, 2).bool(),
                     timestamps=torch.tensor([2.0]),
                 ),
+                initial_batched_graph=Batch(
+                    batch=torch.empty(0, dtype=torch.long),
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0),
+                ),
                 graphical_input_seq=(
                     TWCmdGenTemporalGraphicalInput(
                         tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
@@ -1616,6 +1624,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     prev_action_word_ids=torch.tensor([[257, 404]]),
                     prev_action_mask=torch.ones(1, 2).bool(),
                     timestamps=torch.tensor([9.0]),
+                ),
+                initial_batched_graph=Batch(
+                    batch=torch.tensor([0, 0]),
+                    x=torch.tensor([1, 16]),
+                    node_last_update=torch.tensor([5.0, 6.0]),
+                    edge_index=torch.tensor([[0], [1]]),
+                    edge_attr=torch.tensor([100]),
+                    edge_last_update=torch.tensor([7.0]),
                 ),
                 graphical_input_seq=(
                     TWCmdGenTemporalGraphicalInput(
@@ -1843,6 +1859,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         [[True, True, False, False], [True] * 4]
                     ),
                     timestamps=torch.tensor([6.0, 9.0]),
+                ),
+                initial_batched_graph=Batch(
+                    batch=torch.tensor([0, 0, 1, 1]),
+                    x=torch.tensor([14, 34, 1, 16]),
+                    node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                    edge_index=torch.tensor([[1, 2], [0, 3]]),
+                    edge_attr=torch.tensor([100, 100]),
+                    edge_last_update=torch.tensor([4.0, 7.0]),
                 ),
                 graphical_input_seq=(
                     TWCmdGenTemporalGraphicalInput(
