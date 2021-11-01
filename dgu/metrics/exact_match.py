@@ -16,15 +16,10 @@ class ExactMatch(Metric):
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def update(  # type: ignore
-        self,
-        batch_preds: List[List[str]],
-        batch_targets: List[List[str]],
-        batch_mask: List[bool],
+        self, batch_preds: List[List[str]], batch_targets: List[List[str]]
     ) -> None:
         assert len(batch_preds) == len(batch_targets)
-        for preds, targets, mask in zip(batch_preds, batch_targets, batch_mask):
-            if not mask:
-                continue
+        for preds, targets in zip(batch_preds, batch_targets):
             # calculate the exact match score for each example in the batch
             if len(preds) == 0:
                 if len(targets) == 0:

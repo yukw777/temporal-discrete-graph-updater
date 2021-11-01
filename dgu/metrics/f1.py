@@ -17,15 +17,10 @@ class F1(Metric):
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def update(  # type: ignore
-        self,
-        batch_preds: List[List[str]],
-        batch_targets: List[List[str]],
-        batch_mask: List[bool],
+        self, batch_preds: List[List[str]], batch_targets: List[List[str]]
     ) -> None:
         assert len(batch_preds) == len(batch_targets)
-        for preds, targets, mask in zip(batch_preds, batch_targets, batch_mask):
-            if not mask:
-                continue
+        for preds, targets in zip(batch_preds, batch_targets):
             if preds == targets:
                 self.score += 1  # type: ignore
             else:

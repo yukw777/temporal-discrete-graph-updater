@@ -3,6 +3,8 @@ import json
 import torch
 import shutil
 
+from torch_geometric.data import Batch
+
 from dgu.data import (
     TWCmdGenTemporalDataset,
     TWCmdGenTemporalDataModule,
@@ -58,22 +60,20 @@ def test_tw_cmd_gen_dataset_init():
 
 
 @pytest.mark.parametrize(
-    "obs,prev_actions,timestamps,mask,expected",
+    "obs,prev_actions,timestamps,expected",
     [
         (
             ["you are hungry ! let 's cook a delicious meal ."],
             ["drop knife"],
             [2],
-            [True],
             TWCmdGenTemporalStepInput(
                 obs_word_ids=torch.tensor(
                     [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                 ),
-                obs_mask=torch.ones(1, 11),
+                obs_mask=torch.ones(1, 11).bool(),
                 prev_action_word_ids=torch.tensor([[257, 404]]),
-                prev_action_mask=torch.ones(1, 2),
+                prev_action_mask=torch.ones(1, 2).bool(),
                 timestamps=torch.tensor([2.0]),
-                mask=torch.tensor([True]),
             ),
         ),
         (
@@ -83,7 +83,6 @@ def test_tw_cmd_gen_dataset_init():
             ],
             ["drop knife", "take knife from table"],
             [2, 3],
-            [True, True],
             TWCmdGenTemporalStepInput(
                 obs_word_ids=torch.tensor(
                     [
@@ -91,62 +90,27 @@ def test_tw_cmd_gen_dataset_init():
                         [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
                     ]
                 ),
-                obs_mask=torch.tensor(
-                    [
-                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
-                    ]
-                ),
+                obs_mask=torch.tensor([[True] * 11, [True] * 8 + [False] * 3]),
                 prev_action_word_ids=torch.tensor(
                     [[257, 404, 0, 0], [663, 404, 315, 661]]
                 ),
-                prev_action_mask=torch.tensor(
-                    [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
-                ),
+                prev_action_mask=torch.tensor([[True, True, False, False], [True] * 4]),
                 timestamps=torch.tensor([2.0, 3.0]),
-                mask=torch.tensor([True, True]),
-            ),
-        ),
-        (
-            [
-                "you are hungry ! let 's cook a delicious meal .",
-                "<bos> <eos>",
-            ],
-            ["drop knife", "<bos> <eos>"],
-            [2, 3],
-            [True, False],
-            TWCmdGenTemporalStepInput(
-                obs_word_ids=torch.tensor(
-                    [
-                        [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                        [2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    ]
-                ),
-                obs_mask=torch.tensor(
-                    [
-                        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                        [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                    ]
-                ),
-                prev_action_word_ids=torch.tensor([[257, 404], [2, 3]]),
-                prev_action_mask=torch.tensor([[1.0, 1.0], [1.0, 1.0]]),
-                timestamps=torch.tensor([2.0, 3.0]),
-                mask=torch.tensor([True, False]),
             ),
         ),
     ],
 )
 def test_tw_cmd_gen_collator_collate_step_inputs(
-    tw_cmd_gen_collator, obs, prev_actions, timestamps, mask, expected
+    tw_cmd_gen_collator, obs, prev_actions, timestamps, expected
 ):
     assert (
-        tw_cmd_gen_collator.collate_step_inputs(obs, prev_actions, timestamps, mask)
+        tw_cmd_gen_collator.collate_step_inputs(obs, prev_actions, timestamps)
         == expected
     )
 
 
 @pytest.mark.parametrize(
-    "batch_step,expected",
+    "batch,initial_batched_graph,expected",
     [
         (
             [
@@ -158,7 +122,15 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     "graph_events": [],
                 }
             ],
-            [
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, dtype=torch.long),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+            (
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
@@ -166,13 +138,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_label_ids=torch.tensor([0]),
                     groundtruth_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
                     groundtruth_event_src_ids=torch.tensor([0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
                     groundtruth_event_label_ids=torch.tensor([0]),
-                    groundtruth_event_mask=torch.tensor([1.0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.empty(0, dtype=torch.long),
+                        x=torch.empty(0, dtype=torch.long),
+                        node_last_update=torch.empty(0),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
-            ],
+            ),
         ),
         (
             [
@@ -184,7 +164,15 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     "graph_events": [],
                 }
             ],
-            [
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([1, 14]),
+                node_last_update=torch.tensor([0.0, 0.0]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([100]),
+                edge_last_update=torch.tensor([0.0]),
+            ),
+            (
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
@@ -192,13 +180,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_label_ids=torch.tensor([0]),
                     groundtruth_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
                     groundtruth_event_src_ids=torch.tensor([0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
                     groundtruth_event_label_ids=torch.tensor([0]),
-                    groundtruth_event_mask=torch.tensor([1.0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0]),
+                        x=torch.tensor([1, 14]),
+                        node_last_update=torch.tensor([0.0, 0.0]),
+                        edge_index=torch.tensor([[0], [1]]),
+                        edge_attr=torch.tensor([100]),
+                        edge_last_update=torch.tensor([0.0]),
+                    ),
                 ),
-            ],
+            ),
         ),
         (
             [
@@ -214,7 +210,15 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ],
                 }
             ],
-            [
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, dtype=torch.long),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+            (
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
@@ -224,11 +228,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         [EVENT_TYPE_ID_MAP["node-add"]]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
                     groundtruth_event_label_ids=torch.tensor([1]),
-                    groundtruth_event_mask=torch.tensor([1.0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.empty(0, dtype=torch.long),
+                        x=torch.empty(0, dtype=torch.long),
+                        node_last_update=torch.empty(0),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
@@ -239,11 +251,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         [EVENT_TYPE_ID_MAP["node-add"]]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
                     groundtruth_event_label_ids=torch.tensor([14]),
-                    groundtruth_event_mask=torch.tensor([1.0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.empty(0, dtype=torch.long),
+                        x=torch.empty(0, dtype=torch.long),
+                        node_last_update=torch.empty(0),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
@@ -254,11 +274,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         [EVENT_TYPE_ID_MAP["edge-add"]]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0]),
-                    groundtruth_event_src_mask=torch.tensor([1.0]),
+                    groundtruth_event_src_mask=torch.tensor([True]),
                     groundtruth_event_dst_ids=torch.tensor([1]),
-                    groundtruth_event_dst_mask=torch.tensor([1.0]),
+                    groundtruth_event_dst_mask=torch.tensor([True]),
                     groundtruth_event_label_ids=torch.tensor([100]),
-                    groundtruth_event_mask=torch.tensor([1.0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0]),
+                        x=torch.tensor([1]),
+                        node_last_update=torch.tensor([2.0]),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
@@ -267,13 +295,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_label_ids=torch.tensor([100]),
                     groundtruth_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
                     groundtruth_event_src_ids=torch.tensor([0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
                     groundtruth_event_label_ids=torch.tensor([0]),
-                    groundtruth_event_mask=torch.tensor([1.0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0]),
+                        x=torch.tensor([1, 14]),
+                        node_last_update=torch.tensor([2.0, 2.0]),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
-            ],
+            ),
         ),
         (
             [
@@ -281,26 +317,153 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     "game": "g1",
                     "walkthrough_step": 0,
                     "timestamp": 2,
-                    "target_commands": ["add , player , kitchen , in"],
+                    "target_commands": ["add , chicken leg , kitchen , in"],
+                    "graph_events": [
+                        {"type": "node-add", "label": "chicken leg"},
+                        {"type": "edge-add", "src_id": 2, "dst_id": 1, "label": "in"},
+                    ],
+                }
+            ],
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([1, 14]),
+                node_last_update=torch.tensor([1.0, 1.0]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([100]),
+                edge_last_update=torch.tensor([1.0]),
+            ),
+            (
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+                    tgt_event_src_ids=torch.tensor([0]),
+                    tgt_event_dst_ids=torch.tensor([0]),
+                    tgt_event_label_ids=torch.tensor([0]),
+                    groundtruth_event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["node-add"]]
+                    ),
+                    groundtruth_event_src_ids=torch.tensor([0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
+                    groundtruth_event_dst_ids=torch.tensor([0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
+                    groundtruth_event_label_ids=torch.tensor([34]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0]),
+                        x=torch.tensor([1, 14]),
+                        node_last_update=torch.tensor([1.0, 1.0]),
+                        edge_index=torch.tensor([[0], [1]]),
+                        edge_attr=torch.tensor([100]),
+                        edge_last_update=torch.tensor([1.0]),
+                    ),
+                ),
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    tgt_event_src_ids=torch.tensor([0]),
+                    tgt_event_dst_ids=torch.tensor([0]),
+                    tgt_event_label_ids=torch.tensor([34]),
+                    groundtruth_event_type_ids=torch.tensor(
+                        [EVENT_TYPE_ID_MAP["edge-add"]]
+                    ),
+                    groundtruth_event_src_ids=torch.tensor([2]),
+                    groundtruth_event_src_mask=torch.tensor([True]),
+                    groundtruth_event_dst_ids=torch.tensor([1]),
+                    groundtruth_event_dst_mask=torch.tensor([True]),
+                    groundtruth_event_label_ids=torch.tensor([100]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0]),
+                        x=torch.tensor([1, 14]),
+                        node_last_update=torch.tensor([1.0, 1.0]),
+                        edge_index=torch.tensor([[0], [1]]),
+                        edge_attr=torch.tensor([100]),
+                        edge_last_update=torch.tensor([1.0]),
+                    ),
+                ),
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                    tgt_event_src_ids=torch.tensor([2]),
+                    tgt_event_dst_ids=torch.tensor([1]),
+                    tgt_event_label_ids=torch.tensor([100]),
+                    groundtruth_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
+                    groundtruth_event_src_ids=torch.tensor([0]),
+                    groundtruth_event_src_mask=torch.tensor([False]),
+                    groundtruth_event_dst_ids=torch.tensor([0]),
+                    groundtruth_event_dst_mask=torch.tensor([False]),
+                    groundtruth_event_label_ids=torch.tensor([0]),
+                    groundtruth_event_mask=torch.tensor([True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0]),
+                        x=torch.tensor([1, 14, 34]),
+                        node_last_update=torch.tensor([1.0, 1.0, 2.0]),
+                        edge_index=torch.tensor([[0], [1]]),
+                        edge_attr=torch.tensor([100]),
+                        edge_last_update=torch.tensor([1.0]),
+                    ),
+                ),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 3,
+                    "target_commands": [
+                        "add , player , kitchen , in",
+                        "add , chicken leg , kitchen , in",
+                        "delete , player , kitchen , in",
+                    ],
                     "graph_events": [
                         {"type": "node-add", "label": "player"},
                         {"type": "node-add", "label": "kitchen"},
                         {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "in"},
+                        {"type": "node-add", "label": "chicken leg"},
+                        {"type": "edge-add", "src_id": 2, "dst_id": 1, "label": "in"},
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                        },
+                        {"type": "node-delete", "node_id": 0, "label": "player"},
                     ],
                 },
                 {
                     "game": "g1",
                     "walkthrough_step": 0,
-                    "timestamp": 4,
-                    "target_commands": ["add , player , livingroom , in"],
+                    "timestamp": 1,
+                    "target_commands": [
+                        "add , chicken leg , kitchen , in",
+                        "add , player , livingroom , in",
+                        "delete , chicken leg , kitchen , in",
+                    ],
                     "graph_events": [
+                        {"type": "node-add", "label": "chicken leg"},
+                        {"type": "node-add", "label": "kitchen"},
+                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "in"},
                         {"type": "node-add", "label": "player"},
                         {"type": "node-add", "label": "livingroom"},
-                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "in"},
+                        {"type": "edge-add", "src_id": 2, "dst_id": 3, "label": "in"},
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                        },
+                        {"type": "node-delete", "node_id": 1, "label": "kitchen"},
+                        {"type": "node-delete", "node_id": 0, "label": "chicken leg"},
                     ],
                 },
             ],
-            [
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, dtype=torch.long),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
+            ),
+            (
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["start"]]
@@ -315,11 +478,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([1, 1]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
+                    groundtruth_event_label_ids=torch.tensor([1, 34]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.empty(0, dtype=torch.long),
+                        x=torch.empty(0, dtype=torch.long),
+                        node_last_update=torch.empty(0),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -330,7 +501,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_ids=torch.tensor([1, 1]),
+                    tgt_event_label_ids=torch.tensor([1, 34]),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -338,11 +509,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([14, 16]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
+                    groundtruth_event_label_ids=torch.tensor([14, 14]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.empty(0, dtype=torch.long),
+                        x=torch.empty(0, dtype=torch.long),
+                        node_last_update=torch.empty(0),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -353,7 +532,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_ids=torch.tensor([14, 16]),
+                    tgt_event_label_ids=torch.tensor([14, 14]),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -361,11 +540,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_src_mask=torch.tensor([True, True]),
                     groundtruth_event_dst_ids=torch.tensor([1, 1]),
-                    groundtruth_event_dst_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_ids=torch.tensor([100, 100]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 1]),
+                        x=torch.tensor([1, 34]),
+                        node_last_update=torch.tensor([3.0, 1.0]),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -378,109 +565,224 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_dst_ids=torch.tensor([1, 1]),
                     tgt_event_label_ids=torch.tensor([100, 100]),
                     groundtruth_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["end"], EVENT_TYPE_ID_MAP["end"]]
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([0, 0]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
-                ),
-            ],
-        ),
-        (
-            [
-                {
-                    "game": "g1",
-                    "walkthrough_step": 0,
-                    "timestamp": 2,
-                    "target_commands": ["add , player , kitchen , in"],
-                    "graph_events": [
-                        {"type": "node-add", "label": "player"},
-                        {"type": "node-add", "label": "kitchen"},
-                        {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "in"},
-                    ],
-                },
-                {},
-            ],
-            [
-                TWCmdGenTemporalGraphicalInput(
-                    tgt_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["start"]]
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
+                    groundtruth_event_label_ids=torch.tensor([34, 1]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 1, 1]),
+                        x=torch.tensor([1, 14, 34, 14]),
+                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0]),
+                        edge_index=torch.empty(2, 0, dtype=torch.long),
+                        edge_attr=torch.empty(0, dtype=torch.long),
+                        edge_last_update=torch.empty(0),
                     ),
-                    tgt_event_src_ids=torch.tensor([0, 0]),
-                    tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_ids=torch.tensor([0, 0]),
-                    groundtruth_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["end"]]
-                    ),
-                    groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([1, 0]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["end"]]
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_ids=torch.tensor([1, 0]),
+                    tgt_event_label_ids=torch.tensor([34, 1]),
                     groundtruth_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["pad"]]
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
                     ),
-                    groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([14, 0]),
-                    groundtruth_event_mask=torch.tensor([1.0, 0.0]),
-                ),
-                TWCmdGenTemporalGraphicalInput(
-                    tgt_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["pad"]]
-                    ),
-                    tgt_event_src_ids=torch.tensor([0, 0]),
-                    tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_ids=torch.tensor([14, 0]),
-                    groundtruth_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["pad"]]
-                    ),
-                    groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([1.0, 0.0]),
+                    groundtruth_event_src_ids=torch.tensor([2, 0]),
+                    groundtruth_event_src_mask=torch.tensor([True, False]),
                     groundtruth_event_dst_ids=torch.tensor([1, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([1.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([100, 0]),
-                    groundtruth_event_mask=torch.tensor([1.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([True, False]),
+                    groundtruth_event_label_ids=torch.tensor([100, 16]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 1, 1]),
+                        x=torch.tensor([1, 14, 34, 14]),
+                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0]),
+                        edge_index=torch.tensor([[0, 2], [1, 3]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["pad"]]
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["node-add"],
+                        ]
                     ),
-                    tgt_event_src_ids=torch.tensor([0, 0]),
+                    tgt_event_src_ids=torch.tensor([2, 0]),
                     tgt_event_dst_ids=torch.tensor([1, 0]),
-                    tgt_event_label_ids=torch.tensor([100, 0]),
+                    tgt_event_label_ids=torch.tensor([100, 16]),
                     groundtruth_event_type_ids=torch.tensor(
-                        [EVENT_TYPE_ID_MAP["end"], EVENT_TYPE_ID_MAP["pad"]]
+                        [
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    groundtruth_event_src_ids=torch.tensor([0, 2]),
+                    groundtruth_event_src_mask=torch.tensor([True, True]),
+                    groundtruth_event_dst_ids=torch.tensor([1, 3]),
+                    groundtruth_event_dst_mask=torch.tensor([True, True]),
+                    groundtruth_event_label_ids=torch.tensor([100, 100]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                        x=torch.tensor([1, 14, 34, 34, 14, 1]),
+                        node_last_update=torch.tensor([3.0, 3.0, 3.0, 1.0, 1.0, 1.0]),
+                        edge_index=torch.tensor([[0, 3], [1, 4]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
+                ),
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    tgt_event_src_ids=torch.tensor([0, 2]),
+                    tgt_event_dst_ids=torch.tensor([1, 3]),
+                    tgt_event_label_ids=torch.tensor([100, 100]),
+                    groundtruth_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                    groundtruth_event_label_ids=torch.tensor([0, 0]),
-                    groundtruth_event_mask=torch.tensor([1.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([True, True]),
+                    groundtruth_event_dst_ids=torch.tensor([0, 1]),
+                    groundtruth_event_dst_mask=torch.tensor([False, True]),
+                    groundtruth_event_label_ids=torch.tensor([1, 100]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
+                        x=torch.tensor([1, 14, 34, 34, 14, 1, 16]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 3.0, 1.0, 1.0, 1.0, 1.0]
+                        ),
+                        edge_index=torch.tensor([[0, 3, 2], [1, 4, 1]]),
+                        edge_attr=torch.tensor([100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 3.0]),
+                    ),
                 ),
-            ],
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    tgt_event_src_ids=torch.tensor([0, 0]),
+                    tgt_event_dst_ids=torch.tensor([0, 1]),
+                    tgt_event_label_ids=torch.tensor([1, 100]),
+                    groundtruth_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["end"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    groundtruth_event_src_ids=torch.tensor([0, 1]),
+                    groundtruth_event_src_mask=torch.tensor([False, True]),
+                    groundtruth_event_dst_ids=torch.tensor([0, 0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
+                    groundtruth_event_label_ids=torch.tensor([0, 14]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
+                        x=torch.tensor([1, 14, 34, 34, 14, 1, 16]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 3.0, 1.0, 1.0, 1.0, 1.0]
+                        ),
+                        edge_index=torch.tensor([[3, 2, 5], [4, 1, 6]]),
+                        edge_attr=torch.tensor([100, 100, 100]),
+                        edge_last_update=torch.tensor([1.0, 3.0, 1.0]),
+                    ),
+                ),
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["end"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    tgt_event_src_ids=torch.tensor([0, 1]),
+                    tgt_event_dst_ids=torch.tensor([0, 0]),
+                    tgt_event_label_ids=torch.tensor([0, 14]),
+                    groundtruth_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["pad"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    groundtruth_event_src_ids=torch.tensor([0, 0]),
+                    groundtruth_event_src_mask=torch.tensor([False, True]),
+                    groundtruth_event_dst_ids=torch.tensor([0, 0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
+                    groundtruth_event_label_ids=torch.tensor([0, 34]),
+                    groundtruth_event_mask=torch.tensor([False, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 34, 14, 1, 16]),
+                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0, 1.0]),
+                        edge_index=torch.tensor([[1, 4], [0, 5]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
+                ),
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["pad"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    tgt_event_src_ids=torch.tensor([0, 0]),
+                    tgt_event_dst_ids=torch.tensor([0, 0]),
+                    tgt_event_label_ids=torch.tensor([0, 34]),
+                    groundtruth_event_type_ids=torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["pad"],
+                            EVENT_TYPE_ID_MAP["end"],
+                        ]
+                    ),
+                    groundtruth_event_src_ids=torch.tensor([0, 0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
+                    groundtruth_event_dst_ids=torch.tensor([0, 0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
+                    groundtruth_event_label_ids=torch.tensor([0, 0]),
+                    groundtruth_event_mask=torch.tensor([False, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 34, 1, 16]),
+                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                        edge_index=torch.tensor([[1, 3], [0, 4]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
+                ),
+            ),
         ),
         (
             [
                 {
                     "game": "g1",
                     "walkthrough_step": 0,
-                    "timestamp": 3,
+                    "timestamp": 4,
                     "target_commands": [
                         "add , player , kitchen , in",
                         "add , chicken leg , kitchen , in",
@@ -504,7 +806,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 {
                     "game": "g1",
                     "walkthrough_step": 0,
-                    "timestamp": 1,
+                    "timestamp": 2,
                     "target_commands": [
                         "add , chicken leg , kitchen , in",
                         "add , player , livingroom , in",
@@ -513,22 +815,30 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     "graph_events": [
                         {"type": "node-add", "label": "chicken leg"},
                         {"type": "node-add", "label": "kitchen"},
-                        {"type": "edge-add", "src_id": 2, "dst_id": 3, "label": "in"},
+                        {"type": "edge-add", "src_id": 3, "dst_id": 4, "label": "in"},
                         {"type": "node-add", "label": "player"},
                         {"type": "node-add", "label": "livingroom"},
-                        {"type": "edge-add", "src_id": 4, "dst_id": 5, "label": "in"},
+                        {"type": "edge-add", "src_id": 5, "dst_id": 6, "label": "in"},
                         {
                             "type": "edge-delete",
-                            "src_id": 2,
-                            "dst_id": 3,
+                            "src_id": 3,
+                            "dst_id": 4,
                             "label": "in",
                         },
-                        {"type": "node-delete", "node_id": 3, "label": "kitchen"},
-                        {"type": "node-delete", "node_id": 2, "label": "chicken leg"},
+                        {"type": "node-delete", "node_id": 4, "label": "kitchen"},
+                        {"type": "node-delete", "node_id": 3, "label": "chicken leg"},
                     ],
                 },
             ],
-            [
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1, 1]),
+                x=torch.tensor([14, 34, 34, 1, 16]),
+                node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                edge_index=torch.tensor([[1, 3], [0, 4]]),
+                edge_attr=torch.tensor([100, 100]),
+                edge_last_update=torch.tensor([3.0, 1.0]),
+            ),
+            (
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["start"]]
@@ -543,11 +853,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_ids=torch.tensor([1, 34]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 34, 1, 16]),
+                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                        edge_index=torch.tensor([[1, 3], [0, 4]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -566,11 +884,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_ids=torch.tensor([14, 14]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 34, 1, 16]),
+                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                        edge_index=torch.tensor([[1, 3], [0, 4]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -588,12 +914,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["edge-add"],
                         ]
                     ),
-                    groundtruth_event_src_ids=torch.tensor([2, 2]),
-                    groundtruth_event_src_mask=torch.tensor([1.0, 1.0]),
-                    groundtruth_event_dst_ids=torch.tensor([3, 3]),
-                    groundtruth_event_dst_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_src_ids=torch.tensor([2, 3]),
+                    groundtruth_event_src_mask=torch.tensor([True, True]),
+                    groundtruth_event_dst_ids=torch.tensor([3, 4]),
+                    groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_ids=torch.tensor([100, 100]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 1, 34, 1, 16, 34]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 1.0, 1.0, 1.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 4], [0, 5]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -602,8 +938,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["edge-add"],
                         ]
                     ),
-                    tgt_event_src_ids=torch.tensor([2, 2]),
-                    tgt_event_dst_ids=torch.tensor([3, 3]),
+                    tgt_event_src_ids=torch.tensor([2, 3]),
+                    tgt_event_dst_ids=torch.tensor([3, 4]),
                     tgt_event_label_ids=torch.tensor([100, 100]),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -612,11 +948,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_ids=torch.tensor([34, 1]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 1, 14, 34, 1, 16, 34, 14]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 5], [0, 6]]),
+                        edge_attr=torch.tensor([100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -635,11 +981,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([4, 0]),
-                    groundtruth_event_src_mask=torch.tensor([1.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([True, False]),
                     groundtruth_event_dst_ids=torch.tensor([3, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([1.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([True, False]),
                     groundtruth_event_label_ids=torch.tensor([100, 16]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 1, 14, 34, 1, 16, 34, 14]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 5, 2, 7], [0, 6, 3, 8]]),
+                        edge_attr=torch.tensor([100, 100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -657,12 +1013,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["edge-add"],
                         ]
                     ),
-                    groundtruth_event_src_ids=torch.tensor([2, 4]),
-                    groundtruth_event_src_mask=torch.tensor([1.0, 1.0]),
-                    groundtruth_event_dst_ids=torch.tensor([3, 5]),
-                    groundtruth_event_dst_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_src_ids=torch.tensor([2, 5]),
+                    groundtruth_event_src_mask=torch.tensor([True, True]),
+                    groundtruth_event_dst_ids=torch.tensor([3, 6]),
+                    groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_ids=torch.tensor([100, 100]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 1, 14, 34, 34, 1, 16, 34, 14, 1]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 6, 2, 8], [0, 7, 3, 9]]),
+                        edge_attr=torch.tensor([100, 100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -671,8 +1037,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["edge-add"],
                         ]
                     ),
-                    tgt_event_src_ids=torch.tensor([2, 4]),
-                    tgt_event_dst_ids=torch.tensor([3, 5]),
+                    tgt_event_src_ids=torch.tensor([2, 5]),
+                    tgt_event_dst_ids=torch.tensor([3, 6]),
                     tgt_event_label_ids=torch.tensor([100, 100]),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -680,12 +1046,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["edge-delete"],
                         ]
                     ),
-                    groundtruth_event_src_ids=torch.tensor([2, 2]),
-                    groundtruth_event_src_mask=torch.tensor([1.0, 1.0]),
-                    groundtruth_event_dst_ids=torch.tensor([0, 3]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 1.0]),
+                    groundtruth_event_src_ids=torch.tensor([2, 3]),
+                    groundtruth_event_src_mask=torch.tensor([True, True]),
+                    groundtruth_event_dst_ids=torch.tensor([0, 4]),
+                    groundtruth_event_dst_mask=torch.tensor([False, True]),
                     groundtruth_event_label_ids=torch.tensor([1, 100]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 1, 14, 34, 34, 1, 16, 34, 14, 1, 16]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 6, 2, 8, 4], [0, 7, 3, 9, 3]]),
+                        edge_attr=torch.tensor([100, 100, 100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0, 4.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -694,8 +1070,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["edge-delete"],
                         ]
                     ),
-                    tgt_event_src_ids=torch.tensor([2, 2]),
-                    tgt_event_dst_ids=torch.tensor([0, 3]),
+                    tgt_event_src_ids=torch.tensor([2, 3]),
+                    tgt_event_dst_ids=torch.tensor([0, 4]),
                     tgt_event_label_ids=torch.tensor([1, 100]),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -703,12 +1079,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["node-delete"],
                         ]
                     ),
-                    groundtruth_event_src_ids=torch.tensor([0, 3]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 1.0]),
+                    groundtruth_event_src_ids=torch.tensor([0, 4]),
+                    groundtruth_event_src_mask=torch.tensor([False, True]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_ids=torch.tensor([0, 14]),
-                    groundtruth_event_mask=torch.tensor([1.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([True, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 1, 14, 34, 34, 1, 16, 34, 14, 1, 16]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 6, 8, 4, 10], [0, 7, 9, 3, 11]]),
+                        edge_attr=torch.tensor([100, 100, 100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 2.0, 4.0, 2.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -717,7 +1103,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["node-delete"],
                         ]
                     ),
-                    tgt_event_src_ids=torch.tensor([0, 3]),
+                    tgt_event_src_ids=torch.tensor([0, 4]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
                     tgt_event_label_ids=torch.tensor([0, 14]),
                     groundtruth_event_type_ids=torch.tensor(
@@ -726,12 +1112,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["node-delete"],
                         ]
                     ),
-                    groundtruth_event_src_ids=torch.tensor([0, 2]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 1.0]),
+                    groundtruth_event_src_ids=torch.tensor([0, 3]),
+                    groundtruth_event_src_mask=torch.tensor([False, True]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_ids=torch.tensor([0, 34]),
-                    groundtruth_event_mask=torch.tensor([0.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([False, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 14, 34, 34, 1, 16, 34, 14, 1, 16]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 5, 3, 9], [0, 6, 2, 10]]),
+                        edge_attr=torch.tensor([100, 100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                    ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
@@ -740,7 +1136,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             EVENT_TYPE_ID_MAP["node-delete"],
                         ]
                     ),
-                    tgt_event_src_ids=torch.tensor([0, 2]),
+                    tgt_event_src_ids=torch.tensor([0, 3]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
                     tgt_event_label_ids=torch.tensor([0, 34]),
                     groundtruth_event_type_ids=torch.tensor(
@@ -750,20 +1146,33 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ]
                     ),
                     groundtruth_event_src_ids=torch.tensor([0, 0]),
-                    groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                    groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
+                    groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_ids=torch.tensor([0, 0]),
-                    groundtruth_event_mask=torch.tensor([0.0, 1.0]),
+                    groundtruth_event_mask=torch.tensor([False, True]),
+                    prev_batched_graph=Batch(
+                        batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1]),
+                        x=torch.tensor([14, 34, 14, 34, 34, 1, 16, 34, 1, 16]),
+                        node_last_update=torch.tensor(
+                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+                        ),
+                        edge_index=torch.tensor([[1, 5, 3, 8], [0, 6, 2, 9]]),
+                        edge_attr=torch.tensor([100, 100, 100, 100]),
+                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                    ),
                 ),
-            ],
+            ),
         ),
     ],
 )
-def test_tw_cmd_gen_collator_collate_graphical_inputs(
-    tw_cmd_gen_collator, batch_step, expected
+def test_tw_cmd_gen_collator_collate_graphical_input_seq(
+    tw_cmd_gen_collator, batch, initial_batched_graph, expected
 ):
-    assert tw_cmd_gen_collator.collate_graphical_inputs(batch_step) == expected
+    assert (
+        tw_cmd_gen_collator.collate_graphical_input_seq(batch, initial_batched_graph)
+        == expected
+    )
 
 
 def test_read_label_vocab_files():
@@ -786,441 +1195,805 @@ def test_read_label_vocab_files():
     [
         (
             [
-                [
-                    {
-                        "game": "g1",
-                        "walkthrough_step": 0,
-                        "observation": "you are hungry ! "
-                        "let 's cook a delicious meal .",
-                        "previous_action": "drop knife",
-                        "timestamp": 2,
-                        "target_commands": ["add , player , kitchen , in"],
-                        "graph_events": [
-                            {"type": "node-add", "label": "player"},
-                            {"type": "node-add", "label": "kitchen"},
-                            {
-                                "type": "edge-add",
-                                "src_id": 0,
-                                "dst_id": 1,
-                                "label": "in",
-                            },
-                        ],
-                    },
-                ]
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 2,
+                    "target_commands": [],
+                    "prev_graph_events": [],
+                }
             ],
-            TWCmdGenTemporalBatch(
-                ids=(("g1", 0),),
-                data=(
-                    (
-                        TWCmdGenTemporalStepInput(
-                            obs_word_ids=torch.tensor(
-                                [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
-                            ),
-                            obs_mask=torch.ones(1, 11),
-                            prev_action_word_ids=torch.tensor([[257, 404]]),
-                            prev_action_mask=torch.ones(1, 2),
-                            timestamps=torch.tensor([2.0]),
-                            mask=torch.tensor([True]),
-                        ),
-                        (
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["start"]]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0]),
-                                tgt_event_dst_ids=torch.tensor([0]),
-                                tgt_event_label_ids=torch.tensor([0]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["node-add"]]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0]),
-                                groundtruth_event_label_ids=torch.tensor([1]),
-                                groundtruth_event_mask=torch.tensor([1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["node-add"]]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0]),
-                                tgt_event_dst_ids=torch.tensor([0]),
-                                tgt_event_label_ids=torch.tensor([1]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["node-add"]]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0]),
-                                groundtruth_event_label_ids=torch.tensor([14]),
-                                groundtruth_event_mask=torch.tensor([1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["node-add"]]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0]),
-                                tgt_event_dst_ids=torch.tensor([0]),
-                                tgt_event_label_ids=torch.tensor([14]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["edge-add"]]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0]),
-                                groundtruth_event_src_mask=torch.tensor([1.0]),
-                                groundtruth_event_dst_ids=torch.tensor([1]),
-                                groundtruth_event_dst_mask=torch.tensor([1.0]),
-                                groundtruth_event_label_ids=torch.tensor([100]),
-                                groundtruth_event_mask=torch.tensor([1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["edge-add"]]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0]),
-                                tgt_event_dst_ids=torch.tensor([1]),
-                                tgt_event_label_ids=torch.tensor([100]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["end"]]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0]),
-                                groundtruth_event_label_ids=torch.tensor([0]),
-                                groundtruth_event_mask=torch.tensor([1.0]),
-                            ),
-                        ),
-                        (("add , player , kitchen , in",),),
-                    ),
-                ),
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, dtype=torch.long),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0),
             ),
         ),
         (
             [
-                [
-                    {
-                        "game": "g1",
-                        "walkthrough_step": 0,
-                        "observation": "you are hungry ! "
-                        "let 's cook a delicious meal .",
-                        "previous_action": "drop knife",
-                        "timestamp": 2,
-                        "target_commands": ["add , player , kitchen , in"],
-                        "graph_events": [
-                            {"type": "node-add", "label": "player"},
-                            {"type": "node-add", "label": "kitchen"},
-                            {
-                                "type": "edge-add",
-                                "src_id": 0,
-                                "dst_id": 1,
-                                "label": "in",
-                            },
-                        ],
-                    },
-                    {
-                        "game": "g1",
-                        "walkthrough_step": 0,
-                        "observation": "you take the knife from the table .",
-                        "previous_action": "take knife from table",
-                        "timestamp": 3,
-                        "target_commands": ["delete , player , kitchen , in"],
-                        "graph_events": [
-                            {
-                                "type": "edge-delete",
-                                "src_id": 0,
-                                "dst_id": 1,
-                                "label": "in",
-                            },
-                            {"type": "node-delete", "node_id": 1, "label": "kitchen"},
-                            {"type": "node-delete", "node_id": 0, "label": "player"},
-                        ],
-                    },
-                ],
-                [
-                    {
-                        "game": "g2",
-                        "walkthrough_step": 0,
-                        "observation": "you take the knife from the table .",
-                        "previous_action": "take knife from table",
-                        "timestamp": 1,
-                        "target_commands": ["add , player , kitchen , in"],
-                        "graph_events": [
-                            {"type": "node-add", "label": "player"},
-                            {"type": "node-add", "label": "kitchen"},
-                            {
-                                "type": "edge-add",
-                                "src_id": 0,
-                                "dst_id": 1,
-                                "label": "in",
-                            },
-                        ],
-                    },
-                ],
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 2,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 2},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                    ],
+                }
+            ],
+            Batch(
+                batch=torch.tensor([0, 0]),
+                x=torch.tensor([1, 14]),
+                node_last_update=torch.tensor([2.0, 3.0]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([100]),
+                edge_last_update=torch.tensor([3.0]),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 2,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 1},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 2},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 4,
+                    "target_commands": ["add , player , livingroom , in"],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 4},
+                        {"type": "node-add", "label": "livingroom", "timestamp": 5},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 6,
+                        },
+                    ],
+                },
+            ],
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([1, 14, 1, 16]),
+                node_last_update=torch.tensor([1.0, 2.0, 4.0, 5.0]),
+                edge_index=torch.tensor([[0, 2], [1, 3]]),
+                edge_attr=torch.tensor([100, 100]),
+                edge_last_update=torch.tensor([3.0, 6.0]),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 3,
+                    "target_commands": [
+                        "add , player , kitchen , in",
+                        "add , chicken leg , kitchen , in",
+                        "delete , player , kitchen , in",
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 1},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 2},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 5,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 0,
+                            "label": "player",
+                            "timestamp": 5,
+                        },
+                    ],
+                },
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "timestamp": 1,
+                    "target_commands": [
+                        "add , chicken leg , kitchen , in",
+                        "add , player , livingroom , in",
+                        "delete , chicken leg , kitchen , in",
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 2},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {"type": "node-add", "label": "player", "timestamp": 5},
+                        {"type": "node-add", "label": "livingroom", "timestamp": 6},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 1,
+                            "label": "kitchen",
+                            "timestamp": 8,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 0,
+                            "label": "chicken leg",
+                            "timestamp": 8,
+                        },
+                    ],
+                },
+            ],
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([14, 34, 1, 16]),
+                node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                edge_index=torch.tensor([[1, 2], [0, 3]]),
+                edge_attr=torch.tensor([100, 100]),
+                edge_last_update=torch.tensor([4.0, 7.0]),
+            ),
+        ),
+    ],
+)
+def test_tw_cmd_gen_collator_collate_prev_graph_events(
+    tw_cmd_gen_collator, batch, expected
+):
+    collated = tw_cmd_gen_collator.collate_prev_graph_events(batch)
+
+    assert collated.batch.equal(expected.batch)
+    assert collated.x.equal(expected.x)
+    assert collated.node_last_update.equal(expected.node_last_update)
+    assert collated.edge_index.equal(expected.edge_index)
+    assert collated.edge_attr.equal(expected.edge_attr)
+    assert collated.edge_last_update.equal(expected.edge_last_update)
+
+
+@pytest.mark.parametrize(
+    "batch,expected",
+    [
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "random_step": 0,
+                    "observation": "you are hungry ! " "let 's cook a delicious meal .",
+                    "previous_action": "drop knife",
+                    "timestamp": 2,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "graph_events": [
+                        {"type": "node-add", "label": "player"},
+                        {"type": "node-add", "label": "kitchen"},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                        },
+                    ],
+                    "prev_graph_events": [],
+                },
             ],
             TWCmdGenTemporalBatch(
-                ids=(("g1", 0), ("g2", 0)),
-                data=(
-                    (
-                        TWCmdGenTemporalStepInput(
-                            obs_word_ids=torch.tensor(
-                                [
-                                    [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                                    [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
-                                ]
-                            ),
-                            obs_mask=torch.tensor(
-                                [
-                                    [
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                    ],
-                                    [
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        0.0,
-                                        0.0,
-                                        0.0,
-                                    ],
-                                ]
-                            ),
-                            prev_action_word_ids=torch.tensor(
-                                [[257, 404, 0, 0], [663, 404, 315, 661]]
-                            ),
-                            prev_action_mask=torch.tensor(
-                                [[1.0, 1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]
-                            ),
-                            timestamps=torch.tensor([2.0, 1.0]),
-                            mask=torch.tensor([True, True]),
+                ids=(("g1", 0, 0),),
+                step_input=TWCmdGenTemporalStepInput(
+                    obs_word_ids=torch.tensor(
+                        [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                    ),
+                    obs_mask=torch.ones(1, 11).bool(),
+                    prev_action_word_ids=torch.tensor([[257, 404]]),
+                    prev_action_mask=torch.ones(1, 2).bool(),
+                    timestamps=torch.tensor([2.0]),
+                ),
+                initial_batched_graph=Batch(
+                    batch=torch.empty(0, dtype=torch.long),
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0),
+                ),
+                graphical_input_seq=(
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([0]),
+                        tgt_event_label_ids=torch.tensor([0]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
-                        (
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["start"],
-                                        EVENT_TYPE_ID_MAP["start"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([0, 0]),
-                                tgt_event_label_ids=torch.tensor([0, 0]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                    ]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([1, 1]),
-                                groundtruth_event_mask=torch.tensor([1.0, 1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([0, 0]),
-                                tgt_event_label_ids=torch.tensor([1, 1]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                    ]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([14, 14]),
-                                groundtruth_event_mask=torch.tensor([1.0, 1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                        EVENT_TYPE_ID_MAP["node-add"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([0, 0]),
-                                tgt_event_label_ids=torch.tensor([14, 14]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["edge-add"],
-                                        EVENT_TYPE_ID_MAP["edge-add"],
-                                    ]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([1.0, 1.0]),
-                                groundtruth_event_dst_ids=torch.tensor([1, 1]),
-                                groundtruth_event_dst_mask=torch.tensor([1.0, 1.0]),
-                                groundtruth_event_label_ids=torch.tensor([100, 100]),
-                                groundtruth_event_mask=torch.tensor([1.0, 1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["edge-add"],
-                                        EVENT_TYPE_ID_MAP["edge-add"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([1, 1]),
-                                tgt_event_label_ids=torch.tensor([100, 100]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["end"], EVENT_TYPE_ID_MAP["end"]]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([0, 0]),
-                                groundtruth_event_mask=torch.tensor([1.0, 1.0]),
-                            ),
-                        ),
-                        (
-                            ("add , player , kitchen , in",),
-                            ("add , player , kitchen , in",),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([False]),
+                        groundtruth_event_dst_ids=torch.tensor([0]),
+                        groundtruth_event_dst_mask=torch.tensor([False]),
+                        groundtruth_event_label_ids=torch.tensor([1]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.empty(0, dtype=torch.long),
+                            x=torch.empty(0, dtype=torch.long),
+                            node_last_update=torch.empty(0),
+                            edge_index=torch.empty(2, 0, dtype=torch.long),
+                            edge_attr=torch.empty(0, dtype=torch.long),
+                            edge_last_update=torch.empty(0),
                         ),
                     ),
-                    (
-                        TWCmdGenTemporalStepInput(
-                            obs_word_ids=torch.tensor(
-                                [
-                                    [769, 663, 676, 404, 315, 676, 661, 21],
-                                    [2, 3, 0, 0, 0, 0, 0, 0],
-                                ]
-                            ),
-                            obs_mask=torch.tensor(
-                                [
-                                    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                                    [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                                ]
-                            ),
-                            prev_action_word_ids=torch.tensor(
-                                [[663, 404, 315, 661], [2, 3, 0, 0]]
-                            ),
-                            prev_action_mask=torch.tensor(
-                                [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 0.0, 0.0]]
-                            ),
-                            timestamps=torch.tensor([3.0, 0.0]),
-                            mask=torch.tensor([True, False]),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
-                        (
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["start"],
-                                        EVENT_TYPE_ID_MAP["start"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([0, 0]),
-                                tgt_event_label_ids=torch.tensor([0, 0]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["edge-delete"],
-                                        EVENT_TYPE_ID_MAP["end"],
-                                    ]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([1.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([1, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([1.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([100, 0]),
-                                groundtruth_event_mask=torch.tensor([1.0, 1.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["edge-delete"],
-                                        EVENT_TYPE_ID_MAP["end"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([1, 0]),
-                                tgt_event_label_ids=torch.tensor([100, 0]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-delete"],
-                                        EVENT_TYPE_ID_MAP["pad"],
-                                    ]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([1, 0]),
-                                groundtruth_event_src_mask=torch.tensor([1.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([14, 0]),
-                                groundtruth_event_mask=torch.tensor([1.0, 0.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-delete"],
-                                        EVENT_TYPE_ID_MAP["pad"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([1, 0]),
-                                tgt_event_dst_ids=torch.tensor([0, 0]),
-                                tgt_event_label_ids=torch.tensor([14, 0]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-delete"],
-                                        EVENT_TYPE_ID_MAP["pad"],
-                                    ]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([1.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([1, 0]),
-                                groundtruth_event_mask=torch.tensor([1.0, 0.0]),
-                            ),
-                            TWCmdGenTemporalGraphicalInput(
-                                tgt_event_type_ids=torch.tensor(
-                                    [
-                                        EVENT_TYPE_ID_MAP["node-delete"],
-                                        EVENT_TYPE_ID_MAP["pad"],
-                                    ]
-                                ),
-                                tgt_event_src_ids=torch.tensor([0, 0]),
-                                tgt_event_dst_ids=torch.tensor([0, 0]),
-                                tgt_event_label_ids=torch.tensor([1, 0]),
-                                groundtruth_event_type_ids=torch.tensor(
-                                    [EVENT_TYPE_ID_MAP["end"], EVENT_TYPE_ID_MAP["pad"]]
-                                ),
-                                groundtruth_event_src_ids=torch.tensor([0, 0]),
-                                groundtruth_event_src_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_dst_ids=torch.tensor([0, 0]),
-                                groundtruth_event_dst_mask=torch.tensor([0.0, 0.0]),
-                                groundtruth_event_label_ids=torch.tensor([0, 0]),
-                                groundtruth_event_mask=torch.tensor([1.0, 0.0]),
-                            ),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([0]),
+                        tgt_event_label_ids=torch.tensor([1]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
-                        (("delete , player , kitchen , in",), ()),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([False]),
+                        groundtruth_event_dst_ids=torch.tensor([0]),
+                        groundtruth_event_dst_mask=torch.tensor([False]),
+                        groundtruth_event_label_ids=torch.tensor([14]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.empty(0, dtype=torch.long),
+                            x=torch.empty(0, dtype=torch.long),
+                            node_last_update=torch.empty(0),
+                            edge_index=torch.empty(2, 0, dtype=torch.long),
+                            edge_attr=torch.empty(0, dtype=torch.long),
+                            edge_last_update=torch.empty(0),
+                        ),
                     ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([0]),
+                        tgt_event_label_ids=torch.tensor([14]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["edge-add"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([True]),
+                        groundtruth_event_dst_ids=torch.tensor([1]),
+                        groundtruth_event_dst_mask=torch.tensor([True]),
+                        groundtruth_event_label_ids=torch.tensor([100]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0]),
+                            x=torch.tensor([1]),
+                            node_last_update=torch.tensor([2.0]),
+                            edge_index=torch.empty(2, 0, dtype=torch.long),
+                            edge_attr=torch.empty(0, dtype=torch.long),
+                            edge_last_update=torch.empty(0),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["edge-add"]]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([1]),
+                        tgt_event_label_ids=torch.tensor([100]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["end"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([False]),
+                        groundtruth_event_dst_ids=torch.tensor([0]),
+                        groundtruth_event_dst_mask=torch.tensor([False]),
+                        groundtruth_event_label_ids=torch.tensor([0]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0]),
+                            x=torch.tensor([1, 14]),
+                            node_last_update=torch.tensor([2.0, 2.0]),
+                            edge_index=torch.empty(2, 0, dtype=torch.long),
+                            edge_attr=torch.empty(0, dtype=torch.long),
+                            edge_last_update=torch.empty(0),
+                        ),
+                    ),
+                ),
+                graph_commands=(("add , player , kitchen , in",),),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "random_step": 0,
+                    "observation": "you are hungry ! " "let 's cook a delicious meal .",
+                    "previous_action": "drop knife",
+                    "timestamp": 9,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "graph_events": [
+                        {"type": "node-add", "label": "player"},
+                        {"type": "node-add", "label": "kitchen"},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                        },
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 2},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {"type": "node-add", "label": "player", "timestamp": 5},
+                        {"type": "node-add", "label": "livingroom", "timestamp": 6},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 1,
+                            "label": "kitchen",
+                            "timestamp": 8,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 0,
+                            "label": "chicken leg",
+                            "timestamp": 8,
+                        },
+                    ],
+                },
+            ],
+            TWCmdGenTemporalBatch(
+                ids=(("g1", 0, 0),),
+                step_input=TWCmdGenTemporalStepInput(
+                    obs_word_ids=torch.tensor(
+                        [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                    ),
+                    obs_mask=torch.ones(1, 11).bool(),
+                    prev_action_word_ids=torch.tensor([[257, 404]]),
+                    prev_action_mask=torch.ones(1, 2).bool(),
+                    timestamps=torch.tensor([9.0]),
+                ),
+                initial_batched_graph=Batch(
+                    batch=torch.tensor([0, 0]),
+                    x=torch.tensor([1, 16]),
+                    node_last_update=torch.tensor([5.0, 6.0]),
+                    edge_index=torch.tensor([[0], [1]]),
+                    edge_attr=torch.tensor([100]),
+                    edge_last_update=torch.tensor([7.0]),
+                ),
+                graphical_input_seq=(
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([0]),
+                        tgt_event_label_ids=torch.tensor([0]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([False]),
+                        groundtruth_event_dst_ids=torch.tensor([0]),
+                        groundtruth_event_dst_mask=torch.tensor([False]),
+                        groundtruth_event_label_ids=torch.tensor([1]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0]),
+                            x=torch.tensor([1, 16]),
+                            node_last_update=torch.tensor([5.0, 6.0]),
+                            edge_index=torch.tensor([[0], [1]]),
+                            edge_attr=torch.tensor([100]),
+                            edge_last_update=torch.tensor([7.0]),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([0]),
+                        tgt_event_label_ids=torch.tensor([1]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([False]),
+                        groundtruth_event_dst_ids=torch.tensor([0]),
+                        groundtruth_event_dst_mask=torch.tensor([False]),
+                        groundtruth_event_label_ids=torch.tensor([14]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0]),
+                            x=torch.tensor([1, 16]),
+                            node_last_update=torch.tensor([5.0, 6.0]),
+                            edge_index=torch.tensor([[0], [1]]),
+                            edge_attr=torch.tensor([100]),
+                            edge_last_update=torch.tensor([7.0]),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["node-add"]]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([0]),
+                        tgt_event_label_ids=torch.tensor([14]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["edge-add"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([True]),
+                        groundtruth_event_dst_ids=torch.tensor([1]),
+                        groundtruth_event_dst_mask=torch.tensor([True]),
+                        groundtruth_event_label_ids=torch.tensor([100]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0, 0]),
+                            x=torch.tensor([1, 16, 1]),
+                            node_last_update=torch.tensor([5.0, 6.0, 9.0]),
+                            edge_index=torch.tensor([[0], [1]]),
+                            edge_attr=torch.tensor([100]),
+                            edge_last_update=torch.tensor([7.0]),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["edge-add"]]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0]),
+                        tgt_event_dst_ids=torch.tensor([1]),
+                        tgt_event_label_ids=torch.tensor([100]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["end"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0]),
+                        groundtruth_event_src_mask=torch.tensor([False]),
+                        groundtruth_event_dst_ids=torch.tensor([0]),
+                        groundtruth_event_dst_mask=torch.tensor([False]),
+                        groundtruth_event_label_ids=torch.tensor([0]),
+                        groundtruth_event_mask=torch.tensor([True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0, 0, 0]),
+                            x=torch.tensor([1, 16, 1, 14]),
+                            node_last_update=torch.tensor([5.0, 6.0, 9.0, 9.0]),
+                            edge_index=torch.tensor([[0], [1]]),
+                            edge_attr=torch.tensor([100]),
+                            edge_last_update=torch.tensor([7.0]),
+                        ),
+                    ),
+                ),
+                graph_commands=(("add , player , kitchen , in",),),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "random_step": 1,
+                    "observation": "you are hungry ! " "let 's cook a delicious meal .",
+                    "previous_action": "drop knife",
+                    "timestamp": 6,
+                    "target_commands": ["add , player , kitchen , in"],
+                    "graph_events": [
+                        {"type": "node-add", "label": "player"},
+                        {"type": "node-add", "label": "kitchen"},
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "player", "timestamp": 1},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 2},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 3,
+                        },
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 5,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 0,
+                            "label": "player",
+                            "timestamp": 5,
+                        },
+                    ],
+                },
+                {
+                    "game": "g2",
+                    "walkthrough_step": 2,
+                    "random_step": 3,
+                    "observation": "you take the knife from the table .",
+                    "previous_action": "take knife from table",
+                    "timestamp": 9,
+                    "target_commands": ["delete , player , kitchen , in"],
+                    "graph_events": [
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                        },
+                        {"type": "node-delete", "node_id": 1, "label": "kitchen"},
+                        {"type": "node-delete", "node_id": 0, "label": "player"},
+                    ],
+                    "prev_graph_events": [
+                        {"type": "node-add", "label": "chicken leg", "timestamp": 2},
+                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "edge-add",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 4,
+                        },
+                        {"type": "node-add", "label": "player", "timestamp": 5},
+                        {"type": "node-add", "label": "livingroom", "timestamp": 6},
+                        {
+                            "type": "edge-add",
+                            "src_id": 2,
+                            "dst_id": 3,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "edge-delete",
+                            "src_id": 0,
+                            "dst_id": 1,
+                            "label": "in",
+                            "timestamp": 7,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 1,
+                            "label": "kitchen",
+                            "timestamp": 8,
+                        },
+                        {
+                            "type": "node-delete",
+                            "node_id": 0,
+                            "label": "chicken leg",
+                            "timestamp": 8,
+                        },
+                    ],
+                },
+            ],
+            TWCmdGenTemporalBatch(
+                ids=(("g1", 0, 1), ("g2", 2, 3)),
+                step_input=TWCmdGenTemporalStepInput(
+                    obs_word_ids=torch.tensor(
+                        [
+                            [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
+                            [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
+                        ]
+                    ),
+                    obs_mask=torch.tensor([[True] * 11, [True] * 8 + [False] * 3]),
+                    prev_action_word_ids=torch.tensor(
+                        [[257, 404, 0, 0], [663, 404, 315, 661]]
+                    ),
+                    prev_action_mask=torch.tensor(
+                        [[True, True, False, False], [True] * 4]
+                    ),
+                    timestamps=torch.tensor([6.0, 9.0]),
+                ),
+                initial_batched_graph=Batch(
+                    batch=torch.tensor([0, 0, 1, 1]),
+                    x=torch.tensor([14, 34, 1, 16]),
+                    node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                    edge_index=torch.tensor([[1, 2], [0, 3]]),
+                    edge_attr=torch.tensor([100, 100]),
+                    edge_last_update=torch.tensor([4.0, 7.0]),
+                ),
+                graphical_input_seq=(
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["start"],
+                                EVENT_TYPE_ID_MAP["start"],
+                            ]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0, 0]),
+                        tgt_event_dst_ids=torch.tensor([0, 0]),
+                        tgt_event_label_ids=torch.tensor([0, 0]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["node-add"],
+                                EVENT_TYPE_ID_MAP["edge-delete"],
+                            ]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0, 0]),
+                        groundtruth_event_src_mask=torch.tensor([False, True]),
+                        groundtruth_event_dst_ids=torch.tensor([0, 1]),
+                        groundtruth_event_dst_mask=torch.tensor([False, True]),
+                        groundtruth_event_label_ids=torch.tensor([1, 100]),
+                        groundtruth_event_mask=torch.tensor([True, True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0, 1, 1]),
+                            x=torch.tensor([14, 34, 1, 16]),
+                            node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                            edge_index=torch.tensor([[1, 2], [0, 3]]),
+                            edge_attr=torch.tensor([100, 100]),
+                            edge_last_update=torch.tensor([4.0, 7.0]),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["node-add"],
+                                EVENT_TYPE_ID_MAP["edge-delete"],
+                            ]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0, 0]),
+                        tgt_event_dst_ids=torch.tensor([0, 1]),
+                        tgt_event_label_ids=torch.tensor([1, 100]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["node-add"],
+                                EVENT_TYPE_ID_MAP["node-delete"],
+                            ]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0, 1]),
+                        groundtruth_event_src_mask=torch.tensor([False, True]),
+                        groundtruth_event_dst_ids=torch.tensor([0, 0]),
+                        groundtruth_event_dst_mask=torch.tensor([False, False]),
+                        groundtruth_event_label_ids=torch.tensor([14, 14]),
+                        groundtruth_event_mask=torch.tensor([True, True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0, 1, 1]),
+                            x=torch.tensor([14, 34, 1, 16]),
+                            node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                            edge_index=torch.tensor([[1, 2], [0, 3]]),
+                            edge_attr=torch.tensor([100, 100]),
+                            edge_last_update=torch.tensor([4.0, 7.0]),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["node-add"],
+                                EVENT_TYPE_ID_MAP["node-delete"],
+                            ]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0, 1]),
+                        tgt_event_dst_ids=torch.tensor([0, 0]),
+                        tgt_event_label_ids=torch.tensor([14, 14]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["end"],
+                                EVENT_TYPE_ID_MAP["node-delete"],
+                            ]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0, 0]),
+                        groundtruth_event_src_mask=torch.tensor([False, True]),
+                        groundtruth_event_dst_ids=torch.tensor([0, 0]),
+                        groundtruth_event_dst_mask=torch.tensor([False, False]),
+                        groundtruth_event_label_ids=torch.tensor([0, 1]),
+                        groundtruth_event_mask=torch.tensor([True, True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0, 0, 1, 1]),
+                            x=torch.tensor([14, 34, 1, 1, 16]),
+                            node_last_update=torch.tensor([2.0, 3.0, 6.0, 5.0, 6.0]),
+                            edge_index=torch.tensor([[1], [0]]),
+                            edge_attr=torch.tensor([100]),
+                            edge_last_update=torch.tensor([4.0]),
+                        ),
+                    ),
+                    TWCmdGenTemporalGraphicalInput(
+                        tgt_event_type_ids=torch.tensor(
+                            [
+                                EVENT_TYPE_ID_MAP["end"],
+                                EVENT_TYPE_ID_MAP["node-delete"],
+                            ]
+                        ),
+                        tgt_event_src_ids=torch.tensor([0, 0]),
+                        tgt_event_dst_ids=torch.tensor([0, 0]),
+                        tgt_event_label_ids=torch.tensor([0, 1]),
+                        groundtruth_event_type_ids=torch.tensor(
+                            [EVENT_TYPE_ID_MAP["pad"], EVENT_TYPE_ID_MAP["end"]]
+                        ),
+                        groundtruth_event_src_ids=torch.tensor([0, 0]),
+                        groundtruth_event_src_mask=torch.tensor([False, False]),
+                        groundtruth_event_dst_ids=torch.tensor([0, 0]),
+                        groundtruth_event_dst_mask=torch.tensor([False, False]),
+                        groundtruth_event_label_ids=torch.tensor([0, 0]),
+                        groundtruth_event_mask=torch.tensor([False, True]),
+                        prev_batched_graph=Batch(
+                            batch=torch.tensor([0, 0, 0, 0, 1]),
+                            x=torch.tensor([14, 34, 1, 14, 1]),
+                            node_last_update=torch.tensor([2.0, 3.0, 6.0, 6.0, 5.0]),
+                            edge_index=torch.tensor([[1], [0]]),
+                            edge_attr=torch.tensor([100]),
+                            edge_last_update=torch.tensor([4.0]),
+                        ),
+                    ),
+                ),
+                graph_commands=(
+                    ("add , player , kitchen , in",),
+                    ("delete , player , kitchen , in",),
                 ),
             ),
         ),
@@ -1228,182 +2001,3 @@ def test_read_label_vocab_files():
 )
 def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
     assert tw_cmd_gen_collator(batch) == expected
-
-
-@pytest.mark.parametrize(
-    "batch,split_size,expected",
-    [
-        (
-            TWCmdGenTemporalBatch(
-                ids=(("g0", 1),),
-                data=(
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                        ),
-                        (("",),),
-                    ),
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (TWCmdGenTemporalGraphicalInput(),),
-                        (("",),),
-                    ),
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                        ),
-                        (("",),),
-                    ),
-                ),
-            ),
-            2,
-            [
-                TWCmdGenTemporalBatch(
-                    ids=(("g0", 1),),
-                    data=(
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                            ),
-                            (("",),),
-                        ),
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (TWCmdGenTemporalGraphicalInput(),),
-                            (("",),),
-                        ),
-                    ),
-                ),
-                TWCmdGenTemporalBatch(
-                    ids=(("g0", 1),),
-                    data=(
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                            ),
-                            (("",),),
-                        ),
-                    ),
-                ),
-            ],
-        ),
-        (
-            TWCmdGenTemporalBatch(
-                ids=(("g0", 1),),
-                data=(
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                        ),
-                        (("",),),
-                    ),
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (TWCmdGenTemporalGraphicalInput(),),
-                        (("",),),
-                    ),
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                        ),
-                        (("",),),
-                    ),
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                        ),
-                        (("",),),
-                    ),
-                    (
-                        TWCmdGenTemporalStepInput(),
-                        (
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                            TWCmdGenTemporalGraphicalInput(),
-                        ),
-                        (("",),),
-                    ),
-                ),
-            ),
-            3,
-            [
-                TWCmdGenTemporalBatch(
-                    ids=(("g0", 1),),
-                    data=(
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                            ),
-                            (("",),),
-                        ),
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (TWCmdGenTemporalGraphicalInput(),),
-                            (("",),),
-                        ),
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                            ),
-                            (("",),),
-                        ),
-                    ),
-                ),
-                TWCmdGenTemporalBatch(
-                    ids=(("g0", 1),),
-                    data=(
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                            ),
-                            (("",),),
-                        ),
-                        (
-                            TWCmdGenTemporalStepInput(),
-                            (
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                                TWCmdGenTemporalGraphicalInput(),
-                            ),
-                            (("",),),
-                        ),
-                    ),
-                ),
-            ],
-        ),
-    ],
-)
-def test_tw_cmd_gen_temporal_batch_split(batch, split_size, expected):
-    assert batch.split(split_size) == expected

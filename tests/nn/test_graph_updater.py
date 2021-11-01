@@ -9,16 +9,6 @@ from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from dgu.data import TWCmdGenTemporalStepInput
 
 
-class MockUUID:
-    def __init__(self):
-        self.id = 0
-
-    def __call__(self):
-        uuid = f"added-node-{self.id}"
-        self.id += 1
-        return uuid
-
-
 @pytest.fixture
 def sldgu(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
@@ -73,9 +63,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.empty(0).long(),
-                x=torch.empty(0, 300),
+                x=torch.empty(0).long(),
+                node_last_update=torch.empty(0),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
+                edge_attr=torch.empty(0).long(),
                 edge_last_update=torch.empty(0),
             ),
             0,
@@ -97,9 +88,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.empty(0).long(),
-                x=torch.empty(0, 300),
+                x=torch.empty(0).long(),
+                node_last_update=torch.empty(0),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
+                edge_attr=torch.empty(0).long(),
                 edge_last_update=torch.empty(0),
             ),
             0,
@@ -114,9 +106,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.tensor([0, 0, 0]),
-                x=torch.rand(3, 300),
+                x=torch.randint(6, (3,)),
+                node_last_update=torch.rand(3),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.rand(1, 300),
+                edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
             3,
@@ -138,9 +131,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.tensor([0, 0, 1, 2, 2, 3]),
-                x=torch.rand(6, 300),
+                x=torch.randint(6, (6,)),
+                node_last_update=torch.rand(6),
                 edge_index=torch.tensor([[1, 3], [0, 4]]),
-                edge_attr=torch.rand(2, 300),
+                edge_attr=torch.randint(6, (2,)),
                 edge_last_update=torch.tensor([2.0, 3.0]),
             ),
             6,
@@ -155,9 +149,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.tensor([0, 0, 0]),
-                x=torch.rand(3, 300),
+                x=torch.randint(6, (3,)),
+                node_last_update=torch.rand(3),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.rand(1, 300),
+                edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
             4,
@@ -172,9 +167,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.tensor([0, 0, 0]),
-                x=torch.rand(3, 300),
+                x=torch.randint(6, (3,)),
+                node_last_update=torch.rand(3),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.rand(1, 300),
+                edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
             2,
@@ -189,9 +185,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.zeros(9).long(),
-                x=torch.rand(9, 300),
+                x=torch.randint(6, (9,)),
+                node_last_update=torch.rand(9),
                 edge_index=torch.tensor([[2, 1, 8], [0, 3, 6]]),
-                edge_attr=torch.rand(3, 300),
+                edge_attr=torch.randint(6, (3,)),
                 edge_last_update=torch.rand(3),
             ),
             9,
@@ -206,9 +203,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             5,
             Batch(
                 batch=torch.zeros(9).long(),
-                x=torch.rand(9, 300),
+                x=torch.randint(6, (9,)),
+                node_last_update=torch.rand(9),
                 edge_index=torch.tensor([[2, 1, 2, 8], [0, 3, 6, 6]]),
-                edge_attr=torch.rand(4, 300),
+                edge_attr=torch.randint(6, (4,)),
                 edge_last_update=torch.rand(4),
             ),
             9,
@@ -230,9 +228,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             8,
             Batch(
                 batch=torch.tensor([1, 1, 1, 2, 2, 3, 3, 3]),
-                x=torch.rand(8, 300),
+                x=torch.randint(6, (8,)),
+                node_last_update=torch.rand(8),
                 edge_index=torch.tensor([[0, 5, 7], [2, 6, 6]]),
-                edge_attr=torch.rand(3, 300),
+                edge_attr=torch.randint(6, (3,)),
                 edge_last_update=torch.rand(3),
             ),
             9,
@@ -254,9 +253,10 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
             8,
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
-                x=torch.rand(12, 300),
+                x=torch.randint(6, (12,)),
+                node_last_update=torch.rand(12),
                 edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
-                edge_attr=torch.rand(4, 300),
+                edge_attr=torch.randint(6, (4,)),
                 edge_last_update=torch.rand(4),
             ),
             12,
@@ -295,8 +295,9 @@ def test_sldgu_forward(
         event_src_ids,
         event_dst_ids,
         torch.randint(len(sldgu.labels), (batch_size,)),
-        torch.randint(2, (batch_size, obs_len)).float(),
-        torch.randint(2, (batch_size, prev_action_len)).float(),
+        batched_graph,
+        torch.randint(2, (batch_size, obs_len)).bool(),
+        torch.randint(2, (batch_size, prev_action_len)).bool(),
         torch.randint(10, (batch_size,)).float(),
         obs_word_ids=None
         if encoded_textual_input
@@ -310,8 +311,6 @@ def test_sldgu_forward(
         ),
         encoded_obs=encoded_obs,
         encoded_prev_action=encoded_prev_action,
-        batched_graph=batched_graph,
-        memory=torch.rand(batched_graph.num_nodes, sldgu.tgn.memory_dim),
         decoder_hidden=torch.rand(batch_size, sldgu.hparams.hidden_dim)
         if decoder_hidden
         else None,
@@ -345,21 +344,14 @@ def test_sldgu_forward(
             sldgu.hparams.hidden_dim,
         )
     assert results["updated_batched_graph"].batch.size() == (expected_num_node,)
-    assert results["updated_batched_graph"].x.size() == (
+    assert results["updated_batched_graph"].x.size() == (expected_num_node,)
+    assert results["updated_batched_graph"].node_last_update.size() == (
         expected_num_node,
-        sldgu.hparams.word_emb_dim,
     )
     assert results["updated_batched_graph"].edge_index.size() == (2, expected_num_edge)
-    assert results["updated_batched_graph"].edge_attr.size() == (
-        expected_num_edge,
-        sldgu.hparams.word_emb_dim,
-    )
+    assert results["updated_batched_graph"].edge_attr.size() == (expected_num_edge,)
     assert results["updated_batched_graph"].edge_last_update.size() == (
         expected_num_edge,
-    )
-    assert results["updated_memory"].size() == (
-        expected_num_node,
-        sldgu.hparams.hidden_dim,
     )
 
 
@@ -375,9 +367,9 @@ def test_sldgu_calculate_loss(sldgu, batch, num_node):
             torch.randint(num_node, (batch,)),
             torch.rand(batch, len(sldgu.labels)),
             torch.randint(len(sldgu.labels), (batch,)),
-            torch.randint(2, (batch,)),
-            torch.randint(2, (batch,)),
-            torch.randint(2, (batch,)),
+            torch.randint(2, (batch,)).bool(),
+            torch.randint(2, (batch,)).bool(),
+            torch.randint(2, (batch,)).bool(),
         ).size()
         == tuple()
     )
@@ -415,7 +407,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1]),  # player
             Batch(
                 batch=torch.tensor([0]),
-                x=torch.tensor([[9] * 300]).float(),
+                x=torch.tensor([1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -429,7 +422,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([1]),  # player
             Batch(
                 batch=torch.tensor([0]),
-                x=torch.tensor([[9] * 300]).float(),
+                x=torch.tensor([1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -443,7 +437,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([5]),  # is
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                x=torch.tensor([3, 1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -457,7 +452,8 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([5]),  # is
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                x=torch.tensor([3, 1]),
+                node_last_update=torch.tensor([1.0]),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
@@ -476,19 +472,11 @@ def test_sldgu_calculate_f1s(sldgu, batch, num_node):
             torch.tensor([5, 4]),  # [is, in]
             Batch(
                 batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                x=torch.tensor(
-                    [
-                        [11] * 300,
-                        [9] * 300,
-                        [9] * 300,
-                        [10] * 300,
-                        [9] * 300,
-                        [10] * 300,
-                    ]
-                ).float(),
-                edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
-                edge_last_update=torch.empty(0),
+                x=torch.tensor([[3], [1], [1], [2], [1], [2]]),
+                node_last_update=torch.tensor([1.0, 1.0, 1.0, 1.0, 2.0, 2.0]),
+                edge_index=torch.tensor([[4, 5]]),
+                edge_attr=torch.tensor([4]),
+                edge_last_update=torch.tensor([1.0]),
             ),
             (
                 ["add , player , chopped , is", "delete , player , inventory , in"],
@@ -528,9 +516,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0]),
-                    x=torch.tensor([[9] * 300]).float(),
+                    x=torch.tensor([1]),
+                    node_last_update=torch.tensor([1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -544,9 +533,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0]),
-                    x=torch.tensor([[9] * 300]).float(),
+                    x=torch.tensor([9]),
+                    node_last_update=torch.tensor([1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -560,9 +550,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                    x=torch.tensor([3, 1]),
+                    node_last_update=torch.tensor([1.0, 2.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -579,9 +570,10 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[11] * 300, [9] * 300]).float(),
+                    x=torch.tensor([3, 1]),
+                    node_last_update=torch.tensor([1.0, 2.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 )
             ],
@@ -605,34 +597,18 @@ def test_sldgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                    x=torch.tensor(
-                        [
-                            [11] * 300,
-                            [9] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                        ]
-                    ).float(),
+                    x=torch.tensor([3, 1, 1, 2, 1, 2]),
+                    node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 ),
                 Batch(
                     batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                    x=torch.tensor(
-                        [
-                            [9] * 300,
-                            [11] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                            [9] * 300,
-                            [10] * 300,
-                        ]
-                    ).float(),
+                    x=torch.tensor([1, 3, 1, 2, 1, 2]),
+                    node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
                     edge_index=torch.empty(2, 0).long(),
-                    edge_attr=torch.empty(0, 300),
+                    edge_attr=torch.empty(0).long(),
                     edge_last_update=torch.empty(0),
                 ),
             ],
@@ -936,7 +912,7 @@ def test_sldgu_filter_invalid_events(
 
 
 @pytest.mark.parametrize(
-    "max_decode_len,batch,obs_len,prev_action_len,forward_results,batched_graph,memory,"
+    "max_decode_len,batch,obs_len,prev_action_len,forward_results,prev_batched_graph,"
     "expected_decoded_list",
     [
         (
@@ -959,12 +935,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -978,16 +954,22 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0]),
-                        x=torch.tensor([[9] * 300]).float(),
+                        x=torch.tensor([0]),
+                        node_last_update=torch.tensor([1.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8]).float(),
                 },
             ],
-            None,
-            None,
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 1).long(),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 1).long(),
+                edge_last_update=torch.empty(0),
+            ),
             [
                 {
                     "decoded_event_type_ids": torch.tensor([3]),  # [node-add]
@@ -996,12 +978,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1]),  # [player]
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([2]),  # [end]
@@ -1010,12 +992,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.zeros(1).long(),  # [pad]
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0]),
-                        x=torch.tensor([[9] * 300]).float(),
+                        x=torch.tensor([0]),
+                        node_last_update=torch.tensor([1.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8]).float(),
                 },
             ],
         ),
@@ -1039,12 +1021,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1060,12 +1042,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0]),
-                        x=torch.tensor([[9] * 300]).float(),
+                        x=torch.tensor([0]),
+                        node_last_update=torch.tensor([1.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1081,12 +1063,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0]),
-                        x=torch.tensor([[9] * 300, [10] * 300]).float(),
+                        x=torch.tensor([0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1100,16 +1082,22 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0]),
-                        x=torch.tensor([[9] * 300, [10] * 300]).float(),
+                        x=torch.tensor([0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.tensor([[1], [0]]),
-                        edge_attr=torch.tensor([[8] * 300]).float(),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8]).float(),
                 },
             ],
-            None,
-            None,
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 1).long(),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 1).long(),
+                edge_last_update=torch.empty(0),
+            ),
             [
                 {
                     "decoded_event_type_ids": torch.tensor([3]),  # [node-add]
@@ -1118,12 +1106,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1]),  # [player]
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([3]),  # [node-add]
@@ -1132,12 +1120,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([2]),  # [inventory]
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0]),
-                        x=torch.tensor([[9] * 300]).float(),
+                        x=torch.tensor([0]),
+                        node_last_update=torch.tensor([1.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8]).float(),
                 },
             ],
         ),
@@ -1161,12 +1149,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1182,12 +1170,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300]),
+                        x=torch.tensor([0, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1203,12 +1191,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1224,16 +1212,22 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
-            None,
-            None,
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 1).long(),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 1).long(),
+                edge_last_update=torch.empty(0),
+            ),
             [
                 {
                     "decoded_event_type_ids": torch.tensor(
@@ -1244,12 +1238,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 1]),  # [player, player]
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
@@ -1258,12 +1252,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300]),
+                        x=torch.tensor([0, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
@@ -1272,12 +1266,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 5]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 2]),  # [pad, end]
@@ -1286,12 +1280,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
         ),
@@ -1315,12 +1309,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1336,12 +1330,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300]),
+                        x=torch.tensor([0, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1357,12 +1351,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1378,16 +1372,21 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
             ],
-            None,
-            None,
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 1).long(),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 1).long(),
+                edge_last_update=torch.empty(0),
+            ),
             [
                 {
                     "decoded_event_type_ids": torch.tensor(
@@ -1398,12 +1397,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 1]),  # [player, player]
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
@@ -1412,12 +1411,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300]),
+                        x=torch.tensor([0, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
             ],
         ),
@@ -1441,12 +1440,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1462,12 +1461,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300]),
+                        x=torch.tensor([0, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1483,12 +1482,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1504,12 +1503,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[2], [1]]),
-                        edge_attr=torch.tensor([[8] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8, [4] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1525,12 +1524,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[2], [1]]),
-                        edge_attr=torch.tensor([[8] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8, [4] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1546,16 +1545,22 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[2], [1]]),
-                        edge_attr=torch.tensor([[8] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8, [4] * 8]).float(),
                 },
             ],
-            None,
-            None,
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 1).long(),
+                node_last_update=torch.empty(0),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 1).long(),
+                edge_last_update=torch.empty(0),
+            ),
             [
                 {
                     "decoded_event_type_ids": torch.tensor(
@@ -1566,12 +1571,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 1]),  # [player, player]
                     "updated_batched_graph": Batch(
                         batch=torch.empty(0).long(),
-                        x=torch.empty(0, 300),
+                        x=torch.empty(0).long(),
+                        node_last_update=torch.empty(0),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.empty(0, 8),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
@@ -1582,12 +1587,12 @@ def test_sldgu_filter_invalid_events(
                     ),  # [inventory, inventory]
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300]),
+                        x=torch.tensor([0, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[1] * 8, [2] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
@@ -1596,12 +1601,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 4]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.empty(2, 0).long(),
-                        edge_attr=torch.empty(0, 300),
+                        edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
-                    "updated_memory": torch.tensor([[3] * 8, [4] * 8, [5] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
@@ -1610,12 +1615,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 4]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[2], [1]]),
-                        edge_attr=torch.tensor([[8] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8, [4] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
@@ -1624,12 +1629,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 1]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[2], [1]]),
-                        edge_attr=torch.tensor([[8] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8, [4] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 2]),  # [pad, end]
@@ -1638,12 +1643,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[2], [1]]),
-                        edge_attr=torch.tensor([[8] * 300]),
+                        edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[2] * 8, [3] * 8, [4] * 8]).float(),
                 },
             ],
         ),
@@ -1667,12 +1672,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1688,16 +1693,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[9] * 300, [9] * 300, [9] * 300, [10] * 300, [9] * 300]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1717,23 +1718,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [
-                                [9] * 300,
-                                [9] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                            ]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0, 2.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[3] * 8, [5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1753,33 +1743,22 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [
-                                [9] * 300,
-                                [9] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                            ]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0, 2.0]),
                         edge_index=torch.tensor([[2, 5], [3, 6]]),
-                        edge_attr=torch.tensor([[3] * 300, [3] * 300]),
+                        edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[3] * 8, [5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
             ],
             Batch(
                 batch=torch.tensor([0, 1, 1]),
-                x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                x=torch.tensor([[0], [0], [1]]),
+                node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                 edge_index=torch.tensor([[1], [2]]),
-                edge_attr=torch.tensor([[3] * 300]),
+                edge_attr=torch.tensor([[4]]),
                 edge_last_update=torch.tensor([4.0]),
             ),
-            torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
             [
                 {
                     "decoded_event_type_ids": torch.tensor(
@@ -1790,12 +1769,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 1]),  # [player, player]
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
@@ -1804,16 +1783,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[9] * 300, [9] * 300, [9] * 300, [10] * 300, [9] * 300]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
@@ -1822,23 +1797,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 5]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [
-                                [9] * 300,
-                                [9] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                            ]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0, 2.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[3] * 8, [5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 2]),  # [pad, end]
@@ -1847,23 +1811,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([0, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [
-                                [9] * 300,
-                                [9] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                            ]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0, 2.0]),
                         edge_index=torch.tensor([[2, 5], [3, 6]]),
-                        edge_attr=torch.tensor([[3] * 300, [3] * 300]),
+                        edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[3] * 8, [5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
             ],
         ),
@@ -1887,12 +1840,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1908,16 +1861,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[9] * 300, [9] * 300, [9] * 300, [10] * 300, [9] * 300]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1937,23 +1886,12 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [
-                                [9] * 300,
-                                [9] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                            ]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[3] * 8, [5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1973,33 +1911,21 @@ def test_sldgu_filter_invalid_events(
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [
-                                [9] * 300,
-                                [9] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                                [9] * 300,
-                                [10] * 300,
-                            ]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
                         edge_index=torch.tensor([[2, 5], [3, 6]]),
-                        edge_attr=torch.tensor([[3] * 300, [3] * 300]),
+                        edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[3] * 8, [5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
             ],
             Batch(
                 batch=torch.tensor([0, 1, 1]),
-                x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                x=torch.tensor([0, 0, 1]),
                 edge_index=torch.tensor([[1], [2]]),
-                edge_attr=torch.tensor([[3] * 300]),
+                edge_attr=torch.tensor([4]),
                 edge_last_update=torch.tensor([4.0]),
             ),
-            torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
             [
                 {
                     "decoded_event_type_ids": torch.tensor(
@@ -2010,12 +1936,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 1]),  # [player, player]
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[9] * 300, [9] * 300, [10] * 300]),
+                        x=torch.tensor([0, 0, 1]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor([[5] * 8, [6] * 8, [7] * 8]).float(),
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
@@ -2024,16 +1950,12 @@ def test_sldgu_filter_invalid_events(
                     "decoded_event_label_ids": torch.tensor([1, 2]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[9] * 300, [9] * 300, [9] * 300, [10] * 300, [9] * 300]
-                        ),
+                        x=torch.tensor([0, 0, 0, 1, 0]),
+                        node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0]),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[3] * 300]),
+                        edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
-                    "updated_memory": torch.tensor(
-                        [[5] * 8, [6] * 8, [7] * 8, [8] * 8, [9] * 8]
-                    ).float(),
                 },
             ],
         ),
@@ -2047,8 +1969,7 @@ def test_sldgu_greedy_decode(
     obs_len,
     prev_action_len,
     forward_results,
-    batched_graph,
-    memory,
+    prev_batched_graph,
     expected_decoded_list,
 ):
     class MockForward:
@@ -2081,8 +2002,7 @@ def test_sldgu_greedy_decode(
             prev_action_mask=torch.randint(2, (batch, prev_action_len)).float(),
             timestamps=torch.tensor([4.0] * batch),
         ),
-        batched_graph=batched_graph,
-        memory=memory,
+        prev_batched_graph,
     )
 
     assert len(decoded_list) == len(expected_decoded_list)
@@ -2110,16 +2030,13 @@ def test_sldgu_greedy_decode(
         assert decoded["updated_batched_graph"].edge_last_update.equal(
             expected["updated_batched_graph"].edge_last_update
         )
-        assert decoded["updated_memory"].equal(expected["updated_memory"])
 
 
 @pytest.mark.parametrize(
-    "ids,timestamps,mask,batch_cmds,expected",
+    "ids,batch_cmds,expected",
     [
         (
-            (("g0", 0),),
-            torch.tensor([1.0]),
-            [True],
+            (("g0", 0, 1),),
             [
                 (("add , player , kitchen , in", "add , table , kitchen , in"),),
                 [["add , player , kitchen , in", "add , fire , kitchen , in"]],
@@ -2135,23 +2052,18 @@ def test_sldgu_greedy_decode(
             ],
         ),
         (
-            (("g0", 0), ("g1", 2), ("g2", 1)),
-            torch.tensor([1.0, 2.0, 3.0]),
-            [True, False, True],
+            (("g0", 0, 1), ("g2", 1, 2)),
             [
                 (
                     ("add , player , kitchen , in", "add , table , kitchen , in"),
-                    (),
                     ("add , player , livingroom , in", "add , sofa , livingroom , in"),
                 ),
                 [
                     ["add , player , kitchen , in", "add , fire , kitchen , in"],
-                    ["add , player , garage , in"],
                     ["add , player , livingroom , in", "add , TV , livingroom , in"],
                 ],
                 [
                     ["add , player , kitchen , in", "delete , player , kitchen , in"],
-                    ["add , desk , garage , in"],
                     ["add , player , garage , in", "add , sofa , livingroom , in"],
                 ],
             ],
@@ -2163,7 +2075,7 @@ def test_sldgu_greedy_decode(
                     "add , player , kitchen , in | delete , player , kitchen , in",
                 ),
                 (
-                    "g2|1|3",
+                    "g2|1|2",
                     "add , player , livingroom , in | add , sofa , livingroom , in",
                     "add , player , livingroom , in | add , TV , livingroom , in",
                     "add , player , garage , in | add , sofa , livingroom , in",
@@ -2172,10 +2084,8 @@ def test_sldgu_greedy_decode(
         ),
     ],
 )
-def test_sldgu_generate_predict_table_rows(ids, timestamps, mask, batch_cmds, expected):
+def test_sldgu_generate_predict_table_rows(ids, batch_cmds, expected):
     assert (
-        StaticLabelDiscreteGraphUpdater.generate_predict_table_rows(
-            ids, timestamps, mask, *batch_cmds
-        )
+        StaticLabelDiscreteGraphUpdater.generate_predict_table_rows(ids, *batch_cmds)
         == expected
     )

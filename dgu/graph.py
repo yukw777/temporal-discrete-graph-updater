@@ -1,8 +1,7 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from typing import Dict, List, Any, Tuple
-from copy import deepcopy
+from typing import Dict, List, Any
 
 from dgu.constants import IS
 
@@ -29,8 +28,7 @@ def process_add_triplet_cmd(
     src_label: str,
     rel_label: str,
     dst_label: str,
-) -> Tuple[List[Dict[str, Any]], nx.DiGraph]:
-    graph = deepcopy(graph)
+) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     # take care of the source node
     src_node: Node
@@ -69,7 +67,7 @@ def process_add_triplet_cmd(
 
     if graph.has_edge(src_node, dst_node):
         # the edge already exists, so we're done
-        return events, graph
+        return events
     # the edge doesn't exist, so add it
     graph.add_edge(src_node, dst_node, label=rel_label, last_update=timestamp)
     node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
@@ -81,17 +79,15 @@ def process_add_triplet_cmd(
             "label": rel_label,
         }
     )
-    return events, graph
+    return events
 
 
 def process_delete_triplet_cmd(
     graph: nx.DiGraph,
-    timestamp: int,
     src_label: str,
     rel_label: str,
     dst_label: str,
-) -> Tuple[List[Dict[str, Any]], nx.DiGraph]:
-    graph = deepcopy(graph)
+) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     # get the source node
     src_node: Node
@@ -101,7 +97,7 @@ def process_delete_triplet_cmd(
         src_node = Node(src_label)
     if src_node not in graph:
         # the source node doesn't exist, so return
-        return events, graph
+        return events
 
     # get the destination node
     dst_node: Node
@@ -111,11 +107,11 @@ def process_delete_triplet_cmd(
         dst_node = Node(dst_label)
     if dst_node not in graph:
         # the destination node doesn't exist, so return
-        return events, graph
+        return events
 
     if not graph.has_edge(src_node, dst_node):
         # the edge doesn't exist, so return
-        return events, graph
+        return events
 
     # delete the edge and add event
     node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
@@ -151,12 +147,12 @@ def process_delete_triplet_cmd(
                 "label": src_label,
             }
         )
-    return events, graph
+    return events
 
 
 def process_triplet_cmd(
     graph: nx.DiGraph, timestamp: int, cmd: str
-) -> Tuple[List[Dict[str, Any]], nx.DiGraph]:
+) -> List[Dict[str, Any]]:
     """
     Update the internal graph based on the given triplet command and return
     corresponding graph events.
@@ -186,6 +182,6 @@ def process_triplet_cmd(
         )
     elif cmd_type == "delete":
         return process_delete_triplet_cmd(
-            graph, timestamp, src_label, rel_label.replace("_", " "), dst_label
+            graph, src_label, rel_label.replace("_", " "), dst_label
         )
     raise ValueError(f"Unknown command {cmd}")

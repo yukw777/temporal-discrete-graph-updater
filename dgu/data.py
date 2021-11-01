@@ -8,9 +8,10 @@ from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
+from torch_geometric.data import Batch
 
 from dgu.preprocessor import SpacyPreprocessor
-from dgu.nn.utils import compute_masks_from_event_type_ids
+from dgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.graph import process_triplet_cmd
 
@@ -20,18 +21,20 @@ class TWCmdGenTemporalDataset(Dataset):
     TextWorld Command Generation temporal graph event dataset.
 
     Each data point contains the following information:
-        [
-            {
-                "game": "game name",
-                "walkthrough_step": walkthrough step,
-                "observation": "observation...",
-                "previous_action": "previous action...",
-                "timestamp": timestamp,
-                "target_commands": [graph commands, ...],
-                "graph_events": [graph events, ...],
-            },
-            ...
-        ]
+        {
+            "game": "game name",
+            "walkthrough_step": walkthrough step,
+            "random_step": random step,
+            "observation": "observation...",
+            "previous_action": "previous action...",
+            "timestamp": timestamp,
+            "target_commands": [graph commands, ...],
+            "graph_events": [graph events, ...],
+            "prev_graph_events": [prev graph events, ...],
+        }
+
+    See dgu.graph for details on the graph event format. Note that graph events
+    under prev_graph_events contain timestamp information too.
     """
 
     def __init__(self, path: str) -> None:
@@ -42,10 +45,12 @@ class TWCmdGenTemporalDataset(Dataset):
         self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
             list
         )
+        self.idx_map: List[Tuple[str, int, int]] = []
 
         for example in raw_data["examples"]:
             game = example["game"]
             walkthrough_step, random_step = example["step"]
+            self.idx_map.append((game, walkthrough_step, random_step))
             if random_step == 0:
                 # walkthrough example
                 self.walkthrough_examples[(game, walkthrough_step)] = example
@@ -54,34 +59,42 @@ class TWCmdGenTemporalDataset(Dataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __getitem__(self, idx: int) -> List[Dict[str, Any]]:
-        game, walkthrough_step = self.walkthrough_example_ids[idx]
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        game, walkthrough_step, random_step = self.idx_map[idx]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
-        random_examples = self.random_examples[(game, walkthrough_step)]
-        data: List[Dict[str, Any]] = []
+        random_examples = self.random_examples[(game, walkthrough_step)][:random_step]
+        game_steps = walkthrough_examples + random_examples
+        prev_graph_events: List[Dict[str, Any]] = []
         graph = nx.DiGraph()
-        for timestamp, example in enumerate(walkthrough_examples + random_examples):
+        for timestamp, example in enumerate(game_steps):
             graph_events: List[Dict[str, Any]] = []
             for cmd in example["target_commands"]:
-                sub_event_seq, graph = process_triplet_cmd(graph, timestamp, cmd)
+                sub_event_seq = process_triplet_cmd(graph, timestamp, cmd)
                 graph_events.extend(sub_event_seq)
-            data.append(
-                {
-                    "game": game,
-                    "walkthrough_step": walkthrough_step,
-                    "observation": example["observation"],
-                    "previous_action": example["previous_action"],
-                    "timestamp": timestamp,
-                    "target_commands": example["target_commands"],
-                    "graph_events": graph_events,
-                }
-            )
-        return data
+            if timestamp == len(game_steps) - 1:
+                # last step so break
+                break
+            else:
+                # set the timestamps and add them to prev_graph_events
+                for event in graph_events:
+                    event["timestamp"] = timestamp
+                prev_graph_events.extend(graph_events)
+        return {
+            "game": game,
+            "walkthrough_step": walkthrough_step,
+            "random_step": random_step,
+            "observation": example["observation"],
+            "previous_action": example["previous_action"],
+            "timestamp": timestamp,
+            "target_commands": example["target_commands"],
+            "graph_events": graph_events,
+            "prev_graph_events": prev_graph_events,
+        }
 
     def __len__(self) -> int:
-        return len(self.walkthrough_example_ids)
+        return len(self.idx_map)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalDataset):
@@ -90,11 +103,23 @@ class TWCmdGenTemporalDataset(Dataset):
             self.walkthrough_examples == o.walkthrough_examples
             and self.walkthrough_example_ids == o.walkthrough_example_ids
             and self.random_examples == o.random_examples
+            and self.idx_map == o.idx_map
         )
 
 
 def empty_tensor() -> torch.Tensor:
     return torch.empty(0)
+
+
+def empty_graph() -> Batch:
+    return Batch(
+        batch=torch.empty(0, dtype=torch.long),
+        x=torch.empty(0, dtype=torch.long),
+        node_last_update=torch.empty(0),
+        edge_index=torch.empty(2, 0, dtype=torch.long),
+        edge_attr=torch.empty(0, dtype=torch.long),
+        edge_last_update=torch.empty(0),
+    )
 
 
 @dataclass(frozen=True)
@@ -104,7 +129,6 @@ class TWCmdGenTemporalStepInput:
     prev_action_word_ids: torch.Tensor = field(default_factory=empty_tensor)
     prev_action_mask: torch.Tensor = field(default_factory=empty_tensor)
     timestamps: torch.Tensor = field(default_factory=empty_tensor)
-    mask: torch.Tensor = field(default_factory=empty_tensor)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalStepInput):
@@ -135,11 +159,29 @@ class TWCmdGenTemporalGraphicalInput:
     groundtruth_event_dst_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_mask: torch.Tensor = field(default_factory=empty_tensor)
+    prev_batched_graph: Batch = field(default_factory=empty_graph)
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenTemporalGraphicalInput):
             return False
-        return all(getattr(self, f).equal(getattr(o, f)) for f in self.__annotations__)
+        return all(
+            getattr(self, f).equal(getattr(o, f))
+            for f in self.__annotations__
+            if f != "prev_batched_graph"
+        ) and (
+            self.prev_batched_graph.batch.equal(o.prev_batched_graph.batch)
+            and self.prev_batched_graph.x.equal(o.prev_batched_graph.x)
+            and self.prev_batched_graph.node_last_update.equal(
+                o.prev_batched_graph.node_last_update
+            )
+            and self.prev_batched_graph.edge_index.equal(
+                o.prev_batched_graph.edge_index
+            )
+            and self.prev_batched_graph.edge_attr.equal(o.prev_batched_graph.edge_attr)
+            and self.prev_batched_graph.edge_last_update.equal(
+                o.prev_batched_graph.edge_last_update
+            )
+        )
 
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
         return TWCmdGenTemporalGraphicalInput(
@@ -154,52 +196,57 @@ class TWCmdGenTemporalGraphicalInput:
 
 @dataclass(frozen=True)
 class TWCmdGenTemporalBatch:
-    ids: Tuple[Tuple[str, int], ...] = field(default_factory=tuple)
-    data: Tuple[
-        Tuple[
-            TWCmdGenTemporalStepInput,
-            Tuple[TWCmdGenTemporalGraphicalInput, ...],
-            Tuple[Tuple[str, ...], ...],
-        ],
-        ...,
-    ] = field(default_factory=tuple)
+    ids: Tuple[Tuple[str, int, int], ...]
+    step_input: TWCmdGenTemporalStepInput
+    initial_batched_graph: Batch
+    graphical_input_seq: Tuple[TWCmdGenTemporalGraphicalInput, ...]
+    graph_commands: Tuple[Tuple[str, ...], ...]
 
-    def __len__(self) -> int:
-        return len(self.data)
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenTemporalBatch):
+            return False
+        return all(
+            getattr(self, f) == getattr(o, f)
+            for f in self.__annotations__
+            if f != "initial_batched_graph"
+        ) and (
+            self.initial_batched_graph.batch.equal(o.initial_batched_graph.batch)
+            and self.initial_batched_graph.x.equal(o.initial_batched_graph.x)
+            and self.initial_batched_graph.node_last_update.equal(
+                o.initial_batched_graph.node_last_update
+            )
+            and self.initial_batched_graph.edge_index.equal(
+                o.initial_batched_graph.edge_index
+            )
+            and self.initial_batched_graph.edge_attr.equal(
+                o.initial_batched_graph.edge_attr
+            )
+            and self.initial_batched_graph.edge_last_update.equal(
+                o.initial_batched_graph.edge_last_update
+            )
+        )
 
     def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
         return TWCmdGenTemporalBatch(
             ids=self.ids,
-            data=tuple(
-                (
-                    step.to(*args, **kwargs),
-                    tuple(graphical.to(*args, **kwargs) for graphical in graphicals),
-                    commands,
-                )
-                for step, graphicals, commands in self.data
+            step_input=self.step_input.to(*args, **kwargs),
+            initial_batched_graph=self.initial_batched_graph.to(*args, **kwargs),
+            graphical_input_seq=tuple(
+                graphical.to(*args, **kwargs) for graphical in self.graphical_input_seq
             ),
+            graph_commands=self.graph_commands,
         )
 
     def pin_memory(self) -> "TWCmdGenTemporalBatch":
         return TWCmdGenTemporalBatch(
             ids=self.ids,
-            data=tuple(
-                (
-                    step.pin_memory(),
-                    tuple(graphical.pin_memory() for graphical in graphicals),
-                    commands,
-                )
-                for step, graphicals, commands in self.data
+            step_input=self.step_input.pin_memory(),
+            initial_batched_graph=self.initial_batched_graph.pin_memory(),
+            graphical_input_seq=tuple(
+                graphical.pin_memory() for graphical in self.graphical_input_seq
             ),
+            graph_commands=self.graph_commands,
         )
-
-    def split(self, split_size: int) -> List["TWCmdGenTemporalBatch"]:
-        return [
-            TWCmdGenTemporalBatch(
-                ids=self.ids, data=self.data[ndx : min(ndx + split_size, len(self))]
-            )
-            for ndx in range(0, len(self), split_size)
-        ]
 
 
 class TWCmdGenTemporalDataCollator:
@@ -216,7 +263,6 @@ class TWCmdGenTemporalDataCollator:
         obs: List[str],
         prev_actions: List[str],
         timestamps: List[int],
-        mask: List[bool],
     ) -> TWCmdGenTemporalStepInput:
         """
         Collate step data such as observation, previous action and timestamp.
@@ -227,7 +273,6 @@ class TWCmdGenTemporalDataCollator:
             prev_action_word_ids: (batch, prev_action_len),
             prev_action_mask: (batch, prev_action_len),
             timestamps: (batch)
-            mask: (batch)
         )
         """
         # textual observation
@@ -245,14 +290,13 @@ class TWCmdGenTemporalDataCollator:
             prev_action_word_ids=prev_action_word_ids,
             prev_action_mask=prev_action_mask,
             timestamps=torch.tensor(timestamps, dtype=torch.float),
-            mask=torch.tensor(mask),
         )
 
-    def collate_graphical_inputs(
-        self, batch_step: List[Dict[str, Any]]
-    ) -> List[TWCmdGenTemporalGraphicalInput]:
+    def collate_graphical_input_seq(
+        self, batch: List[Dict[str, Any]], initial_batched_graph: Batch
+    ) -> Tuple[TWCmdGenTemporalGraphicalInput, ...]:
         """
-        Collate the graphical inputs of the given batch.
+        Collate the graphical input sequence of the given batch.
 
         output: len([TWCmdGenTemporalGraphicalInput(
             tgt_event_type_ids: (batch),
@@ -261,28 +305,36 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_label_ids: (batch),
             groundtruth_event_type_ids: (batch),
             groundtruth_event_src_ids: (batch),
-            groundtruth_event_src_mask: (batch),
+            groundtruth_event_src_mask: (batch), boolean
             groundtruth_event_dst_ids: (batch),
-            groundtruth_event_dst_mask: (batch),
+            groundtruth_event_dst_mask: (batch), boolean
             groundtruth_event_label_ids: (batch),
-            groundtruth_event_mask: (batch),
+            groundtruth_event_mask: (batch), boolean
+            prev_batched_graph: Batch
         ), ...]) = event_seq_len
         """
+
+        # collect current step's event sequences
         batch_event_seq: List[List[Dict[str, Any]]] = []
-        collated: List[TWCmdGenTemporalGraphicalInput] = []
-        for step in batch_step:
+        for step in batch:
             batch_event_seq.append(
-                step.get("graph_events", []) + [{"type": "end", "label": ""}]
+                step["graph_events"] + [{"type": "end", "label": ""}]
             )
 
         max_event_seq_len = max(len(event_seq) for event_seq in batch_event_seq)
-        batch_size = len(batch_step)
+        batch_size = len(batch)
 
         # left shifted target events
         tgt_event_type_ids = torch.tensor([EVENT_TYPE_ID_MAP["start"]] * batch_size)
         tgt_event_src_ids = torch.tensor([0] * batch_size)
         tgt_event_dst_ids = torch.tensor([0] * batch_size)
         tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
+        tgt_event_timestamps = torch.tensor(
+            [float(step["timestamp"]) for step in batch]
+        )
+
+        prev_batched_graph = initial_batched_graph
+        collated: List[TWCmdGenTemporalGraphicalInput] = []
         for seq_step_num in range(max_event_seq_len):
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
@@ -325,7 +377,18 @@ class TWCmdGenTemporalDataCollator:
                     groundtruth_event_dst_mask=groundtruth_event_dst_mask,
                     groundtruth_event_label_ids=groundtruth_event_label_ids,
                     groundtruth_event_mask=groundtruth_event_mask,
+                    prev_batched_graph=prev_batched_graph,
                 )
+            )
+
+            # update the previous batched graph
+            prev_batched_graph = update_batched_graph(
+                prev_batched_graph,
+                tgt_event_type_ids,
+                tgt_event_src_ids,
+                tgt_event_dst_ids,
+                tgt_event_label_ids,
+                tgt_event_timestamps,
             )
 
             # the current groundtruth events become the next target events
@@ -334,93 +397,129 @@ class TWCmdGenTemporalDataCollator:
             tgt_event_dst_ids = groundtruth_event_dst_ids
             tgt_event_label_ids = groundtruth_event_label_ids
 
-        return collated
+        return tuple(collated)
 
-    def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenTemporalBatch:
+    def collate_prev_graph_events(self, batch: List[Dict[str, Any]]) -> Batch:
         """
-        Each element in the collated batch is a batched step. Each step
-        has a dictionary of textual inputs and another dictionary
-        of graph event inputs.
+        Collate the previous graph events of the given batch into a single
+        batched global graph.
+
+        output: Batch(
+            batch: (num_node)
+            x: (num_node)
+            node_last_update: (num_node)
+            edge_index: (2, num_edge)
+            edge_attr: (num_edge)
+            edge_last_update: (num_edge)
+        )
+        """
+        batch_prev_event_seq: List[List[Dict[str, Any]]] = []
+        # initialize empty batch graph and memory
+        batched_graph = empty_graph()
+        for step in batch:
+            batch_prev_event_seq.append(step["prev_graph_events"])
+
+        max_prev_event_seq_len = max(
+            len(event_seq) for event_seq in batch_prev_event_seq
+        )
+
+        for seq_step_num in range(max_prev_event_seq_len):
+            batch_event_type_ids: List[int] = []
+            batch_event_src_ids: List[int] = []
+            batch_event_dst_ids: List[int] = []
+            batch_event_label_ids: List[int] = []
+            batch_event_timestamps: List[float] = []
+            for event_seq in batch_prev_event_seq:
+                # collect event data for all the items in the batch at event i
+                if seq_step_num < len(event_seq):
+                    event = event_seq[seq_step_num]
+                    batch_event_type_ids.append(EVENT_TYPE_ID_MAP[event["type"]])
+                    batch_event_src_ids.append(
+                        event.get("src_id", event.get("node_id", 0))
+                    )
+                    batch_event_dst_ids.append(event.get("dst_id", 0))
+                    batch_event_label_ids.append(self.label_id_map[event["label"]])
+                    batch_event_timestamps.append(float(event["timestamp"]))
+                else:
+                    batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
+                    batch_event_src_ids.append(0)
+                    batch_event_dst_ids.append(0)
+                    batch_event_label_ids.append(self.label_id_map[""])
+                    batch_event_timestamps.append(0.0)
+            batched_graph = update_batched_graph(
+                batched_graph,
+                torch.tensor(batch_event_type_ids),
+                torch.tensor(batch_event_src_ids),
+                torch.tensor(batch_event_dst_ids),
+                torch.tensor(batch_event_label_ids),
+                torch.tensor(batch_event_timestamps),
+            )
+
+        return batched_graph
+
+    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenTemporalBatch:
+        """
+        Each batch has a batch of IDs, batched textual input, batched graphical
+        input, batched previous graph events and ground-truth graph commands.
+
         TWCmdGenTemporalBatch(
             ids=(
-                ('game', 'walkthrough_step'),
+                (game, walkthrough_step, random_step),
                 ...
             ),
-            data=(
+            step_input=TWCmdGenTemporalStepInput(
+                obs_word_ids: (batch, obs_len),
+                obs_mask: (batch, obs_len),
+                prev_action_word_ids: (batch, prev_action_len),
+                prev_action_mask: (batch, prev_action_len),
+                timestamps: (batch)
+            ),
+            graphical_input_seq=(
+                TWCmdGenTemporalGraphicalInput(
+                    tgt_event_type_ids: (batch),
+                    tgt_event_src_ids: (batch),
+                    tgt_event_dst_ids: (batch),
+                    tgt_event_label_ids: (batch),
+                    prev_batched_graph: Batch,
+                    groundtruth_event_type_ids: (batch),
+                    groundtruth_event_src_ids: (batch),
+                    groundtruth_event_src_mask: (batch),
+                    groundtruth_event_dst_ids: (batch),
+                    groundtruth_event_dst_mask: (batch),
+                    groundtruth_event_label_ids: (batch),
+                    groundtruth_event_mask: (batch),
+                ),
+                ...
+            ),
+            graph_commands=(
                 (
-                    TWCmdGenTemporalStepInput(
-                        obs_word_ids: (batch, obs_len),
-                        obs_mask: (batch, obs_len),
-                        prev_action_word_ids: (batch, prev_action_len),
-                        prev_action_mask: (batch, prev_action_len),
-                        timestamps: (batch)
-                    ),
-                    (
-                        TWCmdGenTemporalGraphicalInput(
-                            node_label_ids: (num_nodes),
-                            node_memory_update_index: (prev_num_nodes),
-                            node_memory_update_mask: (prev_num_nodes),
-                            edge_index: (2, num_edges),
-                            edge_label_ids: (num_edges),
-                            edge_last_update: (num_edges),
-                            batch: (num_nodes),
-                            tgt_event_type_ids: (batch),
-                            tgt_event_src_ids: (batch),
-                            tgt_event_dst_ids: (batch),
-                            tgt_event_label_ids: (batch),
-                            groundtruth_event_type_ids: (batch),
-                            groundtruth_event_src_ids: (batch),
-                            groundtruth_event_src_mask: (batch),
-                            groundtruth_event_dst_ids: (batch),
-                            groundtruth_event_dst_mask: (batch),
-                            groundtruth_event_label_ids: (batch),
-                            groundtruth_event_mask: (batch),
-                        ),
-                        ...
-                    ),
-                    (
-                        (commands, ...),
-                        ...
-                    )
+                    (commands, ...),
+                    ...
                 ),
                 ...
             )
         )
         """
-        max_episode_len = max(len(episode) for episode in batch)
-        collated_batch: List[
-            Tuple[
-                TWCmdGenTemporalStepInput,
-                List[TWCmdGenTemporalGraphicalInput],
-                Tuple[Tuple[str, ...], ...],
-            ]
-        ] = []
-        for i in range(max_episode_len):
-            batch_ith_step = [
-                episode[i] if i < len(episode) else {} for episode in batch
-            ]
-            step = self.collate_step_inputs(
-                # use "<bos> <eos>" for empty observations and previous actions
-                # to prevent nan's when encoding.
-                [s_i.get("observation", "<bos> <eos>") for s_i in batch_ith_step],
-                [s_i.get("previous_action", "<bos> <eos>") for s_i in batch_ith_step],
-                [s_i.get("timestamp", 0) for s_i in batch_ith_step],
-                [len(s_i) > 0 for s_i in batch_ith_step],
-            )
-            graph_events = self.collate_graphical_inputs(batch_ith_step)
-            cmds = tuple(
-                tuple(step.get("target_commands", [])) for step in batch_ith_step
-            )
-            collated_batch.append((step, graph_events, cmds))
+        initial_batched_graph = self.collate_prev_graph_events(batch)
         return TWCmdGenTemporalBatch(
             ids=tuple(
-                (str(steps[0]["game"]), int(steps[0]["walkthrough_step"]))
-                for steps in batch
+                (
+                    str(step["game"]),
+                    int(step["walkthrough_step"]),
+                    int(step["random_step"]),
+                )
+                for step in batch
             ),
-            data=tuple(
-                (step, tuple(graph_events), cmds)
-                for step, graph_events, cmds in collated_batch
+            step_input=self.collate_step_inputs(
+                [step["observation"] for step in batch],
+                [step["previous_action"] for step in batch],
+                [step["timestamp"] for step in batch],
             ),
+            initial_batched_graph=initial_batched_graph,
+            graphical_input_seq=self.collate_graphical_input_seq(
+                batch, initial_batched_graph
+            ),
+            graph_commands=tuple(tuple(step["target_commands"]) for step in batch),
         )
 
 
