@@ -48,9 +48,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-        export CUDA=cu102
-        pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.9.0+${CUDA}.html
-        pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-1.9.0+${CUDA}.html
+        pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.10.0+cpu.html
+        pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-1.10.0+cpu.html
         pip install .
         pip install --requirement requirements-dev.txt --upgrade --quiet
         python --version
