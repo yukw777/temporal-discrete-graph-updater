@@ -7,11 +7,10 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
 
 
 @pytest.mark.parametrize(
-    "event_type_emb_dim,time_enc_dim,event_embedding_dim,output_dim,"
+    "time_enc_dim,event_embedding_dim,output_dim,"
     "transformer_conv_num_block,transformer_conv_num_heads,batched_graph,num_node",
     [
         (
-            4,
             16,
             20,
             12,
@@ -28,7 +27,6 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
             11,
         ),
         (
-            8,
             32,
             48,
             24,
@@ -47,7 +45,6 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
     ],
 )
 def test_tgn_forward(
-    event_type_emb_dim,
     time_enc_dim,
     event_embedding_dim,
     output_dim,
@@ -57,7 +54,6 @@ def test_tgn_forward(
     num_node,
 ):
     tgn = TemporalGraphNetwork(
-        event_type_emb_dim,
         time_enc_dim,
         event_embedding_dim,
         output_dim,

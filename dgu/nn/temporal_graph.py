@@ -6,8 +6,6 @@ from torch_geometric.nn import TransformerConv
 from torch_geometric.nn.models.tgn import TimeEncoder
 from torch_geometric.data import Batch
 
-from dgu.constants import EVENT_TYPE_ID_MAP
-
 
 class TransformerConvStack(nn.Module):
     def __init__(
@@ -65,7 +63,6 @@ class TransformerConvStack(nn.Module):
 class TemporalGraphNetwork(nn.Module):
     def __init__(
         self,
-        event_type_emb_dim: int,
         time_enc_dim: int,
         event_embedding_dim: int,
         output_dim: int,
@@ -73,14 +70,9 @@ class TemporalGraphNetwork(nn.Module):
         transformer_conv_num_heads: int,
     ) -> None:
         super().__init__()
-        self.event_type_emb_dim = event_type_emb_dim
         self.time_enc_dim = time_enc_dim
         self.event_embedding_dim = event_embedding_dim
         self.output_dim = output_dim
-        self.message_dim = event_type_emb_dim + time_enc_dim + event_embedding_dim
-
-        # event type embedding
-        self.event_type_emb = nn.Embedding(len(EVENT_TYPE_ID_MAP), event_type_emb_dim)
 
         # time encoder
         self.time_encoder = TimeEncoder(time_enc_dim)

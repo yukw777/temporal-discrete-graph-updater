@@ -48,7 +48,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         hidden_dim: int = 8,
         word_emb_dim: int = 300,
-        tgn_event_type_emb_dim: int = 8,
         tgn_time_enc_dim: int = 8,
         tgn_num_gnn_block: int = 1,
         tgn_num_gnn_head: int = 1,
@@ -69,7 +68,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.save_hyperparameters(
             "hidden_dim",
             "word_emb_dim",
-            "tgn_event_type_emb_dim",
             "tgn_time_enc_dim",
             "tgn_num_gnn_block",
             "tgn_num_gnn_head",
@@ -139,7 +137,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # temporal graph network
         self.tgn = TemporalGraphNetwork(
-            tgn_event_type_emb_dim,
             tgn_time_enc_dim,
             word_emb_dim,
             hidden_dim,
