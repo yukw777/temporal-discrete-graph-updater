@@ -55,6 +55,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         text_encoder_num_conv_layers: int = 3,
         text_encoder_kernel_size: int = 5,
         text_encoder_num_heads: int = 1,
+        graph_event_decoder_event_type_emb_dim: int = 8,
         graph_event_decoder_hidden_dim: int = 8,
         graph_event_decoder_key_query_dim: int = 8,
         max_decode_len: int = 100,
@@ -75,6 +76,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "text_encoder_num_conv_layers",
             "text_encoder_kernel_size",
             "text_encoder_num_heads",
+            "graph_event_decoder_event_type_emb_dim",
             "graph_event_decoder_hidden_dim",
             "graph_event_decoder_key_query_dim",
             "max_decode_len",
@@ -156,7 +158,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_key_query_dim,
         )
         self.decoder = RNNGraphEventDecoder(
-            4 * hidden_dim, graph_event_decoder_hidden_dim, event_decoder
+            graph_event_decoder_event_type_emb_dim,
+            hidden_dim,
+            word_emb_dim,
+            4 * hidden_dim,
+            graph_event_decoder_hidden_dim,
+            event_decoder,
         )
 
         self.criterion = nn.CrossEntropyLoss()
@@ -305,6 +312,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
         decoder_results = self.decoder(
+            event_type_ids,
+            event_src_ids,
+            event_dst_ids,
+            event_label_ids,
             delta_g,
             batch_node_embeddings,
             self.label_embeddings.weight,
