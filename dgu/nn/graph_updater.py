@@ -60,7 +60,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         graph_event_decoder_key_query_dim: int = 8,
         max_decode_len: int = 100,
         learning_rate: float = 5e-4,
-        truncated_bptt_steps: int = 0,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
         node_vocab_path: Optional[str] = None,
@@ -82,7 +81,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "graph_event_decoder_key_query_dim",
             "max_decode_len",
             "learning_rate",
-            "truncated_bptt_steps",
         )
         # preprocessor
         if word_vocab_path is None:
