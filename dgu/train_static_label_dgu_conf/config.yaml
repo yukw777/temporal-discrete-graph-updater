@@ -29,6 +29,7 @@ model:
   text_encoder_num_conv_layers: 5
   text_encoder_kernel_size: 5
   text_encoder_num_heads: 1
+  graph_event_decoder_event_type_emb_dim: 16
   graph_event_decoder_hidden_dim: 64
   graph_event_decoder_key_query_dim: 64
   max_decode_len: 100

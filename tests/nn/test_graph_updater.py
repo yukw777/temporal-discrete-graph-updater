@@ -222,8 +222,8 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                     EVENT_TYPE_ID_MAP["end"],
                 ]
             ),
-            torch.tensor([0, 0, 3, 0]),
-            torch.tensor([0, 0, 4, 0]),
+            torch.tensor([0, 0, 1, 0]),
+            torch.tensor([0, 0, 0, 0]),
             12,
             8,
             Batch(
