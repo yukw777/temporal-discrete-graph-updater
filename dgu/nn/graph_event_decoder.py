@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Optional
 
 from dgu.constants import EVENT_TYPES
 
@@ -20,34 +20,37 @@ class EventTypeHead(nn.Module):
             nn.ReLU(),
         )
 
-    def forward(
-        self, graph_event_embeddings: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, graph_event_embeddings: torch.Tensor) -> torch.Tensor:
         """
         graph_event_embeddings: (batch, graph_event_embedding_dim)
 
-        output:
-            event_type_logits: (batch, num_event_type)
-            autoregressive_embedding: (batch, graph_event_embedding_dim)
+        output: event_type_logits: (batch, num_event_type)
         """
         # logits
-        event_type_logits = self.linear(graph_event_embeddings)
+        return self.linear(graph_event_embeddings)
         # (batch, num_event_type)
 
+    def get_autoregressive_embedding(
+        self, graph_event_embeddings: torch.Tensor, event_type_ids: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        graph_event_embeddings: (batch, graph_event_embedding_dim)
+        event_type_ids: (batch)
+
+        output: autoregressive_embedding, (batch, graph_event_embedding_dim)
+        """
         # autoregressive embedding
         # get the one hot encoding of event
         one_hot_event_type = F.one_hot(
-            event_type_logits.argmax(dim=1), num_classes=len(EVENT_TYPES)
+            event_type_ids, num_classes=len(EVENT_TYPES)
         ).float()
         # (batch, num_event_type)
         # pass it through a linear layer
         encoded_event_type = self.autoregressive_linear(one_hot_event_type)
-        # (batch, hidden_dim)
+        # (batch, graph_event_embedding_dim)
         # add it to graph_event_embeddings to calculate the autoregressive embedding
-        autoregressive_embedding = graph_event_embeddings + encoded_event_type
-        # (batch, hidden_dim)
-
-        return event_type_logits, autoregressive_embedding
+        return graph_event_embeddings + encoded_event_type
+        # (batch, graph_event_embedding_dim)
 
 
 class EventNodeHead(nn.Module):
@@ -59,6 +62,7 @@ class EventNodeHead(nn.Module):
         key_query_dim: int,
     ) -> None:
         super().__init__()
+        self.key_query_dim = key_query_dim
         self.key_linear = nn.Sequential(
             nn.Linear(node_embedding_dim, hidden_dim),
             nn.ReLU(),
@@ -82,13 +86,13 @@ class EventNodeHead(nn.Module):
 
         output:
             node_logits: (batch, num_node)
-            autoregressive_embedding: (batch, autoregressive_embedding_dim)
+            key: (batch, num_node, key_query_dim)
         """
         if node_embeddings.size(1) == 0:
             # if there are no nodes, just return
-            return (
-                torch.zeros(node_embeddings.size(0), 0, device=node_embeddings.device),
-                autoregressive_embedding,
+            batch = node_embeddings.size(0)
+            return torch.empty(batch, 0, device=node_embeddings.device), torch.empty(
+                batch, 0, self.key_query_dim
             )
 
         # calculate the key from node_embeddings
@@ -99,13 +103,32 @@ class EventNodeHead(nn.Module):
         query = self.query_linear(autoregressive_embedding)
         # (batch, key_query_dim)
 
-        node_logits = torch.matmul(key, query.unsqueeze(-1)).squeeze(-1)
-        # (batch, num_node)
+        return torch.matmul(key, query.unsqueeze(-1)).squeeze(-1), key
+        # node_logits: (batch, num_node)
+        # key: (batch, num_node, key_query_dim)
 
-        # autoregressive embedding
+    def update_autoregressive_embedding(
+        self,
+        autoregressive_embedding: torch.Tensor,
+        node_ids: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        key: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        autoregressive_embedding: (batch, autoregressive_embedding_dim)
+        node_ids: (batch)
+        node_embeddings: (batch, num_node, node_embedding_dim)
+        key: (batch, num_node, key_query_dim)
+
+        output: updated autoregressive embedding
+            (batch, autoregressive_embedding_dim)
+        """
+        if node_embeddings.size(1) == 0:
+            # if there are no nodes, just return without updating
+            return autoregressive_embedding
         # get the one hot encoding of the selected nodes
         one_hot_selected_node = F.one_hot(
-            node_logits.argmax(dim=1), num_classes=node_embeddings.size(1)
+            node_ids, num_classes=node_embeddings.size(1)
         ).float()
         # (batch, num_node)
         # multiply by the key
@@ -118,12 +141,8 @@ class EventNodeHead(nn.Module):
         # (batch, hidden_dim)
         # add it to the autoregressive embedding
         # NOTE: make sure not to do an in-place += here as it messes with gradients
-        updated_autoregressive_embedding = (
-            autoregressive_embedding + selected_node_embeddings
-        )
+        return autoregressive_embedding + selected_node_embeddings
         # (batch, hidden_dim)
-
-        return node_logits, updated_autoregressive_embedding
 
 
 class EventStaticLabelHead(nn.Module):
@@ -170,88 +189,23 @@ class EventStaticLabelHead(nn.Module):
         return torch.matmul(query, key.transpose(0, 1))
 
 
-class StaticLabelGraphEventDecoder(nn.Module):
-    def __init__(
-        self,
-        graph_event_embedding_dim: int,
-        node_embedding_dim: int,
-        label_embedding_dim: int,
-        hidden_dim: int,
-        key_query_dim: int,
-    ) -> None:
-        super().__init__()
-        self.event_type_head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
-        self.event_src_head = EventNodeHead(
-            node_embedding_dim, graph_event_embedding_dim, hidden_dim, key_query_dim
-        )
-        self.event_dst_head = EventNodeHead(
-            node_embedding_dim, graph_event_embedding_dim, hidden_dim, key_query_dim
-        )
-        self.event_label_head = EventStaticLabelHead(
-            graph_event_embedding_dim, label_embedding_dim, hidden_dim, key_query_dim
-        )
-
-    def forward(
-        self,
-        graph_event_embeddings: torch.Tensor,
-        node_embeddings: torch.Tensor,
-        label_embeddings: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Based on the graph event embeddings and node embeddings, calculate
-        event type logits, source node logits, destination node logits and
-        label logits for new graph events.
-
-        graph_event_embeddings: (batch, graph_event_embedding_dim)
-        node_embeddings: (batch, num_node, node_embedding_dim)
-        label_embeddings: (num_label, label_embedding_dim)
-
-        output: {
-            "event_type_logits": (batch, num_event_type),
-            "src_logits": (batch, num_node),
-            "dst_logits": (batch, num_node),
-            "label_logits": (batch, num_label),
-        }
-        """
-        event_type_logits, autoregressive_embedding = self.event_type_head(
-            graph_event_embeddings
-        )
-        src_logits, autoregressive_embedding = self.event_src_head(
-            autoregressive_embedding, node_embeddings
-        )
-        dst_logits, autoregressive_embedding = self.event_dst_head(
-            autoregressive_embedding, node_embeddings
-        )
-        label_logits = self.event_label_head(autoregressive_embedding, label_embeddings)
-        return {
-            "event_type_logits": event_type_logits,
-            "src_logits": src_logits,
-            "dst_logits": dst_logits,
-            "label_logits": label_logits,
-        }
-
-
 class RNNGraphEventDecoder(nn.Module):
     def __init__(
         self,
         input_dim: int,
         delta_g_dim: int,
         hidden_dim: int,
-        graph_event_decoder: StaticLabelGraphEventDecoder,
     ) -> None:
         super().__init__()
         self.linear = nn.Linear(input_dim + delta_g_dim, hidden_dim)
         self.gru_cell = nn.GRUCell(hidden_dim, hidden_dim)
-        self.graph_event_decoder = graph_event_decoder
 
     def forward(
         self,
         input_event_embedding: torch.Tensor,
         delta_g: torch.Tensor,
-        node_embeddings: torch.Tensor,
-        label_embeddings: torch.Tensor,
         hidden: Optional[torch.Tensor] = None,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> torch.Tensor:
         """
         input:
             input_event_embedding: (batch, input_dim)
@@ -260,19 +214,9 @@ class RNNGraphEventDecoder(nn.Module):
             label_embeddings: (num_label, label_embedding_dim)
             hidden: (batch, hidden_dim)
 
-        output:
-            {
-                event_type_logits: (batch, num_event_type)
-                src_logits: (batch, num_node)
-                dst_logits: (batch, num_node)
-                label_logits: (batch, num_label)
-                new_hidden: (batch, hidden_dim)
-            }
+        output: (batch, hidden_dim)
         """
         gru_input = self.linear(torch.cat([input_event_embedding, delta_g], dim=1))
-        new_hidden = self.gru_cell(gru_input, hidden)
-        results = self.graph_event_decoder(
-            new_hidden, node_embeddings, label_embeddings
-        )
-        results["new_hidden"] = new_hidden
-        return results
+        # (batch, hidden_dim)
+        return self.gru_cell(gru_input, hidden)
+        # (batch, hidden_dim)
