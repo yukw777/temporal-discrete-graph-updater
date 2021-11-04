@@ -459,6 +459,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
+        groundtruth_event_label_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
         Calculate the loss.
@@ -474,6 +475,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
+        groundtruth_event_label_mask: (batch)
 
         output: (batch)
         """
@@ -496,8 +498,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
         # label loss
         loss += self.criterion(
-            event_label_logits[groundtruth_event_mask],
-            groundtruth_event_label_ids[groundtruth_event_mask],
+            event_label_logits[groundtruth_event_label_mask],
+            groundtruth_event_label_ids[groundtruth_event_label_mask],
         )
         return loss
 
@@ -688,6 +690,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
+                    graphical_input.groundtruth_event_label_mask,
                 )
                 for results, graphical_input in zip(
                     results_list, batch.graphical_input_seq
@@ -722,6 +725,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
+                    graphical_input.groundtruth_event_label_mask,
                 )
                 for results, graphical_input in zip(
                     tf_results_list, batch.graphical_input_seq
