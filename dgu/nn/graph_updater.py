@@ -496,11 +496,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 event_dst_logits[groundtruth_event_dst_mask],
                 groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
-        # label loss
-        loss += self.criterion(
-            event_label_logits[groundtruth_event_label_mask],
-            groundtruth_event_label_ids[groundtruth_event_label_mask],
-        )
+        if groundtruth_event_label_mask.any():
+            # label loss
+            loss += self.criterion(
+                event_label_logits[groundtruth_event_label_mask],
+                groundtruth_event_label_ids[groundtruth_event_label_mask],
+            )
         return loss
 
     def calculate_f1s(
