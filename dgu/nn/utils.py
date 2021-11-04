@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional, Tuple, List, Any
+from typing import Optional, Tuple, List, Any, Dict
 from tqdm import tqdm
 from pathlib import Path
 from torch.nn.utils.rnn import pad_sequence
@@ -43,21 +43,27 @@ def masked_softmax(
 
 def compute_masks_from_event_type_ids(
     event_type_ids: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Dict[str, torch.Tensor]:
     """
     Compute three boolean masks from the given event type ids tensor.
     1. event mask: masks out pad event.
-    2. source mask: masks out special events, as well as node-add
-        as it is adding a new node.
-    3. destination mask: masks out special events and node events
-        as only edge events have destination nodes.
+    2. source mask: True if node-delete or edge event
+    3. destination mask: True if edge event
+    4. label mask: True if node event or edge event
 
     Dimensions of the masks are the same as that of event_type_ids.
 
-    output: (event_mask, src_mask, dst_mask)
+    output: {
+        "event_mask": event mask,
+        "src_mask": source mask,
+        "dst_mask": destination mask,
+        "label_mask": label mask,
+    }
     """
     # only mask out pad
     is_pad_event = event_type_ids == EVENT_TYPE_ID_MAP["pad"]
+    # (batch, event_seq_len)
+    is_node_add = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
     # (batch, event_seq_len)
     is_node_delete = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
     # (batch, event_seq_len)
@@ -67,14 +73,21 @@ def compute_masks_from_event_type_ids(
     )
     # (batch, event_seq_len)
 
-    event_mask = torch.logical_not(is_pad_event)
+    event_mask = is_pad_event.logical_not()
     # (batch, event_seq_len)
-    src_mask = torch.logical_or(is_node_delete, is_edge_event)
+    src_mask = is_node_delete.logical_or(is_edge_event)
     # (batch, event_seq_len)
     dst_mask = is_edge_event
     # (batch, event_seq_len)
+    label_mask = is_node_add.logical_or(is_node_delete).logical_or(is_edge_event)
+    # (batch, event_seq_len)
 
-    return event_mask, src_mask, dst_mask
+    return {
+        "event_mask": event_mask,
+        "src_mask": src_mask,
+        "dst_mask": dst_mask,
+        "label_mask": label_mask,
+    }
 
 
 def load_fasttext(

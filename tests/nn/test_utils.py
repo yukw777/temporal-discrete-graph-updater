@@ -92,7 +92,8 @@ def test_masked_softmax(batched_input, batched_mask):
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,expected_event_mask,expected_src_mask,expected_dst_mask",
+    "event_type_ids,expected_event_mask,expected_src_mask,expected_dst_mask,"
+    "expected_label_mask",
     [
         (
             torch.tensor(
@@ -105,6 +106,7 @@ def test_masked_softmax(batched_input, batched_mask):
                 ]
             ),
             torch.tensor([[True, True, False]]),
+            torch.zeros(1, 3).bool(),
             torch.zeros(1, 3).bool(),
             torch.zeros(1, 3).bool(),
         ),
@@ -120,6 +122,7 @@ def test_masked_softmax(batched_input, batched_mask):
             torch.ones(1, 2).bool(),
             torch.tensor([[False, True]]),
             torch.zeros(1, 2).bool(),
+            torch.ones(1, 2).bool(),
         ),
         (
             torch.tensor(
@@ -130,6 +133,7 @@ def test_masked_softmax(batched_input, batched_mask):
                     ]
                 ]
             ),
+            torch.ones(1, 2).bool(),
             torch.ones(1, 2).bool(),
             torch.ones(1, 2).bool(),
             torch.ones(1, 2).bool(),
@@ -149,6 +153,7 @@ def test_masked_softmax(batched_input, batched_mask):
             torch.ones(1, 5).bool(),
             torch.tensor([[False, False, True, True, True]]),
             torch.tensor([[False, False, True, True, False]]),
+            torch.tensor([[False, True, True, True, True]]),
         ),
         (
             torch.tensor(
@@ -176,20 +181,24 @@ def test_masked_softmax(batched_input, batched_mask):
             torch.tensor(
                 [[False, False, True, True, False], [False, True, True, False, False]]
             ),
+            torch.tensor(
+                [[False, True, True, True, True], [True, True, True, True, False]]
+            ),
         ),
     ],
 )
 def test_compute_masks_from_event_type_ids(
-    event_type_ids, expected_event_mask, expected_src_mask, expected_dst_mask
+    event_type_ids,
+    expected_event_mask,
+    expected_src_mask,
+    expected_dst_mask,
+    expected_label_mask,
 ):
-    (
-        event_mask,
-        src_mask,
-        dst_mask,
-    ) = compute_masks_from_event_type_ids(event_type_ids)
-    assert event_mask.equal(expected_event_mask)
-    assert src_mask.equal(expected_src_mask)
-    assert dst_mask.equal(expected_dst_mask)
+    masks = compute_masks_from_event_type_ids(event_type_ids)
+    assert masks["event_mask"].equal(expected_event_mask)
+    assert masks["src_mask"].equal(expected_src_mask)
+    assert masks["dst_mask"].equal(expected_dst_mask)
+    assert masks["label_mask"].equal(expected_label_mask)
 
 
 def test_load_fasttext(tmpdir):

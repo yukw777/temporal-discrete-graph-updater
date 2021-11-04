@@ -153,12 +153,13 @@ class TWCmdGenTemporalGraphicalInput:
     tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_dst_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
-    groundtruth_event_mask: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_label_mask: torch.Tensor = field(default_factory=empty_tensor)
     prev_batched_graph: Batch = field(default_factory=empty_graph)
 
     def __eq__(self, o: object) -> bool:
@@ -359,11 +360,7 @@ class TWCmdGenTemporalDataCollator:
             groundtruth_event_src_ids = torch.tensor(batch_event_src_ids)
             groundtruth_event_dst_ids = torch.tensor(batch_event_dst_ids)
             groundtruth_event_label_ids = torch.tensor(batch_event_label_ids)
-            (
-                groundtruth_event_mask,
-                groundtruth_event_src_mask,
-                groundtruth_event_dst_mask,
-            ) = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
+            masks = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
             collated.append(
                 TWCmdGenTemporalGraphicalInput(
                     tgt_event_type_ids=tgt_event_type_ids,
@@ -371,12 +368,13 @@ class TWCmdGenTemporalDataCollator:
                     tgt_event_dst_ids=tgt_event_dst_ids,
                     tgt_event_label_ids=tgt_event_label_ids,
                     groundtruth_event_type_ids=groundtruth_event_type_ids,
+                    groundtruth_event_mask=masks["event_mask"],
                     groundtruth_event_src_ids=groundtruth_event_src_ids,
-                    groundtruth_event_src_mask=groundtruth_event_src_mask,
+                    groundtruth_event_src_mask=masks["src_mask"],
                     groundtruth_event_dst_ids=groundtruth_event_dst_ids,
-                    groundtruth_event_dst_mask=groundtruth_event_dst_mask,
+                    groundtruth_event_dst_mask=masks["dst_mask"],
                     groundtruth_event_label_ids=groundtruth_event_label_ids,
-                    groundtruth_event_mask=groundtruth_event_mask,
+                    groundtruth_event_label_mask=masks["label_mask"],
                     prev_batched_graph=prev_batched_graph,
                 )
             )
