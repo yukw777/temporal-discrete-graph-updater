@@ -242,13 +242,14 @@ class RNNGraphEventDecoder(nn.Module):
         graph_event_decoder: StaticLabelGraphEventDecoder,
     ) -> None:
         super().__init__()
-        self.gru_cell = nn.GRUCell(
+        self.linear = nn.Linear(
             event_type_embedding_dim
             + 2 * node_embedding_dim
             + label_embedding_dim
             + delta_g_dim,
             hidden_dim,
         )
+        self.gru_cell = nn.GRUCell(hidden_dim, hidden_dim)
         self.graph_event_decoder = graph_event_decoder
         self.event_type_embeddings = nn.Embedding(
             len(EVENT_TYPES),
@@ -287,7 +288,7 @@ class RNNGraphEventDecoder(nn.Module):
                 new_hidden: (batch, hidden_dim)
             }
         """
-        new_hidden = self.gru_cell(
+        gru_input = self.linear(
             torch.cat(
                 [
                     self.get_decoder_input(
@@ -301,9 +302,9 @@ class RNNGraphEventDecoder(nn.Module):
                     delta_g,
                 ],
                 dim=1,
-            ),
-            hidden,
+            )
         )
+        new_hidden = self.gru_cell(gru_input, hidden)
         results = self.graph_event_decoder(
             new_hidden, node_embeddings, label_embeddings
         )
