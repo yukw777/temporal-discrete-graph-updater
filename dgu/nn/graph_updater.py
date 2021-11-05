@@ -20,11 +20,14 @@ from dgu.nn.utils import (
     load_fasttext,
     batchify_node_features,
     calculate_node_id_offsets,
+    masked_softmax,
     update_batched_graph,
 )
 from dgu.nn.graph_event_decoder import (
-    StaticLabelGraphEventDecoder,
     RNNGraphEventDecoder,
+    EventTypeHead,
+    EventNodeHead,
+    EventStaticLabelHead,
 )
 from dgu.nn.temporal_graph import TemporalGraphNetwork
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
@@ -155,18 +158,29 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_event_type_emb_dim,
             padding_idx=EVENT_TYPE_ID_MAP["pad"],
         )
-        event_decoder = StaticLabelGraphEventDecoder(
-            graph_event_decoder_hidden_dim,
-            hidden_dim,
-            word_emb_dim,
-            hidden_dim,
-            graph_event_decoder_key_query_dim,
-        )
         self.decoder = RNNGraphEventDecoder(
             graph_event_decoder_event_type_emb_dim + 3 * word_emb_dim,
             4 * hidden_dim,
             graph_event_decoder_hidden_dim,
-            event_decoder,
+        )
+        self.event_type_head = EventTypeHead(graph_event_decoder_hidden_dim, hidden_dim)
+        self.event_src_head = EventNodeHead(
+            hidden_dim,
+            graph_event_decoder_hidden_dim,
+            hidden_dim,
+            graph_event_decoder_key_query_dim,
+        )
+        self.event_dst_head = EventNodeHead(
+            hidden_dim,
+            graph_event_decoder_hidden_dim,
+            hidden_dim,
+            graph_event_decoder_key_query_dim,
+        )
+        self.event_label_head = EventStaticLabelHead(
+            graph_event_decoder_hidden_dim,
+            word_emb_dim,
+            hidden_dim,
+            graph_event_decoder_key_query_dim,
         )
 
         self.criterion = nn.CrossEntropyLoss()
@@ -205,6 +219,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         encoded_prev_action: Optional[torch.Tensor] = None,
         # decoder hidden
         decoder_hidden: Optional[torch.Tensor] = None,
+        # groundtruth events for decoder teacher-force training
+        groundtruth_event_type_ids: Optional[torch.Tensor] = None,
+        groundtruth_event_src_ids: Optional[torch.Tensor] = None,
+        groundtruth_event_dst_ids: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         graph events: {
@@ -236,6 +254,13 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         If encoded_obs and encoded_prev_action are given, they're used
         Otherwise, they are calculated from obs_word_ids, obs_mask,
         prev_action_word_ids and prev_action_mask.
+
+        groundtruth graph event {
+            groundtruth_event_type_ids: (batch)
+            groundtruth_event_src_ids: (batch)
+            groundtruth_event_dst_ids: (batch)
+        }
+        Ground-truth graph events used for teacher forcing of the decoder
 
         output:
         {
@@ -314,7 +339,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         # (batch, 4 * hidden_dim)
 
-        decoder_results = self.decoder(
+        new_decoder_hidden = self.decoder(
             self.get_decoder_input(
                 event_type_ids,
                 event_src_ids,
@@ -324,16 +349,68 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 prev_batched_graph.x,
             ),
             delta_g,
-            batch_node_embeddings,
-            self.label_embeddings.weight,
             hidden=decoder_hidden,
         )
+        event_type_logits = self.event_type_head(new_decoder_hidden)
+        # (batch, num_event_type)
+        if groundtruth_event_type_ids is not None:
+            autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
+                new_decoder_hidden, groundtruth_event_type_ids
+            )
+            # (batch, hidden_dim)
+        else:
+            autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
+                new_decoder_hidden, event_type_logits.argmax(dim=1)
+            )
+            # (batch, hidden_dim)
+        event_src_logits, event_src_key = self.event_src_head(
+            autoregressive_emb, batch_node_embeddings
+        )
+        # event_src_logits: (batch, max_sub_graph_num_node)
+        # event_src_key:
+        #   (batch, max_sub_graph_num_node, graph_event_decoder_key_query_dim)
+        if groundtruth_event_src_ids is not None:
+            autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
+                autoregressive_emb, event_src_ids, batch_node_embeddings, event_src_key
+            )
+        elif event_src_logits.size(1) > 0:
+            autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
+                autoregressive_emb,
+                torch.argmax(
+                    masked_softmax(event_src_logits, batch_node_mask, dim=1), dim=1
+                ),
+                batch_node_embeddings,
+                event_src_key,
+            )
+        event_dst_logits, event_dst_key = self.event_dst_head(
+            autoregressive_emb, batch_node_embeddings
+        )
+        # event_dst_logits: (batch, max_sub_graph_num_node)
+        # event_dst_key:
+        #   (batch, max_sub_graph_num_node, graph_event_decoder_key_query_dim)
+        if groundtruth_event_dst_ids is not None:
+            autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
+                autoregressive_emb, event_dst_ids, batch_node_embeddings, event_dst_key
+            )
+        elif event_dst_logits.size(1) > 0:
+            autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
+                autoregressive_emb,
+                torch.argmax(
+                    masked_softmax(event_dst_logits, batch_node_mask, dim=1), dim=1
+                ),
+                batch_node_embeddings,
+                event_dst_key,
+            )
+        label_logits = self.event_label_head(
+            autoregressive_emb, self.label_embeddings.weight
+        )
+        # (batch, num_label)
         return {
-            "event_type_logits": decoder_results["event_type_logits"],
-            "event_src_logits": decoder_results["src_logits"],
-            "event_dst_logits": decoder_results["dst_logits"],
-            "event_label_logits": decoder_results["label_logits"],
-            "new_decoder_hidden": decoder_results["new_hidden"],
+            "event_type_logits": event_type_logits,
+            "event_src_logits": event_src_logits,
+            "event_dst_logits": event_dst_logits,
+            "event_label_logits": label_logits,
+            "new_decoder_hidden": new_decoder_hidden,
             "encoded_obs": encoded_obs,
             "encoded_prev_action": encoded_prev_action,
             "updated_batched_graph": updated_batched_graph,
@@ -439,6 +516,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 encoded_obs=encoded_obs,
                 encoded_prev_action=encoded_prev_action,
                 decoder_hidden=decoder_hidden,
+                groundtruth_event_type_ids=graphical_input.groundtruth_event_type_ids,
+                groundtruth_event_src_ids=graphical_input.groundtruth_event_src_ids,
+                groundtruth_event_dst_ids=graphical_input.groundtruth_event_dst_ids,
             )
 
             # add results to the list

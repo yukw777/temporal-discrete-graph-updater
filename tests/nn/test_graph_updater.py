@@ -53,7 +53,8 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
 
 @pytest.mark.parametrize(
     "batch_size,event_type_ids,event_src_ids,event_dst_ids,obs_len,prev_action_len,"
-    "batched_graph,expected_num_node,expected_num_edge",
+    "batched_graph,groundtruth_event_type_ids,groundtruth_event_src_ids,"
+    "groundtruth_event_dst_ids,expected_num_node,expected_num_edge",
     [
         (
             1,
@@ -70,6 +71,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.empty(0).long(),
                 edge_last_update=torch.empty(0),
             ),
+            None,
+            None,
+            None,
             0,
             0,
         ),
@@ -95,6 +99,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.empty(0).long(),
                 edge_last_update=torch.empty(0),
             ),
+            None,
+            None,
+            None,
             0,
             0,
         ),
@@ -113,6 +120,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
+            None,
+            None,
+            None,
             3,
             1,
         ),
@@ -138,6 +148,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (2,)),
                 edge_last_update=torch.tensor([2.0, 3.0]),
             ),
+            None,
+            None,
+            None,
             6,
             2,
         ),
@@ -156,6 +169,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
+            None,
+            None,
+            None,
             4,
             1,
         ),
@@ -174,6 +190,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
+            None,
+            None,
+            None,
             2,
             1,
         ),
@@ -192,6 +211,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (3,)),
                 edge_last_update=torch.rand(3),
             ),
+            None,
+            None,
+            None,
             9,
             4,
         ),
@@ -210,6 +232,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (4,)),
                 edge_last_update=torch.rand(4),
             ),
+            None,
+            None,
+            None,
             9,
             3,
         ),
@@ -235,6 +260,9 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (3,)),
                 edge_last_update=torch.rand(3),
             ),
+            None,
+            None,
+            None,
             9,
             4,
         ),
@@ -260,6 +288,44 @@ def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
                 edge_attr=torch.randint(6, (4,)),
                 edge_last_update=torch.rand(4),
             ),
+            None,
+            None,
+            None,
+            12,
+            4,
+        ),
+        (
+            4,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.tensor([0, 0, 3, 1]),
+            torch.tensor([2, 0, 0, 0]),
+            12,
+            8,
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
+                x=torch.randint(6, (12,)),
+                node_last_update=torch.rand(12),
+                edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
+                edge_attr=torch.randint(6, (4,)),
+                edge_last_update=torch.rand(4),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+            torch.tensor([0, 5, 0, 1]),
+            torch.tensor([1, 0, 0, 0]),
             12,
             4,
         ),
@@ -278,6 +344,9 @@ def test_sldgu_forward(
     obs_len,
     prev_action_len,
     batched_graph,
+    groundtruth_event_type_ids,
+    groundtruth_event_src_ids,
+    groundtruth_event_dst_ids,
     expected_num_node,
     expected_num_edge,
 ):
@@ -315,6 +384,9 @@ def test_sldgu_forward(
         decoder_hidden=torch.rand(batch_size, sldgu.hparams.hidden_dim)
         if decoder_hidden
         else None,
+        groundtruth_event_type_ids=groundtruth_event_type_ids,
+        groundtruth_event_src_ids=groundtruth_event_src_ids,
+        groundtruth_event_dst_ids=groundtruth_event_dst_ids,
     )
     assert results["event_type_logits"].size() == (batch_size, len(EVENT_TYPES))
     if results["updated_batched_graph"].batch.numel() > 0:
