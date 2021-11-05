@@ -2,6 +2,7 @@ import pytest
 import torch
 import shutil
 import torch.nn as nn
+import random
 
 from torch_geometric.data.batch import Batch
 
@@ -429,7 +430,25 @@ def test_sldgu_forward(
 
 
 @pytest.mark.parametrize("batch,num_node", [(1, 5), (8, 12)])
-def test_sldgu_calculate_loss(sldgu, batch, num_node):
+@pytest.mark.parametrize("label", [True, False])
+@pytest.mark.parametrize("dst", [True, False])
+@pytest.mark.parametrize("src", [True, False])
+def test_sldgu_calculate_loss(sldgu, src, dst, label, batch, num_node):
+    groundtruth_event_src_mask = torch.zeros(batch).bool()
+    if src:
+        groundtruth_event_src_mask[
+            random.sample(range(batch), k=random.choice(range(1, batch + 1)))
+        ] = True
+    groundtruth_event_dst_mask = torch.zeros(batch).bool()
+    if dst:
+        groundtruth_event_dst_mask[
+            random.sample(range(batch), k=random.choice(range(1, batch + 1)))
+        ] = True
+    groundtruth_event_label_mask = torch.zeros(batch).bool()
+    if label:
+        groundtruth_event_label_mask[
+            random.sample(range(batch), k=random.choice(range(1, batch + 1)))
+        ] = True
     assert (
         sldgu.calculate_loss(
             torch.rand(batch, len(EVENT_TYPES)),
@@ -441,9 +460,9 @@ def test_sldgu_calculate_loss(sldgu, batch, num_node):
             torch.rand(batch, len(sldgu.labels)),
             torch.randint(len(sldgu.labels), (batch,)),
             torch.randint(2, (batch,)).bool(),
-            torch.randint(2, (batch,)).bool(),
-            torch.randint(2, (batch,)).bool(),
-            torch.randint(2, (batch,)).bool(),
+            groundtruth_event_src_mask,
+            groundtruth_event_dst_mask,
+            groundtruth_event_label_mask,
         ).size()
         == tuple()
     )
