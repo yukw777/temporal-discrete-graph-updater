@@ -150,6 +150,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.repr_aggr = ReprAggregator(hidden_dim)
 
         # graph event seq2seq
+        self.event_type_embeddings = nn.Embedding(
+            len(EVENT_TYPE_ID_MAP),
+            graph_event_decoder_event_type_emb_dim,
+            padding_idx=EVENT_TYPE_ID_MAP["pad"],
+        )
         event_decoder = StaticLabelGraphEventDecoder(
             graph_event_decoder_hidden_dim,
             hidden_dim,
@@ -158,9 +163,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_key_query_dim,
         )
         self.decoder = RNNGraphEventDecoder(
-            graph_event_decoder_event_type_emb_dim,
-            hidden_dim,
-            word_emb_dim,
+            graph_event_decoder_event_type_emb_dim + 3 * word_emb_dim,
             4 * hidden_dim,
             graph_event_decoder_hidden_dim,
             event_decoder,
@@ -312,10 +315,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, 4 * hidden_dim)
 
         decoder_results = self.decoder(
-            event_type_ids,
-            event_src_ids,
-            event_dst_ids,
-            event_label_ids,
+            self.get_decoder_input(
+                event_type_ids,
+                event_src_ids,
+                event_dst_ids,
+                event_label_ids,
+                prev_batched_graph.batch,
+                prev_batched_graph.x,
+            ),
             delta_g,
             batch_node_embeddings,
             self.label_embeddings.weight,
@@ -1154,3 +1161,91 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 *[[" | ".join(cmds) for cmds in batch_cmds] for batch_cmds in args],
             )
         )
+
+    def get_decoder_input(
+        self,
+        event_type_ids: torch.Tensor,
+        event_src_ids: torch.Tensor,
+        event_dst_ids: torch.Tensor,
+        event_label_ids: torch.Tensor,
+        batch: torch.Tensor,
+        node_label_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Turn the graph events into decoder inputs by concatenating their embeddings.
+
+        input:
+            event_type_ids: (batch)
+            event_src_ids: (batch)
+            event_dst_ids: (batch)
+            event_label_ids: (batch)
+            batch: (num_node)
+            node_label_ids: (num_node)
+
+        output: (batch, decoder_input_dim)
+            where decoder_input_dim = event_type_embedding_dim + 3 * label_embedding_dim
+        """
+        batch_size = event_type_ids.size(0)
+
+        # event type embeddings
+        event_type_embs = self.event_type_embeddings(event_type_ids)
+        # (batch, event_type_embedding_dim)
+
+        # event label embeddings
+        event_label_embs = torch.zeros(
+            batch_size,
+            self.label_embeddings.embedding_dim,
+            device=event_type_ids.device,
+        )
+        # (batch, label_embedding_dim)
+        node_add_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
+        # (batch)
+        node_delete_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
+        # (batch)
+        edge_event_mask = torch.logical_or(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+        )
+        # (batch)
+        label_mask = node_add_mask.logical_or(node_delete_mask).logical_or(
+            edge_event_mask
+        )
+        # (batch)
+        event_label_embs[label_mask] = self.label_embeddings(
+            event_label_ids[label_mask]
+        )
+        # (batch, label_embedding_dim)
+
+        # event source/destination node embeddings
+        event_src_embs = torch.zeros(
+            batch_size,
+            self.label_embeddings.embedding_dim,
+            device=event_type_ids.device,
+        )
+        # (batch, label_embedding_dim)
+        event_dst_embs = torch.zeros(
+            batch_size,
+            self.label_embeddings.embedding_dim,
+            device=event_type_ids.device,
+        )
+        # (batch, node_embedding_dim)
+        src_node_mask = node_delete_mask.logical_or(edge_event_mask)
+        # (batch)
+        node_id_offsets = calculate_node_id_offsets(batch_size, batch)
+        # (batch)
+        if src_node_mask.any():
+            event_src_embs[src_node_mask] = self.label_embeddings(
+                node_label_ids[(event_src_ids + node_id_offsets)[src_node_mask]]
+            )
+            # (batch, label_embedding_dim)
+
+        if edge_event_mask.any():
+            event_dst_embs[edge_event_mask] = self.label_embeddings(
+                node_label_ids[(event_dst_ids + node_id_offsets)[edge_event_mask]]
+            )
+            # (batch, node_embedding_dim)
+
+        return torch.cat(
+            [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
+        )
+        # (batch, event_type_embedding_dim + 3 * node_embedding_dim)

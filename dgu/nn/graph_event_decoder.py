@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from typing import Tuple, Dict, Optional
 
-from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from dgu.constants import EVENT_TYPES
 
 
 class EventTypeHead(nn.Module):
@@ -234,35 +234,19 @@ class StaticLabelGraphEventDecoder(nn.Module):
 class RNNGraphEventDecoder(nn.Module):
     def __init__(
         self,
-        event_type_embedding_dim: int,
-        node_embedding_dim: int,
-        label_embedding_dim: int,
+        input_dim: int,
         delta_g_dim: int,
         hidden_dim: int,
         graph_event_decoder: StaticLabelGraphEventDecoder,
     ) -> None:
         super().__init__()
-        self.linear = nn.Linear(
-            event_type_embedding_dim
-            + 2 * node_embedding_dim
-            + label_embedding_dim
-            + delta_g_dim,
-            hidden_dim,
-        )
+        self.linear = nn.Linear(input_dim + delta_g_dim, hidden_dim)
         self.gru_cell = nn.GRUCell(hidden_dim, hidden_dim)
         self.graph_event_decoder = graph_event_decoder
-        self.event_type_embeddings = nn.Embedding(
-            len(EVENT_TYPES),
-            event_type_embedding_dim,
-            padding_idx=EVENT_TYPE_ID_MAP["pad"],
-        )
 
     def forward(
         self,
-        event_type_ids: torch.Tensor,
-        event_src_ids: torch.Tensor,
-        event_dst_ids: torch.Tensor,
-        event_label_ids: torch.Tensor,
+        input_event_embedding: torch.Tensor,
         delta_g: torch.Tensor,
         node_embeddings: torch.Tensor,
         label_embeddings: torch.Tensor,
@@ -270,10 +254,7 @@ class RNNGraphEventDecoder(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         """
         input:
-            event_type_ids: (batch)
-            event_src_ids: (batch)
-            event_dst_ids: (batch)
-            event_label_ids: (batch)
+            input_event_embedding: (batch, input_dim)
             delta_g: (batch, delta_g_dim)
             node_embeddings: (batch, num_node, node_embedding_dim)
             label_embeddings: (num_label, label_embedding_dim)
@@ -288,110 +269,10 @@ class RNNGraphEventDecoder(nn.Module):
                 new_hidden: (batch, hidden_dim)
             }
         """
-        gru_input = self.linear(
-            torch.cat(
-                [
-                    self.get_decoder_input(
-                        event_type_ids,
-                        event_src_ids,
-                        event_dst_ids,
-                        event_label_ids,
-                        node_embeddings,
-                        label_embeddings,
-                    ),
-                    delta_g,
-                ],
-                dim=1,
-            )
-        )
+        gru_input = self.linear(torch.cat([input_event_embedding, delta_g], dim=1))
         new_hidden = self.gru_cell(gru_input, hidden)
         results = self.graph_event_decoder(
             new_hidden, node_embeddings, label_embeddings
         )
         results["new_hidden"] = new_hidden
         return results
-
-    def get_decoder_input(
-        self,
-        event_type_ids: torch.Tensor,
-        event_src_ids: torch.Tensor,
-        event_dst_ids: torch.Tensor,
-        event_label_ids: torch.Tensor,
-        node_embeddings: torch.Tensor,
-        label_embeddings: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Turn the graph events into decoder inputs by concatenating their embeddings.
-
-        input:
-            event_type_ids: (batch)
-            event_src_ids: (batch)
-            event_dst_ids: (batch)
-            event_label_ids: (batch)
-            node_embeddings: (batch, num_node, node_embedding_dim)
-            label_embeddings: (num_label, label_embedding_dim)
-
-        output: (batch, decoder_input_dim)
-            where decoder_input_dim =
-                event_type_embedding_dim +
-                2 * node_embedding_dim +
-                label_embedding_dim
-        """
-        batch, num_node, node_embedding_dim = node_embeddings.size()
-
-        # event type embeddings
-        event_type_embs = self.event_type_embeddings(event_type_ids)
-        # (batch, event_type_embedding_dim)
-
-        # event label embeddings
-        event_label_embs = torch.zeros(
-            batch, label_embeddings.size(1), device=event_type_ids.device
-        )
-        # (batch, label_embedding_dim)
-        node_add_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
-        # (batch)
-        node_delete_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
-        # (batch)
-        edge_event_mask = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
-        )
-        # (batch)
-        label_mask = node_add_mask.logical_or(node_delete_mask).logical_or(
-            edge_event_mask
-        )
-        # (batch)
-        event_label_embs[label_mask] = label_embeddings[event_label_ids[label_mask]]
-        # (batch, label_embedding_dim)
-
-        # event source/destination node embeddings
-        event_src_embs = torch.zeros(
-            batch, node_embedding_dim, device=event_type_ids.device
-        )
-        # (batch, node_embedding_dim)
-        event_dst_embs = torch.zeros(
-            batch, node_embedding_dim, device=event_type_ids.device
-        )
-        # (batch, node_embedding_dim)
-        src_node_mask = node_delete_mask.logical_or(edge_event_mask)
-        if src_node_mask.any():
-            # (batch)
-            event_src_embs[src_node_mask] = node_embeddings[
-                F.one_hot(event_src_ids, num_classes=num_node).bool()
-            ][src_node_mask]
-            # (batch, node_embedding_dim)
-
-        if edge_event_mask.any():
-            event_dst_embs[edge_event_mask] = node_embeddings[
-                F.one_hot(event_dst_ids, num_classes=num_node).bool()
-            ][edge_event_mask]
-            # (batch, node_embedding_dim)
-
-        return torch.cat(
-            [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
-        )
-        # (batch, decoder_input_dim)
-        # where decoder_input_dim =
-        #       event_type_embedding_dim +
-        #       2 * node_embedding_dim +
-        #       label_embedding_dim
