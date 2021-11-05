@@ -571,7 +571,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             event_type_logits[groundtruth_event_mask],
             groundtruth_event_type_ids[groundtruth_event_mask],
         )
-        if groundtruth_event_dst_mask.any():
+        if groundtruth_event_src_mask.any():
             # source node loss
             loss += self.criterion(
                 event_src_logits[groundtruth_event_src_mask],
