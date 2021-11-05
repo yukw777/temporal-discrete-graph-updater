@@ -6,7 +6,10 @@ import random
 
 from torch_geometric.data.batch import Batch
 
-from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
+from dgu.nn.graph_updater import (
+    StaticLabelDiscreteGraphUpdater,
+    UncertaintyWeightedLoss,
+)
 from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from dgu.data import TWCmdGenTemporalStepInput
 
@@ -433,7 +436,7 @@ def test_sldgu_forward(
 @pytest.mark.parametrize("label", [True, False])
 @pytest.mark.parametrize("dst", [True, False])
 @pytest.mark.parametrize("src", [True, False])
-def test_sldgu_calculate_loss(sldgu, src, dst, label, batch, num_node):
+def test_uncertainty_weighted_loss(sldgu, src, dst, label, batch, num_node):
     groundtruth_event_src_mask = torch.zeros(batch).bool()
     if src:
         groundtruth_event_src_mask[
@@ -450,7 +453,7 @@ def test_sldgu_calculate_loss(sldgu, src, dst, label, batch, num_node):
             random.sample(range(batch), k=random.choice(range(1, batch + 1)))
         ] = True
     assert (
-        sldgu.calculate_loss(
+        UncertaintyWeightedLoss()(
             torch.rand(batch, len(EVENT_TYPES)),
             torch.randint(len(EVENT_TYPES), (batch,)),
             torch.rand(batch, num_node),

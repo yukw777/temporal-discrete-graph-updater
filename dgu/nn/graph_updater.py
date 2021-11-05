@@ -183,7 +183,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_key_query_dim,
         )
 
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.criterion = UncertaintyWeightedLoss()
 
         self.event_type_f1 = torchmetrics.F1(ignore_index=EVENT_TYPE_ID_MAP["pad"])
         self.src_node_f1 = torchmetrics.F1()
@@ -533,69 +533,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         return results_list
 
-    def calculate_loss(
-        self,
-        event_type_logits: torch.Tensor,
-        groundtruth_event_type_ids: torch.Tensor,
-        event_src_logits: torch.Tensor,
-        groundtruth_event_src_ids: torch.Tensor,
-        event_dst_logits: torch.Tensor,
-        groundtruth_event_dst_ids: torch.Tensor,
-        event_label_logits: torch.Tensor,
-        groundtruth_event_label_ids: torch.Tensor,
-        groundtruth_event_mask: torch.Tensor,
-        groundtruth_event_src_mask: torch.Tensor,
-        groundtruth_event_dst_mask: torch.Tensor,
-        groundtruth_event_label_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Calculate the loss.
-
-        event_type_logits: (batch, num_event_type)
-        groundtruth_event_type_ids: (batch)
-        event_src_logits: (batch, num_node)
-        groundtruth_event_src_ids: (batch)
-        event_dst_logits: (batch, num_node)
-        groundtruth_event_dst_ids: (batch)
-        event_label_logits: (batch, num_label)
-        groundtruth_event_label_ids: (batch)
-        groundtruth_event_mask: (batch)
-        groundtruth_event_src_mask: (batch)
-        groundtruth_event_dst_mask: (batch)
-        groundtruth_event_label_mask: (batch)
-
-        output: (batch)
-        """
-        # event type loss
-        loss = (
-            self.criterion(event_type_logits, groundtruth_event_type_ids)
-            * groundtruth_event_mask
-        )
-        # (batch)
-        if groundtruth_event_src_mask.any():
-            # source node loss
-            loss += (
-                self.criterion(event_src_logits, groundtruth_event_src_ids)
-                * groundtruth_event_src_mask
-            )
-            # (batch)
-        if groundtruth_event_dst_mask.any():
-            # destination node loss
-            loss += (
-                self.criterion(event_dst_logits, groundtruth_event_dst_ids)
-                * groundtruth_event_dst_mask
-            )
-            # (batch)
-        if groundtruth_event_label_mask.any():
-            # label loss
-            loss += (
-                self.criterion(event_label_logits, groundtruth_event_label_ids)
-                * groundtruth_event_label_mask
-            )
-            # (batch)
-        return loss
-        # (batch)
-
     def calculate_f1s(
         self,
         event_type_logits: torch.Tensor,
@@ -771,7 +708,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         results_list = self.teacher_force(batch.step_input, batch.graphical_input_seq)
         loss = torch.stack(
             [
-                self.calculate_loss(
+                self.criterion(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
                     results["event_src_logits"],
@@ -806,7 +743,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         loss = torch.stack(
             [
-                self.calculate_loss(
+                self.criterion(
                     results["event_type_logits"],
                     graphical_input.groundtruth_event_type_ids,
                     results["event_src_logits"],
@@ -1334,3 +1271,89 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
         )
         # (batch, event_type_embedding_dim + 3 * node_embedding_dim)
+
+
+class UncertaintyWeightedLoss(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        # log variance for event type, source node, destination node and label
+        # classification tasks
+        self.log_var = nn.parameter.Parameter(torch.zeros(4))
+
+    def forward(
+        self,
+        event_type_logits: torch.Tensor,
+        groundtruth_event_type_ids: torch.Tensor,
+        event_src_logits: torch.Tensor,
+        groundtruth_event_src_ids: torch.Tensor,
+        event_dst_logits: torch.Tensor,
+        groundtruth_event_dst_ids: torch.Tensor,
+        event_label_logits: torch.Tensor,
+        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_mask: torch.Tensor,
+        groundtruth_event_src_mask: torch.Tensor,
+        groundtruth_event_dst_mask: torch.Tensor,
+        groundtruth_event_label_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Calculate the total loss using the weighting strategy from Kendall, et al. 2018.
+        with a small modification from Liebel, et al. 2018.
+
+        event_type_logits: (batch, num_event_type)
+        groundtruth_event_type_ids: (batch)
+        event_src_logits: (batch, num_node)
+        groundtruth_event_src_ids: (batch)
+        event_dst_logits: (batch, num_node)
+        groundtruth_event_dst_ids: (batch)
+        event_label_logits: (batch, num_label)
+        groundtruth_event_label_ids: (batch)
+        groundtruth_event_mask: (batch)
+        groundtruth_event_src_mask: (batch)
+        groundtruth_event_dst_mask: (batch)
+        groundtruth_event_label_mask: (batch)
+
+        output: (batch)
+        """
+        # event type loss
+        event_type_loss = (
+            self.criterion(event_type_logits, groundtruth_event_type_ids)
+            * groundtruth_event_mask
+        )
+        # (batch)
+        src_node_loss = torch.zeros_like(event_type_loss)
+        # (batch)
+        if groundtruth_event_src_mask.any():
+            # source node loss
+            src_node_loss += (
+                self.criterion(event_src_logits, groundtruth_event_src_ids)
+                * groundtruth_event_src_mask
+            )
+        dst_node_loss = torch.zeros_like(event_type_loss)
+        # (batch)
+        if groundtruth_event_dst_mask.any():
+            # destination node loss
+            dst_node_loss += (
+                self.criterion(event_dst_logits, groundtruth_event_dst_ids)
+                * groundtruth_event_dst_mask
+            )
+        label_loss = torch.zeros_like(event_type_loss)
+        # (batch)
+        if groundtruth_event_label_mask.any():
+            # label loss
+            label_loss += (
+                self.criterion(event_label_logits, groundtruth_event_label_ids)
+                * groundtruth_event_label_mask
+            )
+
+        # calculate the total loss
+        precision = torch.exp(-self.log_var)
+        # (4)
+        stacked_losses = torch.stack(
+            [event_type_loss, src_node_loss, dst_node_loss, label_loss]
+        ).t()
+        # (batch, 4)
+        regularizer = torch.log1p(torch.exp(self.log_var))
+        # (4)
+        return torch.sum(stacked_losses * precision + regularizer, dim=1)
+        # (batch)
