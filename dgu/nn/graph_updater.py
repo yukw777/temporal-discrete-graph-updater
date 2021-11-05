@@ -183,7 +183,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_key_query_dim,
         )
 
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(reduction="none")
 
         self.event_type_f1 = torchmetrics.F1(ignore_index=EVENT_TYPE_ID_MAP["pad"])
         self.src_node_f1 = torchmetrics.F1()
@@ -564,32 +564,36 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_mask: (batch)
         groundtruth_event_label_mask: (batch)
 
-        output: (batch)
+        output: scalar
         """
         # event type loss
-        loss = self.criterion(
-            event_type_logits[groundtruth_event_mask],
-            groundtruth_event_type_ids[groundtruth_event_mask],
+        loss = (
+            self.criterion(event_type_logits, groundtruth_event_type_ids)
+            * groundtruth_event_mask
         )
+        # (batch)
         if groundtruth_event_src_mask.any():
             # source node loss
-            loss += self.criterion(
-                event_src_logits[groundtruth_event_src_mask],
-                groundtruth_event_src_ids[groundtruth_event_src_mask],
+            loss += (
+                self.criterion(event_src_logits, groundtruth_event_src_ids)
+                * groundtruth_event_src_mask
             )
+            # (batch)
         if groundtruth_event_dst_mask.any():
             # destination node loss
-            loss += self.criterion(
-                event_dst_logits[groundtruth_event_dst_mask],
-                groundtruth_event_dst_ids[groundtruth_event_dst_mask],
+            loss += (
+                self.criterion(event_dst_logits, groundtruth_event_dst_ids)
+                * groundtruth_event_dst_mask
             )
+            # (batch)
         if groundtruth_event_label_mask.any():
             # label loss
-            loss += self.criterion(
-                event_label_logits[groundtruth_event_label_mask],
-                groundtruth_event_label_ids[groundtruth_event_label_mask],
+            loss += (
+                self.criterion(event_label_logits, groundtruth_event_label_ids)
+                * groundtruth_event_label_mask
             )
-        return loss
+            # (batch)
+        return loss.mean()
 
     def calculate_f1s(
         self,
