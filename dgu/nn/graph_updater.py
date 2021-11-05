@@ -564,7 +564,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_mask: (batch)
         groundtruth_event_label_mask: (batch)
 
-        output: scalar
+        output: (batch)
         """
         # event type loss
         loss = (
@@ -593,7 +593,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 * groundtruth_event_label_mask
             )
             # (batch)
-        return loss.mean()
+        return loss
+        # (batch)
 
     def calculate_f1s(
         self,

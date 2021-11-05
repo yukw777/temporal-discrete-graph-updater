@@ -464,7 +464,7 @@ def test_sldgu_calculate_loss(sldgu, src, dst, label, batch, num_node):
             groundtruth_event_dst_mask,
             groundtruth_event_label_mask,
         ).size()
-        == tuple()
+        == (batch,)
     )
 
 
