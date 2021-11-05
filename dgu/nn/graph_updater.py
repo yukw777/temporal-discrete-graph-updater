@@ -757,46 +757,60 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             self.log(log_prefix + "_label_f1", f1s["label_f1"])
 
         # calculate graph tuples from teacher forcing graph events
-        # handle source/destination logits for empty graphs by setting them to zeros
-        tf_src_id_seq = [
-            results["event_src_logits"].argmax(dim=1)
-            if results["event_src_logits"].size(1) > 0
-            else torch.zeros(
-                results["event_src_logits"].size(0),
-                dtype=torch.long,
-                device=self.device,
+        tf_event_type_id_seq: List[torch.Tensor] = []
+        tf_src_id_seq: List[torch.Tensor] = []
+        tf_dst_id_seq: List[torch.Tensor] = []
+        tf_label_id_seq: List[torch.Tensor] = []
+        for results in tf_results_list:
+            unfiltered_event_type_ids = results["event_type_logits"].argmax(dim=1)
+            # handle source/destination logits for empty graphs by setting them to zeros
+            unfiltered_event_src_ids = (
+                results["event_src_logits"].argmax(dim=1)
+                if results["event_src_logits"].size(1) > 0
+                else torch.zeros(
+                    results["event_src_logits"].size(0),
+                    dtype=torch.long,
+                    device=self.device,
+                )
             )
-            for results in tf_results_list
-        ]
-        tf_dst_id_seq = [
-            results["event_dst_logits"].argmax(dim=1)
-            if results["event_dst_logits"].size(1) > 0
-            else torch.zeros(
-                results["event_dst_logits"].size(0),
-                dtype=torch.long,
-                device=self.device,
+            unfiltered_event_dst_ids = (
+                results["event_dst_logits"].argmax(dim=1)
+                if results["event_dst_logits"].size(1) > 0
+                else torch.zeros(
+                    results["event_dst_logits"].size(0),
+                    dtype=torch.long,
+                    device=self.device,
+                )
             )
-            for results in tf_results_list
-        ]
+            invalid_event_mask = self.filter_invalid_events(
+                unfiltered_event_type_ids,
+                unfiltered_event_src_ids,
+                unfiltered_event_dst_ids,
+                results["updated_batched_graph"].batch,
+                results["updated_batched_graph"].edge_index,
+            )
+            tf_event_type_id_seq.append(
+                unfiltered_event_type_ids.masked_fill(
+                    invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
+                )
+            )
+            tf_src_id_seq.append(
+                unfiltered_event_src_ids.masked_fill(invalid_event_mask, 0)
+            )
+            tf_dst_id_seq.append(
+                unfiltered_event_dst_ids.masked_fill(invalid_event_mask, 0)
+            )
+            tf_label_id_seq.append(
+                results["event_label_logits"]
+                .argmax(dim=1)
+                .masked_fill(invalid_event_mask, self.label_id_map[""])
+            )
+
         batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
-            [
-                self.filter_invalid_events(
-                    results["event_type_logits"].argmax(dim=1),
-                    src_ids,
-                    dst_ids,
-                    results["updated_batched_graph"].batch,
-                    results["updated_batched_graph"].edge_index,
-                )
-                for results, src_ids, dst_ids in zip(
-                    tf_results_list, tf_src_id_seq, tf_dst_id_seq
-                )
-            ],
+            tf_event_type_id_seq,
             tf_src_id_seq,
             tf_dst_id_seq,
-            [
-                results["event_label_logits"].argmax(dim=1)
-                for results in tf_results_list
-            ],
+            tf_label_id_seq,
             [results["updated_batched_graph"] for results in tf_results_list],
         )
 
@@ -996,7 +1010,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # (batch)
 
             # filter out invalid decoded events
-            decoded_event_type_ids = self.filter_invalid_events(
+            invalid_event_mask = self.filter_invalid_events(
                 decoded_event_type_ids,
                 decoded_src_ids,
                 decoded_dst_ids,
@@ -1004,6 +1018,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 results["updated_batched_graph"].edge_index,
             )
             # (batch)
+            decoded_event_type_ids = decoded_event_type_ids.masked_fill(
+                invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
+            )
+            decoded_src_ids = decoded_src_ids.masked_fill(invalid_event_mask, 0)
+            decoded_dst_ids = decoded_dst_ids.masked_fill(invalid_event_mask, 0)
+            decoded_label_ids = decoded_label_ids.masked_fill(
+                invalid_event_mask, self.label_id_map[""]
+            )
 
             # collect the results
             results_list.append(
@@ -1046,7 +1068,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Filter out invalid events by setting them to pad events.
+        Return a mask for invalid events. False for valid events and
+        True for invalid events.
 
         node-add: all are valid
         node-delete:
@@ -1063,7 +1086,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         batch: (num_node)
         edge_index: (2, num_edge)
 
-        output: filtered event_type_ids (batch)
+        output: invalid event mask (batch)
         """
         batch_size = event_type_ids.size(0)
         batch_bincount = batch.bincount()
@@ -1105,12 +1128,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         # (batch)
 
-        invalid_event_mask = invalid_node_delete_event_mask.logical_or(
+        return invalid_node_delete_event_mask.logical_or(
             invalid_edge_add_event_mask
         ).logical_or(invalid_edge_delete_event_mask)
         # (batch)
-
-        return event_type_ids.masked_fill(invalid_event_mask, EVENT_TYPE_ID_MAP["pad"])
 
     @staticmethod
     def generate_predict_table_rows(

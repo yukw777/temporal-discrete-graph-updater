@@ -756,13 +756,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 0, 0]),
             torch.empty(0).long(),
             torch.empty(2, 0).long(),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["start"],
-                    EVENT_TYPE_ID_MAP["end"],
-                ]
-            ),
+            torch.tensor([False, False, False]),
         ),
         (
             torch.tensor(
@@ -775,12 +769,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 0]),
             torch.tensor([0, 0, 1, 1]),
             torch.empty(2, 0).long(),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                ]
-            ),
+            torch.tensor([False, False]),
         ),
         (
             torch.tensor(
@@ -793,12 +782,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 1]),
             torch.tensor([0, 0, 0, 1, 1]),
             torch.empty(2, 0).long(),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
+            torch.tensor([False, False]),
         ),
         (
             torch.tensor(
@@ -811,12 +795,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 1]),
             torch.tensor([0, 0, 0, 1, 1]),
             torch.tensor([[1], [2]]),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
+            torch.tensor([True, False]),
         ),
         (
             torch.tensor(
@@ -829,12 +808,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 1]),
             torch.tensor([0, 0, 0, 1, 1]),
             torch.tensor([[2], [1]]),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
+            torch.tensor([True, False]),
         ),
         (
             torch.tensor(
@@ -849,14 +823,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 0, 4, 1]),
             torch.empty(0).long(),
             torch.empty(2, 0).long(),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                ]
-            ),
+            torch.tensor([True, True, True, True]),
         ),
         (
             torch.tensor(
@@ -871,14 +838,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 0, 4, 1]),
             torch.tensor([3, 3]),
             torch.empty(2, 0).long(),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
+            torch.tensor([True, True, True, False]),
         ),
         (
             torch.tensor(
@@ -893,14 +853,7 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
             torch.tensor([0, 0, 1, 1]),
             torch.tensor([0, 1, 1, 2, 3, 3, 3]),
             torch.tensor([[1], [2]]),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["pad"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                ]
-            ),
+            torch.tensor([False, True, False, False]),
         ),
     ],
 )
@@ -1611,9 +1564,9 @@ def test_sldgu_filter_invalid_events(
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
-                    "decoded_event_src_ids": torch.tensor([0, 2]),
-                    "decoded_event_dst_ids": torch.tensor([0, 1]),
-                    "decoded_event_label_ids": torch.tensor([0, 4]),
+                    "decoded_event_src_ids": torch.tensor([0, 0]),
+                    "decoded_event_dst_ids": torch.tensor([0, 0]),
+                    "decoded_event_label_ids": torch.tensor([0, 0]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
                         x=torch.tensor([0, 0, 1]),
@@ -1625,9 +1578,9 @@ def test_sldgu_filter_invalid_events(
                 },
                 {
                     "decoded_event_type_ids": torch.tensor([0, 0]),  # [pad, pad]
-                    "decoded_event_src_ids": torch.tensor([0, 2]),
-                    "decoded_event_dst_ids": torch.tensor([0, 2]),
-                    "decoded_event_label_ids": torch.tensor([0, 1]),
+                    "decoded_event_src_ids": torch.tensor([0, 0]),
+                    "decoded_event_dst_ids": torch.tensor([0, 0]),
+                    "decoded_event_label_ids": torch.tensor([0, 0]),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
                         x=torch.tensor([0, 0, 1]),
