@@ -185,10 +185,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         self.criterion = UncertaintyWeightedLoss()
 
-        self.event_type_f1 = torchmetrics.F1(ignore_index=EVENT_TYPE_ID_MAP["pad"])
+        self.event_type_f1 = torchmetrics.F1()
         self.src_node_f1 = torchmetrics.F1()
         self.dst_node_f1 = torchmetrics.F1()
-        self.label_f1 = torchmetrics.F1(ignore_index=0)
+        self.label_f1 = torchmetrics.F1()
 
         self.graph_tf_exact_match = dgu.metrics.ExactMatch()
         self.token_tf_exact_match = dgu.metrics.ExactMatch()
@@ -543,9 +543,11 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_ids: torch.Tensor,
         event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+        groundtruth_event_label_mask: torch.Tensor,
+    ) -> None:
         """
         Calculate various F1 scores.
 
@@ -557,37 +559,30 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_ids: (batch)
         event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
+        groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
-
-        output: {
-            'event_type_f1': scalar,
-            'src_node_f1': optional, scalar,
-            'dst_node_f1': optional, scalar,
-            'label_f1': scalar,
-        }
+        groundtruth_event_label_mask: (batch)
         """
-        f1s: Dict[str, torch.Tensor] = {}
-        f1s["event_type_f1"] = self.event_type_f1(
-            event_type_logits.softmax(dim=1), groundtruth_event_type_ids
+        self.event_type_f1(
+            event_type_logits[groundtruth_event_mask].softmax(dim=1),
+            groundtruth_event_type_ids[groundtruth_event_mask],
         )
-        src_mask = groundtruth_event_src_mask.bool()
-        if src_mask.any():
-            f1s["src_node_f1"] = self.src_node_f1(
-                event_src_logits[src_mask].softmax(dim=1),
-                groundtruth_event_src_ids[src_mask],
+        if groundtruth_event_src_mask.any():
+            self.src_node_f1(
+                event_src_logits[groundtruth_event_src_mask].softmax(dim=1),
+                groundtruth_event_src_ids[groundtruth_event_src_mask],
             )
-        dst_mask = groundtruth_event_dst_mask.bool()
-        if dst_mask.any():
-            f1s["dst_node_f1"] = self.dst_node_f1(
-                event_dst_logits[dst_mask].softmax(dim=1),
-                groundtruth_event_dst_ids[dst_mask],
+        if groundtruth_event_dst_mask.any():
+            self.dst_node_f1(
+                event_dst_logits[groundtruth_event_dst_mask].softmax(dim=1),
+                groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
-        f1s["label_f1"] = self.label_f1(
-            event_label_logits.softmax(dim=1), groundtruth_event_label_ids
-        )
-
-        return f1s
+        if groundtruth_event_label_mask.any():
+            self.label_f1(
+                event_label_logits[groundtruth_event_label_mask].softmax(dim=1),
+                groundtruth_event_label_ids[groundtruth_event_label_mask],
+            )
 
     def generate_graph_triples(
         self,
@@ -766,7 +761,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         # log classification F1s from teacher forcing
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
-            f1s = self.calculate_f1s(
+            self.calculate_f1s(
                 results["event_type_logits"],
                 graphical_input.groundtruth_event_type_ids,
                 results["event_src_logits"],
@@ -775,15 +770,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_dst_ids,
                 results["event_label_logits"],
                 graphical_input.groundtruth_event_label_ids,
+                graphical_input.groundtruth_event_mask,
                 graphical_input.groundtruth_event_src_mask,
                 graphical_input.groundtruth_event_dst_mask,
+                graphical_input.groundtruth_event_label_mask,
             )
-            self.log(log_prefix + "_event_type_f1", f1s["event_type_f1"])
-            if "src_node_f1" in f1s:
-                self.log(log_prefix + "_src_node_f1", f1s["src_node_f1"])
-            if "dst_node_f1" in f1s:
-                self.log(log_prefix + "_dst_node_f1", f1s["dst_node_f1"])
-            self.log(log_prefix + "_label_f1", f1s["label_f1"])
+        self.log(log_prefix + "_event_type_f1", self.event_type_f1)
+        self.log(log_prefix + "_src_node_f1", self.src_node_f1)
+        self.log(log_prefix + "_dst_node_f1", self.dst_node_f1)
+        self.log(log_prefix + "_label_f1", self.label_f1)
 
         # calculate graph tuples from teacher forcing graph events
         tf_event_type_id_seq: List[torch.Tensor] = []
