@@ -782,8 +782,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         tf_src_id_seq: List[torch.Tensor] = []
         tf_dst_id_seq: List[torch.Tensor] = []
         tf_label_id_seq: List[torch.Tensor] = []
-        for results in tf_results_list:
-            unfiltered_event_type_ids = results["event_type_logits"].argmax(dim=1)
+        for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
+            # filter out pad events
+            unfiltered_event_type_ids = (
+                results["event_type_logits"].argmax(dim=1)
+                * graphical_input.groundtruth_event_mask
+            )
             # handle source/destination logits for empty graphs by setting them to zeros
             unfiltered_event_src_ids = (
                 results["event_src_logits"].argmax(dim=1)
