@@ -639,6 +639,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 cmd_tokens = [cmd, src_label, dst_label, edge_label]
                 cmds.append(" , ".join(cmd_tokens))
                 tokens.append(cmd_tokens)
+            else:
+                cmds.append("")
+                tokens.append([])
         return cmds, tokens
 
     def generate_batch_graph_triples_seq(
@@ -654,20 +657,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         batch_cmds: List[List[str]] = [[] for _ in range(batch_size)]
         # (batch, event_seq_len, token_len)
         batch_tokens: List[List[str]] = [[] for _ in range(batch_size)]
-        for step_id, (
-            event_type_ids,
-            src_ids,
-            dst_ids,
-            label_ids,
-            batched_graph,
-        ) in enumerate(
-            zip(
-                event_type_id_seq,
-                src_id_seq,
-                dst_id_seq,
-                label_id_seq,
-                batched_graph_seq,
-            )
+        for event_type_ids, src_ids, dst_ids, label_ids, batched_graph in zip(
+            event_type_id_seq,
+            src_id_seq,
+            dst_id_seq,
+            label_id_seq,
+            batched_graph_seq,
         ):
             for batch_id, (cmd, tokens) in enumerate(
                 zip(
@@ -676,10 +671,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     )
                 )
             ):
-                batch_cmds[batch_id].append(cmd)
-                if step_id != 0:
-                    batch_tokens[batch_id].append("<sep>")
-                batch_tokens[batch_id].extend(tokens)
+                if cmd != "":
+                    batch_cmds[batch_id].append(cmd)
+                if len(tokens) != 0:
+                    if len(batch_tokens[batch_id]) != 0:
+                        batch_tokens[batch_id].append("<sep>")
+                    batch_tokens[batch_id].extend(tokens)
         return batch_cmds, batch_tokens
 
     @staticmethod

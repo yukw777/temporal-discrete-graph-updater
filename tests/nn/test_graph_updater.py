@@ -869,7 +869,7 @@ def test_sldgu_calculate_f1s(
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
             ),
-            ([], []),
+            ([""], [[]]),
         ),
         (
             torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
@@ -884,7 +884,7 @@ def test_sldgu_calculate_f1s(
                 edge_attr=torch.empty(0, 300),
                 edge_last_update=torch.empty(0),
             ),
-            ([], []),
+            ([""], [[]]),
         ),
         (
             torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
@@ -940,6 +940,26 @@ def test_sldgu_calculate_f1s(
                     ["add", "player", "chopped", "is"],
                     ["delete", "player", "inventory", "in"],
                 ],
+            ),
+        ),
+        (
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+            ),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 1]),
+            torch.tensor([1, 4]),  # [player, in]
+            Batch(
+                batch=torch.tensor([0, 0, 0, 0, 1, 1]),
+                x=torch.tensor([[3], [1], [1], [2], [1], [2]]),
+                node_last_update=torch.tensor([1.0, 1.0, 1.0, 1.0, 2.0, 2.0]),
+                edge_index=torch.tensor([[4, 5]]),
+                edge_attr=torch.tensor([4]),
+                edge_last_update=torch.tensor([1.0]),
+            ),
+            (
+                ["", "delete , player , inventory , in"],
+                [[], ["delete", "player", "inventory", "in"]],
             ),
         ),
     ],
@@ -1099,6 +1119,44 @@ def test_sldgu_generate_graph_triples(
                         "inventory",
                         "in",
                     ],
+                ],
+            ),
+        ),
+        (
+            [
+                torch.tensor(
+                    [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+                ),
+                torch.tensor(
+                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["node-delete"]]
+                ),
+            ],
+            [torch.tensor([0, 0]), torch.tensor([0, 2])],
+            [torch.tensor([0, 1]), torch.tensor([1, 0])],
+            [torch.tensor([5, 4]), torch.tensor([5, 1])],
+            [
+                Batch(
+                    batch=torch.tensor([0, 0, 0, 0, 1, 1]),
+                    x=torch.tensor([3, 1, 1, 2, 1, 2]),
+                    node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0).long(),
+                    edge_last_update=torch.empty(0),
+                ),
+                Batch(
+                    batch=torch.tensor([0, 0, 1, 1, 1, 1]),
+                    x=torch.tensor([1, 3, 1, 2, 1, 2]),
+                    node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
+                    edge_index=torch.empty(2, 0).long(),
+                    edge_attr=torch.empty(0).long(),
+                    edge_last_update=torch.empty(0),
+                ),
+            ],
+            (
+                [["add , player , chopped , is"], ["delete , player , inventory , in"]],
+                [
+                    ["add", "player", "chopped", "is"],
+                    ["delete", "player", "inventory", "in"],
                 ],
             ),
         ),
