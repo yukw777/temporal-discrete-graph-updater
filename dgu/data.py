@@ -592,7 +592,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
     def test_dataloader(self) -> DataLoader:
         return DataLoader(
             self.test,
-            batch_size=self.val_batch_size,
+            batch_size=self.test_batch_size,
             collate_fn=TWCmdGenTemporalDataCollator(
                 self.preprocessor, self.label_id_map
             ),
