@@ -848,9 +848,12 @@ def test_sldgu_calculate_f1s(
         groundtruth_event_label_mask,
     )
     assert sldgu.event_type_f1.compute() == expected_event_type_f1
-    assert sldgu.src_node_f1.compute() == expected_src_node_f1
-    assert sldgu.dst_node_f1.compute() == expected_dst_node_f1
-    assert sldgu.label_f1.compute() == expected_label_f1
+    if groundtruth_event_src_mask.any():
+        assert sldgu.src_node_f1.compute() == expected_src_node_f1
+    if groundtruth_event_dst_mask.any():
+        assert sldgu.dst_node_f1.compute() == expected_dst_node_f1
+    if groundtruth_event_label_mask.any():
+        assert sldgu.label_f1.compute() == expected_label_f1
 
 
 @pytest.mark.parametrize(
