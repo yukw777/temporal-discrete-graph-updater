@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from typing import Tuple, Optional
 
+from dgu.nn.utils import masked_mean
 from dgu.constants import EVENT_TYPES
 
 
@@ -193,30 +194,61 @@ class RNNGraphEventDecoder(nn.Module):
     def __init__(
         self,
         input_dim: int,
-        delta_g_dim: int,
+        aggr_dim: int,
         hidden_dim: int,
     ) -> None:
         super().__init__()
-        self.linear = nn.Linear(input_dim + delta_g_dim, hidden_dim)
+        self.linear = nn.Linear(input_dim + 4 * aggr_dim, hidden_dim)
         self.gru_cell = nn.GRUCell(hidden_dim, hidden_dim)
 
     def forward(
         self,
         input_event_embedding: torch.Tensor,
-        delta_g: torch.Tensor,
+        aggr_obs_graph: torch.Tensor,
+        obs_mask: torch.Tensor,
+        aggr_prev_action_graph: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+        aggr_graph_obs: torch.Tensor,
+        aggr_graph_prev_action: torch.Tensor,
+        node_mask: torch.Tensor,
         hidden: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         input:
             input_event_embedding: (batch, input_dim)
-            delta_g: (batch, delta_g_dim)
-            node_embeddings: (batch, num_node, node_embedding_dim)
-            label_embeddings: (num_label, label_embedding_dim)
+            aggr_obs_graph: (batch, obs_len, aggr_dim)
+            obs_mask: (batch, obs_len)
+            aggr_prev_action_graph: (batch, prev_action_len, aggr_dim)
+            prev_action_mask: (batch, prev_action_len)
+            aggr_graph_obs: (batch, num_node, aggr_dim)
+            aggr_graph_prev_action: (batch, num_node, aggr_dim)
+            node_mask: (batch, num_node)
             hidden: (batch, hidden_dim)
 
         output: (batch, hidden_dim)
         """
-        gru_input = self.linear(torch.cat([input_event_embedding, delta_g], dim=1))
+        mean_aggr_obs_graph = masked_mean(aggr_obs_graph, obs_mask)
+        # (batch, aggr_dim)
+        mean_aggr_graph_obs = masked_mean(aggr_graph_obs, node_mask)
+        # (batch, aggr_dim)
+        mean_aggr_prev_action_graph = masked_mean(
+            aggr_prev_action_graph, prev_action_mask
+        )
+        # (batch, aggr_dim)
+        mean_aggr_graph_prev_action = masked_mean(aggr_graph_prev_action, node_mask)
+        # (batch, aggr_dim)
+        gru_input = self.linear(
+            torch.cat(
+                [
+                    input_event_embedding,
+                    mean_aggr_obs_graph,
+                    mean_aggr_graph_obs,
+                    mean_aggr_prev_action_graph,
+                    mean_aggr_graph_prev_action,
+                ],
+                dim=1,
+            )
+        )
         # (batch, hidden_dim)
         return self.gru_cell(gru_input, hidden)
         # (batch, hidden_dim)

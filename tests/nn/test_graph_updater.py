@@ -33,29 +33,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 
 
 @pytest.mark.parametrize(
-    "batch,num_node,obs_len,prev_action_len",
-    [(1, 0, 10, 5), (8, 0, 20, 10), (8, 1, 20, 10), (8, 10, 20, 10)],
-)
-def test_sldgu_f_delta(sldgu, batch, num_node, obs_len, prev_action_len):
-    delta_g = sldgu.f_delta(
-        torch.rand(batch, num_node, sldgu.hparams.hidden_dim),
-        # the first node is always the pad node, so make sure to mask that to test
-        torch.cat(
-            [torch.zeros(batch, 1), torch.randint(2, (batch, num_node - 1)).float()],
-            dim=-1,
-        )
-        if num_node != 0
-        else torch.randint(2, (batch, num_node)).float(),
-        torch.rand(batch, obs_len, sldgu.hparams.hidden_dim),
-        torch.randint(2, (batch, obs_len)).float(),
-        torch.rand(batch, prev_action_len, sldgu.hparams.hidden_dim),
-        torch.randint(2, (batch, prev_action_len)).float(),
-    )
-    assert delta_g.size() == (batch, 4 * sldgu.hparams.hidden_dim)
-    assert delta_g.isnan().sum() == 0
-
-
-@pytest.mark.parametrize(
     "batch_size,event_type_ids,event_src_ids,event_dst_ids,obs_len,prev_action_len,"
     "batched_graph,groundtruth_event_type_ids,groundtruth_event_src_ids,"
     "groundtruth_event_dst_ids,expected_num_node,expected_num_edge",
@@ -364,14 +341,30 @@ def test_sldgu_forward(
         if encoded_textual_input
         else None
     )
+    # need to have at least one unmasked token, otherwise pack_padded_sequence
+    # raises an exception
+    obs_mask = torch.cat(
+        [
+            torch.ones(batch_size, 1).bool(),
+            torch.randint(2, (batch_size, obs_len - 1)).bool(),
+        ],
+        dim=1,
+    )
+    prev_action_mask = torch.cat(
+        [
+            torch.ones(batch_size, 1).bool(),
+            torch.randint(2, (batch_size, prev_action_len - 1)).bool(),
+        ],
+        dim=1,
+    )
     results = sldgu(
         event_type_ids,
         event_src_ids,
         event_dst_ids,
         torch.randint(len(sldgu.labels), (batch_size,)),
         batched_graph,
-        torch.randint(2, (batch_size, obs_len)).bool(),
-        torch.randint(2, (batch_size, prev_action_len)).bool(),
+        obs_mask,
+        prev_action_mask,
         torch.randint(10, (batch_size,)).float(),
         obs_word_ids=None
         if encoded_textual_input

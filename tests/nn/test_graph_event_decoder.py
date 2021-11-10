@@ -99,21 +99,38 @@ def test_event_static_label_head(
 
 
 @pytest.mark.parametrize(
-    "input_dim,delta_g_dim,hidden_dim,batch",
-    [(12, 6, 8, 1), (12, 6, 8, 4)],
+    "input_dim,aggr_dim,hidden_dim,batch,obs_len,prev_action_len,num_node",
+    [(12, 6, 8, 1, 8, 4, 6), (12, 6, 8, 4, 8, 4, 6)],
 )
 @pytest.mark.parametrize("hidden", [True, False])
-def test_rnn_graph_event_decoder(hidden, input_dim, delta_g_dim, hidden_dim, batch):
-    decoder = RNNGraphEventDecoder(
-        input_dim,
-        delta_g_dim,
-        hidden_dim,
+def test_rnn_graph_event_decoder(
+    hidden, input_dim, aggr_dim, hidden_dim, batch, obs_len, prev_action_len, num_node
+):
+    decoder = RNNGraphEventDecoder(input_dim, aggr_dim, hidden_dim)
+    # need to have at least one unmasked token, otherwise pack_padded_sequence
+    # raises an exception
+    obs_mask = torch.cat(
+        [torch.ones(batch, 1).bool(), torch.randint(2, (batch, obs_len - 1)).bool()],
+        dim=1,
+    )
+    prev_action_mask = torch.cat(
+        [
+            torch.ones(batch, 1).bool(),
+            torch.randint(2, (batch, prev_action_len - 1)).bool(),
+        ],
+        dim=1,
     )
 
     assert (
         decoder(
             torch.rand(batch, input_dim),
-            torch.rand(batch, delta_g_dim),
+            torch.rand(batch, obs_len, aggr_dim),
+            obs_mask,
+            torch.rand(batch, prev_action_len, aggr_dim),
+            prev_action_mask,
+            torch.rand(batch, num_node, aggr_dim),
+            torch.rand(batch, num_node, aggr_dim),
+            torch.randint(2, (batch, num_node)).bool(),
             hidden=torch.rand(batch, hidden_dim) if hidden else None,
         ).size()
         == (batch, hidden_dim)

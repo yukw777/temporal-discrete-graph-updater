@@ -160,7 +160,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         self.decoder = RNNGraphEventDecoder(
             graph_event_decoder_event_type_emb_dim + 3 * word_emb_dim,
-            4 * hidden_dim,
+            hidden_dim,
             graph_event_decoder_hidden_dim,
         )
         self.event_type_head = EventTypeHead(graph_event_decoder_hidden_dim, hidden_dim)
@@ -329,15 +329,22 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
         # batch_node_mask: (batch, max_sub_graph_num_node)
 
-        delta_g = self.f_delta(
-            batch_node_embeddings,
-            batch_node_mask,
+        h_og, h_go = self.repr_aggr(
             encoded_obs,
+            batch_node_embeddings,
             obs_mask,
-            encoded_prev_action,
-            prev_action_mask,
+            batch_node_mask,
         )
-        # (batch, 4 * hidden_dim)
+        # h_og: (batch, obs_len, hidden_dim)
+        # h_go: (batch, num_node, hidden_dim)
+        h_ag, h_ga = self.repr_aggr(
+            encoded_prev_action,
+            batch_node_embeddings,
+            prev_action_mask,
+            batch_node_mask,
+        )
+        # h_ag: (batch, prev_action_len, hidden_dim)
+        # h_ga: (batch, num_node, hidden_dim)
 
         new_decoder_hidden = self.decoder(
             self.get_decoder_input(
@@ -348,7 +355,13 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 prev_batched_graph.batch,
                 prev_batched_graph.x,
             ),
-            delta_g,
+            h_og,
+            obs_mask,
+            h_ag,
+            prev_action_mask,
+            h_go,
+            h_ga,
+            batch_node_mask,
             hidden=decoder_hidden,
         )
         event_type_logits = self.event_type_head(new_decoder_hidden)
@@ -426,54 +439,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # (batch, seq_len, hidden_dim)
         return self.text_encoder(word_embs, mask)
         # (batch, seq_len, hidden_dim)
-
-    def f_delta(
-        self,
-        node_embeddings: torch.Tensor,
-        node_mask: torch.Tensor,
-        obs_embeddings: torch.Tensor,
-        obs_mask: torch.Tensor,
-        prev_action_embeddings: torch.Tensor,
-        prev_action_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        node_embeddings: (batch, num_node, hidden_dim)
-        node_mask: (batch, num_node)
-        obs_embeddings: (batch, obs_len, hidden_dim)
-        obs_mask: (batch, obs_len)
-        prev_action_embeddings: (batch, prev_action_len, hidden_dim)
-        prev_action_mask: (batch, prev_action_len)
-
-        output: (batch, 4 * hidden_dim)
-        """
-        h_og, h_go = self.repr_aggr(
-            obs_embeddings,
-            node_embeddings,
-            obs_mask,
-            node_mask,
-        )
-        # h_og: (batch, obs_len, hidden_dim)
-        # h_go: (batch, num_node, hidden_dim)
-        h_ag, h_ga = self.repr_aggr(
-            prev_action_embeddings,
-            node_embeddings,
-            prev_action_mask,
-            node_mask,
-        )
-        # h_ag: (batch, prev_action_len, hidden_dim)
-        # h_ga: (batch, num_node, hidden_dim)
-
-        mean_h_og = masked_mean(h_og, obs_mask)
-        # (batch, hidden_dim)
-        mean_h_go = masked_mean(h_go, node_mask)
-        # (batch, hidden_dim)
-        mean_h_ag = masked_mean(h_ag, prev_action_mask)
-        # (batch, hidden_dim)
-        mean_h_ga = masked_mean(h_ga, node_mask)
-        # (batch, hidden_dim)
-
-        return torch.cat([mean_h_og, mean_h_go, mean_h_ag, mean_h_ga], dim=1)
-        # (batch, 4 * hidden_dim)
 
     def teacher_force(
         self,
