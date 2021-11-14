@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
-from dgu.nn.utils import masked_mean
+from dgu.nn.utils import masked_mean, PositionalEncoder
 from dgu.constants import EVENT_TYPES
 
 
@@ -252,3 +252,300 @@ class RNNGraphEventDecoder(nn.Module):
         # (batch, hidden_dim)
         return self.gru_cell(gru_input, hidden)
         # (batch, hidden_dim)
+
+
+class TransformerGraphEventDecoderBlock(nn.Module):
+    def __init__(self, aggr_dim: int, hidden_dim: int, num_heads: int) -> None:
+        super().__init__()
+        assert hidden_dim % 2 == 0, "hidden_dim has to be even for positional encoding"
+        self.num_heads = num_heads
+
+        self.self_attn = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
+        self.self_attn_layer_norm = nn.LayerNorm(hidden_dim)
+        self.aggr_obs_graph_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+        )
+        self.aggr_prev_action_graph_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+        )
+        self.aggr_graph_obs_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+        )
+        self.aggr_graph_prev_action_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+        )
+        self.combine_attn = nn.Sequential(
+            nn.Linear(4 * hidden_dim, hidden_dim), nn.ReLU()
+        )
+        self.linear_layer_norm = nn.LayerNorm(hidden_dim)
+        self.linear_layers = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        input_mask: torch.Tensor,
+        aggr_obs_graph: torch.Tensor,
+        obs_mask: torch.Tensor,
+        aggr_prev_action_graph: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+        aggr_graph_obs: torch.Tensor,
+        aggr_graph_prev_action: torch.Tensor,
+        node_mask: torch.Tensor,
+        prev_input_seq: torch.Tensor,
+        prev_input_seq_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        input: (batch, hidden_dim)
+        input_mask: (batch)
+        aggr_obs_graph: (batch, obs_len, aggr_dim)
+        obs_mask: (batch, obs_len)
+        aggr_prev_action_graph: (batch, prev_action_len, aggr_dim)
+        prev_action_mask: (batch, prev_action_len)
+        aggr_graph_obs: (batch, num_node, aggr_dim)
+        aggr_graph_prev_action: (batch, num_node, aggr_dim)
+        node_mask: (batch, num_node)
+        prev_input_seq: (batch, prev_input_seq_len, hidden_dim)
+        prev_input_seq_mask: (batch, prev_input_seq_len)
+
+        output: (batch, hidden_dim)
+        """
+        last_tok_input = input.unsqueeze(1)
+        # (batch, 1, hidden_dim)
+        concat_input = torch.cat([last_tok_input, prev_input_seq], dim=1)
+        # (batch, input_seq_len, hidden_dim)
+        concat_input_mask = torch.cat(
+            [input_mask.unsqueeze(1), prev_input_seq_mask], dim=1
+        )
+        # (batch, input_seq_len)
+
+        # self attention layer
+        input_residual = last_tok_input
+        # (batch, input_seq_len, hidden_dim)
+        input_attn, _ = self.self_attn(
+            last_tok_input,
+            concat_input,
+            concat_input,
+            key_padding_mask=~concat_input_mask,
+        )
+        # (batch, 1, hidden_dim)
+        # we use nan_to_num_() b/c of https://github.com/pytorch/pytorch/issues/41508
+        # when prev_input_seq_len is 0, some elements in input_mask could be False,
+        # making the whole row in concat_input_mask False, which results in nan's.
+        input_attn.nan_to_num_()
+        input_attn += input_residual
+        # (batch, 1, hidden_dim)
+
+        # apply layer norm to the input self attention output to calculate the query
+        # for multi-headed attentions
+        query = self.self_attn_layer_norm(input_attn)
+        # (batch, 1, hidden_dim)
+
+        # calculate multi-headed attention using the aggregated observation and
+        # graph representation
+        obs_graph_attn, _ = self.aggr_obs_graph_attn(
+            query,
+            aggr_obs_graph,
+            aggr_obs_graph,
+            key_padding_mask=~obs_mask,
+        )
+        # (batch, 1, hidden_dim)
+
+        # calculate multi-headed attention using the aggregated previous action and
+        # graph representation
+        prev_action_graph_attn, _ = self.aggr_prev_action_graph_attn(
+            query,
+            aggr_prev_action_graph,
+            aggr_prev_action_graph,
+            key_padding_mask=~prev_action_mask,
+        )
+        # (batch, 1, hidden_dim)
+
+        # calculate multi-headed attention using the aggregated graph and
+        # observation representation
+        attn_node_mask = ~node_mask
+        # (batch, num_node)
+
+        # due to https://github.com/pytorch/pytorch/issues/41508
+        # nn.MultiheadAttention returns nan's if a whole row is masked in the key,
+        # i.e. the sub-graph doesn't have any nodes. So, we don't calculate
+        # multihead attention for those sub-graphs using a mask.
+        subgraphs_with_node_mask = node_mask.any(dim=1)
+        # (batch)
+        graph_obs_attn = torch.zeros_like(query)
+        # (batch, 1, hidden_dim)
+        subgraph_with_node_obs_attn, _ = self.aggr_graph_obs_attn(
+            query[subgraphs_with_node_mask],
+            aggr_graph_obs[subgraphs_with_node_mask],
+            aggr_graph_obs[subgraphs_with_node_mask],
+            key_padding_mask=attn_node_mask[subgraphs_with_node_mask],
+        )
+        # (num_subgraph_with_node, 1, hidden_dim)
+        graph_obs_attn[subgraphs_with_node_mask] = subgraph_with_node_obs_attn
+        # (batch, 1, hidden_dim)
+
+        # calculate multi-headed attention using the aggregated graph and
+        # previous action
+        graph_prev_action_attn = torch.zeros_like(query)
+        # (batch, 1, hidden_dim)
+        subgraph_with_node_prev_action_attn, _ = self.aggr_graph_prev_action_attn(
+            query[subgraphs_with_node_mask],
+            aggr_graph_prev_action[subgraphs_with_node_mask],
+            aggr_graph_prev_action[subgraphs_with_node_mask],
+            key_padding_mask=attn_node_mask[subgraphs_with_node_mask],
+        )
+        # (num_subgraph_with_node, 1, hidden_dim)
+        graph_prev_action_attn[
+            subgraphs_with_node_mask
+        ] = subgraph_with_node_prev_action_attn
+        # (batch, 1, hidden_dim)
+
+        # combine multi-headed attentions
+        combined_attn = self.combine_attn(
+            torch.cat(
+                [
+                    obs_graph_attn,
+                    prev_action_graph_attn,
+                    graph_obs_attn,
+                    graph_prev_action_attn,
+                ],
+                dim=-1,
+            )
+        )
+        # (batch, 1, hidden_dim)
+
+        # linear layer
+        output = self.linear_layer_norm(combined_attn + input_attn)
+        # (batch, 1, hidden_dim)
+        output = self.linear_layers(output)
+        # (batch, 1, hidden_dim)
+        output += combined_attn
+        # (batch, 1, hidden_dim)
+        return output.squeeze(1)
+        # (batch, hidden_dim)
+
+
+class TransformerGraphEventDecoder(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        aggr_dim: int,
+        num_dec_blocks: int,
+        dec_block_num_heads: int,
+        hidden_dim: int,
+    ) -> None:
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.input_linear = nn.Linear(input_dim, hidden_dim)
+        self.pos_encoder = PositionalEncoder(hidden_dim, 1024)
+        self.dec_blocks = nn.ModuleList(
+            TransformerGraphEventDecoderBlock(aggr_dim, hidden_dim, dec_block_num_heads)
+            for _ in range(num_dec_blocks)
+        )
+
+    def forward(
+        self,
+        input_event_embedding: torch.Tensor,
+        event_mask: torch.Tensor,
+        aggr_obs_graph: torch.Tensor,
+        obs_mask: torch.Tensor,
+        aggr_prev_action_graph: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+        aggr_graph_obs: torch.Tensor,
+        aggr_graph_prev_action: torch.Tensor,
+        node_mask: torch.Tensor,
+        prev_input_event_emb_seq: Optional[torch.Tensor] = None,
+        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        input_event_embedding: (batch, input_dim)
+        event_mask: (batch)
+        aggr_obs_graph: (batch, obs_len, aggr_dim)
+        obs_mask: (batch, obs_len)
+        aggr_prev_action_graph: (batch, prev_action_len, aggr_dim)
+        prev_action_mask: (batch, prev_action_len)
+        aggr_graph_obs: (batch, num_node, aggr_dim)
+        aggr_graph_prev_action: (batch, num_node, aggr_dim)
+        node_mask: (batch, num_node)
+        prev_input_event_emb_seq: (num_block, batch, prev_input_seq_len, hidden_dim)
+        prev_input_event_emb_seq_mask: (num_block, batch, prev_input_seq_len)
+
+        output: (
+            output: (batch, hidden_dim),
+            updated_prev_input_event_emb_seq:
+                (num_block, batch, input_seq_len, hidden_dim),
+            updated_prev_input_event_emb_seq_mask: (batch, input_seq_len),
+        )
+        """
+        # linearly resize the input input event embedding and
+        # add the positional encodings to it
+        pos_encoded_input = self.pos_encoder(
+            self.input_linear(input_event_embedding),
+            prev_input_event_emb_seq.size(1)
+            if prev_input_event_emb_seq is not None
+            else 0,
+        )
+        # (batch, hidden_dim)
+
+        batch = input_event_embedding.size(0)
+        updated_prev_input_event_emb_seq = (
+            prev_input_event_emb_seq
+            if prev_input_event_emb_seq is not None
+            else torch.empty(
+                len(self.dec_blocks),
+                batch,
+                0,
+                self.hidden_dim,
+                dtype=torch.bool,
+                device=input_event_embedding.device,
+            )
+        )
+        # (num_block, batch, prev_input_seq_len, hidden_dim)
+        updated_prev_input_event_emb_seq_mask = (
+            prev_input_event_emb_seq_mask
+            if prev_input_event_emb_seq_mask is not None
+            else torch.empty(
+                batch, 0, dtype=torch.bool, device=input_event_embedding.device
+            )
+        )
+        # (batch, prev_input_seq_len)
+
+        # keep track of inputs for each block per step
+        output = pos_encoded_input
+        # (batch, hidden_dim)
+        block_inputs: List[torch.Tensor] = []
+        for i, dec_block in enumerate(self.dec_blocks):
+            block_inputs.append(output)
+            output = dec_block(
+                output,
+                event_mask,
+                aggr_obs_graph,
+                obs_mask,
+                aggr_prev_action_graph,
+                prev_action_mask,
+                aggr_graph_obs,
+                aggr_graph_prev_action,
+                node_mask,
+                prev_input_seq=updated_prev_input_event_emb_seq[i],
+                prev_input_seq_mask=updated_prev_input_event_emb_seq_mask,
+            )
+            # (batch, hidden_dim)
+        stacked_block_inputs = torch.stack(block_inputs)
+        # (num_block, batch, hidden_dim)
+        updated_prev_input_event_emb_seq = torch.cat(
+            [updated_prev_input_event_emb_seq, stacked_block_inputs.unsqueeze(2)], dim=2
+        )
+        # (num_block, batch, input_seq_len, hidden_dim)
+        updated_prev_input_event_emb_seq_mask = torch.cat(
+            [updated_prev_input_event_emb_seq_mask, event_mask.unsqueeze(-1)], dim=-1
+        )
+        # (batch, input_seq_len)
+
+        return (
+            output,
+            updated_prev_input_event_emb_seq,
+            updated_prev_input_event_emb_seq_mask,
+        )
