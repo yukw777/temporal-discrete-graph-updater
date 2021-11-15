@@ -313,10 +313,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
     ],
 )
 @pytest.mark.parametrize("encoded_textual_input", [True, False])
-@pytest.mark.parametrize("decoder_hidden", [True, False])
+@pytest.mark.parametrize("prev_input_seq_len", [0, 6, 8])
 def test_sldgu_forward(
     sldgu,
-    decoder_hidden,
+    prev_input_seq_len,
     encoded_textual_input,
     batch_size,
     event_type_ids,
@@ -357,6 +357,17 @@ def test_sldgu_forward(
         ],
         dim=1,
     )
+    prev_input_event_emb_seq_mask = (
+        None
+        if prev_input_seq_len == 0
+        else torch.cat(
+            [
+                torch.ones(batch_size, 1).bool(),
+                torch.randint(2, (batch_size, prev_input_seq_len - 1)).bool(),
+            ],
+            dim=1,
+        )
+    )
     results = sldgu(
         event_type_ids,
         event_src_ids,
@@ -378,9 +389,15 @@ def test_sldgu_forward(
         ),
         encoded_obs=encoded_obs,
         encoded_prev_action=encoded_prev_action,
-        decoder_hidden=torch.rand(batch_size, sldgu.hparams.hidden_dim)
-        if decoder_hidden
-        else None,
+        prev_input_event_emb_seq=None
+        if prev_input_seq_len == 0
+        else torch.rand(
+            sldgu.hparams.graph_event_decoder_num_dec_blocks,
+            batch_size,
+            prev_input_seq_len,
+            sldgu.hparams.graph_event_decoder_hidden_dim,
+        ),
+        prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
         groundtruth_event_type_ids=groundtruth_event_type_ids,
         groundtruth_event_src_ids=groundtruth_event_src_ids,
         groundtruth_event_dst_ids=groundtruth_event_dst_ids,
@@ -395,9 +412,15 @@ def test_sldgu_forward(
     assert results["event_src_logits"].size() == (batch_size, max_sub_graph_num_node)
     assert results["event_dst_logits"].size() == (batch_size, max_sub_graph_num_node)
     assert results["event_label_logits"].size() == (batch_size, len(sldgu.labels))
-    assert results["new_decoder_hidden"].size() == (
+    assert results["updated_prev_input_event_emb_seq"].size() == (
+        sldgu.hparams.graph_event_decoder_num_dec_blocks,
         batch_size,
-        sldgu.hparams.hidden_dim,
+        prev_input_seq_len + 1,
+        sldgu.hparams.graph_event_decoder_hidden_dim,
+    )
+    assert results["updated_prev_input_event_emb_seq_mask"].size() == (
+        batch_size,
+        prev_input_seq_len + 1,
     )
     if encoded_textual_input:
         assert results["encoded_obs"].equal(encoded_obs)
@@ -1393,7 +1416,8 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player]
-                    "new_decoder_hidden": torch.rand(1, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 1, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor([[True]]),
                     "encoded_obs": torch.rand(1, 3, 8),
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1412,7 +1436,10 @@ def test_sldgu_filter_invalid_events(
                     "event_src_logits": torch.rand(1, 1),
                     "event_dst_logits": torch.rand(1, 1),
                     "event_label_logits": torch.tensor([[1, 0, 0, 0, 0, 0]]).float(),
-                    "new_decoder_hidden": torch.rand(1, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 1, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True]]
+                    ),
                     "encoded_obs": torch.rand(1, 3, 8),
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1479,7 +1506,8 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player]
-                    "new_decoder_hidden": torch.rand(1, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 1, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor([[True]]),
                     "encoded_obs": torch.rand(1, 3, 8),
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1500,7 +1528,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 1, 0, 0, 0]]
                     ).float(),  # [inventory]
-                    "new_decoder_hidden": torch.rand(1, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 1, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True]]
+                    ),
                     "encoded_obs": torch.rand(1, 3, 8),
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1521,7 +1552,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0]]
                     ).float(),  # [in]
-                    "new_decoder_hidden": torch.rand(1, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 1, 3, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(1, 3, 8),
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1540,7 +1574,10 @@ def test_sldgu_filter_invalid_events(
                     "event_src_logits": torch.rand(1, 2),
                     "event_dst_logits": torch.rand(1, 2),
                     "event_label_logits": torch.tensor([[1, 0, 0, 0, 0, 0]]).float(),
-                    "new_decoder_hidden": torch.rand(1, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 1, 4, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(1, 3, 8),
                     "encoded_prev_action": torch.rand(1, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1607,7 +1644,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True], [True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1628,7 +1668,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True], [True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1649,7 +1692,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 3, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True], [True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1670,7 +1716,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 4, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True, False], [True, True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1767,7 +1816,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True], [True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1788,7 +1840,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True], [True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1809,7 +1864,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 3, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True], [True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1830,7 +1888,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 4, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True, False], [True, True, True, False]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1898,7 +1959,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True], [True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1919,7 +1983,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True], [True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1940,7 +2007,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 1, 0]]
                     ).float(),  # [is, in]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 3, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True], [True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1961,7 +2031,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 1, 0]]
                     ).float(),  # [is, in]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 4, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True, False], [True, True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -1982,7 +2055,13 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 5, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [
+                            [True, True, True, False, False],
+                            [True, True, True, True, True],
+                        ]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2003,7 +2082,13 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 6, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [
+                            [True, True, True, False, False, False],
+                            [True, True, True, True, True, True],
+                        ]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2130,7 +2215,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True], [True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2151,7 +2239,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True], [True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2176,7 +2267,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 3, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True], [True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2201,7 +2295,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 4, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True, False], [True, True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2298,7 +2395,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 1, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True], [True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2319,7 +2419,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 2, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True], [True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2344,7 +2447,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 3, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True], [True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2369,7 +2475,10 @@ def test_sldgu_filter_invalid_events(
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
-                    "new_decoder_hidden": torch.rand(2, 8),
+                    "updated_prev_input_event_emb_seq": torch.rand(1, 2, 4, 8),
+                    "updated_prev_input_event_emb_seq_mask": torch.tensor(
+                        [[True, True, True, False], [True, True, True, True]]
+                    ),
                     "encoded_obs": torch.rand(2, 3, 8),
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
@@ -2441,7 +2550,6 @@ def test_sldgu_greedy_decode(
 
         def __call__(self, *args, **kwargs):
             decoded = forward_results[self.num_calls]
-            decoded["new_decoder_hidden"] = torch.rand(batch, sldgu.hparams.hidden_dim)
             decoded["encoded_obs"] = torch.rand(
                 batch, obs_len, sldgu.hparams.hidden_dim
             )
