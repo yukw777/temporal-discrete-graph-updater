@@ -89,6 +89,10 @@ def test_masked_mean(batched_input, batched_mask, expected):
 def test_masked_softmax(batched_input, batched_mask):
     batched_output = masked_softmax(batched_input, batched_mask, dim=1)
     assert torch.all(batched_output.sum(dim=1) == 1)
+    if batched_mask.sum() == 0:
+        assert torch.all(batched_output == 1 / batched_input.size(1))
+    else:
+        assert (batched_output * batched_mask).equal(batched_output)
 
 
 @pytest.mark.parametrize(
