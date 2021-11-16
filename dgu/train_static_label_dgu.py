@@ -9,13 +9,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 @hydra.main(config_path="train_static_label_dgu_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     print(f"Training with the following config:\n{OmegaConf.to_yaml(cfg)}")
-    if cfg.use_file_system_sharing_strategy:
-        # on certain machines, you may run out of file descriptors, and
-        # you can't increase the limit (ulimit -n). In that case you need to
-        # change the sharing strategy to file_system.
-        import torch.multiprocessing
-
-        torch.multiprocessing.set_sharing_strategy("file_system")
 
     # seed
     pl.seed_everything(cfg.seed)
