@@ -18,6 +18,7 @@ from dgu.nn.utils import (
     update_batched_graph,
     update_node_features,
     update_edge_index,
+    PositionalEncoder,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
@@ -1235,3 +1236,48 @@ def test_update_edge_index(
     assert update_edge_index(
         edge_index, batch, delete_node_mask, node_add_event_mask
     ).equal(expected_updated_edge_index)
+
+
+@pytest.mark.parametrize(
+    "channels,max_len,batch_size,seq_len",
+    [
+        (4, 10, 5, 6),
+        (10, 12, 3, 10),
+    ],
+)
+def test_pos_encoder(channels, max_len, batch_size, seq_len):
+    pe = PositionalEncoder(channels, max_len)
+    encoded = pe(
+        torch.zeros(
+            batch_size,
+            seq_len,
+            channels,
+        )
+    )
+    assert encoded.size() == (batch_size, seq_len, channels)
+    # sanity check, make sure the values of the first dimension of both halves
+    # of the channels is sin(0, 1, 2, ...) and cos(0, 1, 2, ...)
+    for i in range(batch_size):
+        assert encoded[i, :, 0].equal(torch.sin(torch.arange(seq_len).float()))
+        assert encoded[i, :, channels // 2].equal(
+            torch.cos(torch.arange(seq_len).float())
+        )
+
+
+@pytest.mark.parametrize(
+    "channels,max_len,batch_size,step",
+    [
+        (4, 10, 5, 6),
+        (10, 12, 3, 10),
+    ],
+)
+def test_pos_encoder_step(channels, max_len, batch_size, step):
+    pe = PositionalEncoder(channels, max_len)
+    encoded = pe(torch.zeros(batch_size, channels), step=step)
+    assert encoded.size() == (batch_size, channels)
+    # sanity check, make sure the values of the first dimension of both halves
+    # of the channels is sin(0, 1, 2, ...) and cos(0, 1, 2, ...)
+    assert encoded[:, 0].equal(torch.sin(torch.tensor([step] * batch_size).float()))
+    assert encoded[:, channels // 2].equal(
+        torch.cos(torch.tensor([step] * batch_size).float())
+    )

@@ -6,6 +6,8 @@ from dgu.nn.graph_event_decoder import (
     EventNodeHead,
     EventStaticLabelHead,
     RNNGraphEventDecoder,
+    TransformerGraphEventDecoderBlock,
+    TransformerGraphEventDecoder,
 )
 from dgu.constants import EVENT_TYPES
 
@@ -99,22 +101,171 @@ def test_event_static_label_head(
 
 
 @pytest.mark.parametrize(
-    "input_dim,delta_g_dim,hidden_dim,batch",
-    [(12, 6, 8, 1), (12, 6, 8, 4)],
+    "input_dim,aggr_dim,hidden_dim,batch,obs_len,prev_action_len,num_node",
+    [(12, 6, 8, 1, 8, 4, 6), (12, 6, 8, 4, 8, 4, 6)],
 )
 @pytest.mark.parametrize("hidden", [True, False])
-def test_rnn_graph_event_decoder(hidden, input_dim, delta_g_dim, hidden_dim, batch):
-    decoder = RNNGraphEventDecoder(
-        input_dim,
-        delta_g_dim,
-        hidden_dim,
+def test_rnn_graph_event_decoder(
+    hidden, input_dim, aggr_dim, hidden_dim, batch, obs_len, prev_action_len, num_node
+):
+    decoder = RNNGraphEventDecoder(input_dim, aggr_dim, hidden_dim)
+    # need to have at least one unmasked token, otherwise pack_padded_sequence
+    # raises an exception
+    obs_mask = torch.cat(
+        [torch.ones(batch, 1).bool(), torch.randint(2, (batch, obs_len - 1)).bool()],
+        dim=1,
+    )
+    prev_action_mask = torch.cat(
+        [
+            torch.ones(batch, 1).bool(),
+            torch.randint(2, (batch, prev_action_len - 1)).bool(),
+        ],
+        dim=1,
     )
 
     assert (
         decoder(
             torch.rand(batch, input_dim),
-            torch.rand(batch, delta_g_dim),
+            torch.rand(batch, obs_len, aggr_dim),
+            obs_mask,
+            torch.rand(batch, prev_action_len, aggr_dim),
+            prev_action_mask,
+            torch.rand(batch, num_node, aggr_dim),
+            torch.rand(batch, num_node, aggr_dim),
+            torch.randint(2, (batch, num_node)).bool(),
             hidden=torch.rand(batch, hidden_dim) if hidden else None,
         ).size()
         == (batch, hidden_dim)
+    )
+
+
+@pytest.mark.parametrize("prev_input_seq_len", [0, 6, 8])
+@pytest.mark.parametrize(
+    "aggr_dim,hidden_dim,num_heads,batch,obs_len,prev_action_len,num_node",
+    [
+        (4, 8, 1, 1, 6, 4, 0),
+        (4, 8, 1, 1, 6, 4, 4),
+        (4, 8, 1, 8, 6, 4, 0),
+        (4, 8, 1, 8, 6, 4, 4),
+        (8, 16, 4, 1, 12, 4, 0),
+        (8, 16, 4, 1, 12, 4, 8),
+        (8, 16, 4, 8, 12, 4, 0),
+        (8, 16, 4, 8, 12, 4, 8),
+    ],
+)
+def test_transformer_graph_event_decoder_block(
+    aggr_dim,
+    hidden_dim,
+    num_heads,
+    batch,
+    obs_len,
+    prev_action_len,
+    num_node,
+    prev_input_seq_len,
+):
+    block = TransformerGraphEventDecoderBlock(aggr_dim, hidden_dim, num_heads)
+    obs_mask = torch.cat(
+        [
+            torch.ones(batch, 1).bool(),
+            torch.randint(2, (batch, obs_len - 1)).bool(),
+        ],
+        dim=1,
+    )
+    prev_action_mask = torch.cat(
+        [
+            torch.ones(batch, 1).bool(),
+            torch.randint(2, (batch, prev_action_len - 1)).bool(),
+        ],
+        dim=1,
+    )
+    if prev_input_seq_len == 0:
+        prev_input_seq_mask = torch.ones(batch, 0).bool()
+    else:
+        prev_input_seq_mask = torch.cat(
+            [
+                torch.ones(batch, 1).bool(),
+                torch.randint(2, (batch, prev_input_seq_len - 1)).bool(),
+            ],
+            dim=1,
+        )
+    output = block(
+        torch.rand(batch, hidden_dim),
+        torch.randint(2, (batch,)).bool(),
+        torch.rand(batch, obs_len, aggr_dim),
+        obs_mask,
+        torch.rand(batch, prev_action_len, aggr_dim),
+        prev_action_mask,
+        torch.rand(batch, num_node, aggr_dim),
+        torch.rand(batch, num_node, aggr_dim),
+        torch.randint(2, (batch, num_node)).bool(),
+        torch.rand(batch, prev_input_seq_len, hidden_dim),
+        prev_input_seq_mask,
+    )
+    assert not output.isnan().any()
+    assert output.size() == (batch, hidden_dim)
+
+
+@pytest.mark.parametrize("prev_input_event_emb_seq_len", [0, 6, 8])
+@pytest.mark.parametrize(
+    "input_dim,aggr_dim,num_dec_blocks,dec_block_num_heads,hidden_dim,batch,obs_len,"
+    "prev_action_len,num_node",
+    [
+        (4, 8, 1, 1, 8, 1, 6, 4, 0),
+        (4, 8, 1, 1, 8, 1, 6, 4, 6),
+        (4, 8, 1, 1, 8, 4, 6, 4, 0),
+        (4, 8, 1, 1, 8, 4, 6, 4, 6),
+        (8, 16, 4, 2, 12, 1, 12, 6, 0),
+        (8, 16, 4, 2, 12, 1, 12, 6, 8),
+        (8, 16, 4, 2, 12, 4, 12, 6, 0),
+        (8, 16, 4, 2, 12, 4, 12, 6, 8),
+    ],
+)
+def test_transformer_graph_event_decoder(
+    input_dim,
+    aggr_dim,
+    num_dec_blocks,
+    dec_block_num_heads,
+    hidden_dim,
+    batch,
+    obs_len,
+    prev_action_len,
+    num_node,
+    prev_input_event_emb_seq_len,
+):
+    decoder = TransformerGraphEventDecoder(
+        input_dim, aggr_dim, num_dec_blocks, dec_block_num_heads, hidden_dim
+    )
+    (
+        output,
+        updated_prev_input_event_emb_seq,
+        updated_prev_input_event_emb_seq_mask,
+    ) = decoder(
+        torch.rand(batch, input_dim),
+        torch.randint(2, (batch,)).bool(),
+        torch.rand(batch, obs_len, aggr_dim),
+        torch.randint(2, (batch, obs_len)).bool(),
+        torch.rand(batch, prev_action_len, aggr_dim),
+        torch.randint(2, (batch, prev_action_len)).bool(),
+        torch.rand(batch, num_node, aggr_dim),
+        torch.rand(batch, num_node, aggr_dim),
+        torch.randint(2, (batch, num_node)).bool(),
+        prev_input_event_emb_seq=None
+        if prev_input_event_emb_seq_len == 0
+        else torch.rand(
+            num_dec_blocks, batch, prev_input_event_emb_seq_len, hidden_dim
+        ),
+        prev_input_event_emb_seq_mask=None
+        if prev_input_event_emb_seq_len == 0
+        else torch.randint(2, (batch, prev_input_event_emb_seq_len)).bool(),
+    )
+    assert output.size() == (batch, hidden_dim)
+    assert updated_prev_input_event_emb_seq.size() == (
+        num_dec_blocks,
+        batch,
+        prev_input_event_emb_seq_len + 1,
+        hidden_dim,
+    )
+    assert updated_prev_input_event_emb_seq_mask.size() == (
+        batch,
+        prev_input_event_emb_seq_len + 1,
     )

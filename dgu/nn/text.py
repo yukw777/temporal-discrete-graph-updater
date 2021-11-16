@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-import math
+
+from dgu.nn.utils import PositionalEncoder
 
 
 class DepthwiseSeparableConv1d(nn.Module):
@@ -58,79 +59,6 @@ class TextEncoderConvBlock(nn.Module):
         return output + residual
 
 
-class PositionalEncoder(nn.Module):
-    """
-    The positional encoding from the original Transformer paper.
-    """
-
-    def __init__(self, d_model: int, max_len: int) -> None:
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(max_len).float().unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """
-        input: (batch, seq_len, d_model)
-        output: (batch, seq_len, d_model)
-        """
-        # add positional encodings to the input using broadcast
-        return input + self.pe[: input.size(1), :]  # type: ignore
-
-
-class PositionalEncoderTensor2Tensor(nn.Module):
-    """
-    Add positional encodings to the given input. This is the tensor2tensor
-    implementation of the positional encoding, which is slightly different
-    from the one used by the original Transformer paper.
-    Specifically, there are 2 key differences:
-    1. Sine and cosine values are concatenated rather than interweaved.
-    2. The divisor is calculated differently
-        ((d_model (or channels) // 2) -1 vs. d_model)
-    There are no material differences between positional encoding implementations.
-    The important point is that you use the same implementation throughout. The
-    original GATA code uses this version. I've cleaned up the implementation a bit,
-    including a small optimization that caches all the positional encodings, which
-    was shown in the PyTorch Transformer tutorial
-    (https://pytorch.org/tutorials/beginner/transformer_tutorial.html)
-    """
-
-    def __init__(
-        self,
-        channels: int,
-        max_len: int,
-        min_timescale: float = 1.0,
-        max_timescale: float = 1e4,
-    ) -> None:
-        super().__init__()
-        position = torch.arange(max_len).float().unsqueeze(1)
-        num_timescales = channels // 2
-        log_timescale_increment = math.log(max_timescale / min_timescale) / (
-            num_timescales - 1
-        )
-        inv_timescales = min_timescale * torch.exp(
-            torch.arange(num_timescales).float() * -log_timescale_increment
-        ).unsqueeze(0)
-        scaled_time = position * inv_timescales
-        pe = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim=1).view(
-            max_len, channels
-        )
-        self.register_buffer("pe", pe)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """
-        input: (batch, seq_len, channels)
-        output: (batch, seq_len, channels)
-        """
-        # add positional encodings to the input using broadcast
-        return input + self.pe[: input.size(1)]  # type: ignore
-
-
 class TextEncoderBlock(nn.Module):
     """
     Based on QANet (https://arxiv.org/abs/1804.09541)
@@ -145,7 +73,7 @@ class TextEncoderBlock(nn.Module):
     ) -> None:
         super().__init__()
         assert hidden_dim % 2 == 0, "hidden_dim has to be even for positional encoding"
-        self.pos_encoder = PositionalEncoderTensor2Tensor(hidden_dim, 512)
+        self.pos_encoder = PositionalEncoder(hidden_dim, 512)
         self.conv_layers = nn.Sequential(
             *[
                 TextEncoderConvBlock(hidden_dim, kernel_size)
