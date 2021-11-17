@@ -332,10 +332,6 @@ class TransformerGraphEventDecoderBlock(nn.Module):
             key_padding_mask=~concat_input_mask,
         )
         # (batch, 1, hidden_dim)
-        # we use nan_to_num_() b/c of https://github.com/pytorch/pytorch/issues/41508
-        # when prev_input_seq_len is 0, some elements in input_mask could be False,
-        # making the whole row in concat_input_mask False, which results in nan's.
-        input_attn.nan_to_num_()
         input_attn += input_residual
         # (batch, 1, hidden_dim)
 
