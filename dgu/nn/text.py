@@ -39,13 +39,14 @@ class TextEncoderConvBlock(nn.Module):
     with a residual connection.
     """
 
-    def __init__(self, channels: int, kernel_size: int) -> None:
+    def __init__(self, channels: int, kernel_size: int, dropout: float = 0.3) -> None:
         super().__init__()
         assert (
             kernel_size % 2 == 1
         ), "kernel_size has to be odd in order to preserve the sequence length"
         self.layer_norm = nn.LayerNorm(channels)
         self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=dropout)
         self.conv = DepthwiseSeparableConv1d(channels, channels, kernel_size)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -56,6 +57,7 @@ class TextEncoderConvBlock(nn.Module):
         residual = input
         output = self.layer_norm(input)
         output = self.relu(self.conv(output.transpose(1, 2))).transpose(1, 2)
+        output = self.dropout(output)
         return output + residual
 
 
@@ -70,6 +72,7 @@ class TextEncoderBlock(nn.Module):
         kernel_size: int,
         hidden_dim: int,
         num_heads: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         assert hidden_dim % 2 == 0, "hidden_dim has to be even for positional encoding"
@@ -81,13 +84,18 @@ class TextEncoderBlock(nn.Module):
             ]
         )
         self.self_attn_layer_norm = nn.LayerNorm(hidden_dim)
-        self.self_attn = nn.MultiheadAttention(hidden_dim, num_heads)
+        self.self_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True, dropout=dropout
+        )
+        self.self_attn_dropout = nn.Dropout(p=dropout)
         self.linear_layer_norm = nn.LayerNorm(hidden_dim)
         self.linear_layers = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, hidden_dim),
         )
+        self.linear_dropout = nn.Dropout(p=dropout)
 
     def forward(self, input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -103,18 +111,16 @@ class TextEncoderBlock(nn.Module):
 
         # self attention layer
         residual = output
-        # MultiheadAttention expects batch dim to be 1 for q, k, v
-        # but 0 for key_padding_mask, so we need to transpose
-        output = output.transpose(0, 1)
         output = self.self_attn_layer_norm(output)
         output, _ = self.self_attn(output, output, output, key_padding_mask=mask == 0)
-        output = output.transpose(0, 1)
+        output = self.self_attn_dropout(output)
         output += residual
 
         # linear layer
         residual = output
         output = self.linear_layer_norm(output)
         output = self.linear_layers(output)
+        output = self.linear_dropout(output)
         output += residual
 
         return output
@@ -128,6 +134,7 @@ class TextEncoder(nn.Module):
         enc_block_kernel_size: int,
         enc_block_hidden_dim: int,
         enc_block_num_heads: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.enc_blocks = nn.ModuleList(
@@ -136,6 +143,7 @@ class TextEncoder(nn.Module):
                 enc_block_kernel_size,
                 enc_block_hidden_dim,
                 enc_block_num_heads,
+                dropout=dropout,
             )
             for _ in range(num_enc_blocks)
         )
