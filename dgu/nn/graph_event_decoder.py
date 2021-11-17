@@ -9,16 +9,20 @@ from dgu.constants import EVENT_TYPES
 
 
 class EventTypeHead(nn.Module):
-    def __init__(self, graph_event_embedding_dim: int, hidden_dim: int) -> None:
+    def __init__(
+        self, graph_event_embedding_dim: int, hidden_dim: int, dropout: float = 0.3
+    ) -> None:
         super().__init__()
         self.linear = nn.Sequential(
             nn.Linear(graph_event_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, len(EVENT_TYPES)),
         )
         self.autoregressive_linear = nn.Sequential(
             nn.Linear(len(EVENT_TYPES), graph_event_embedding_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
         )
 
     def forward(self, graph_event_embeddings: torch.Tensor) -> torch.Tensor:
@@ -61,17 +65,20 @@ class EventNodeHead(nn.Module):
         autoregressive_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.key_query_dim = key_query_dim
         self.key_linear = nn.Sequential(
             nn.Linear(node_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.query_linear = nn.Sequential(
             nn.Linear(autoregressive_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.autoregressive_linear = nn.Linear(
@@ -153,6 +160,7 @@ class EventStaticLabelHead(nn.Module):
         label_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.label_embedding_dim = label_embedding_dim
@@ -160,11 +168,13 @@ class EventStaticLabelHead(nn.Module):
         self.key_linear = nn.Sequential(
             nn.Linear(self.label_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.query_linear = nn.Sequential(
             nn.Linear(autoregressive_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
 
