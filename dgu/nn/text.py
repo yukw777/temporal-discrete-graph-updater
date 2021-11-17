@@ -22,6 +22,7 @@ class DepthwiseSeparableConv1d(nn.Module):
             bias=False,
         )
         self.pointwise_conv = torch.nn.Conv1d(in_channels, out_channels, 1)
+        self.relu = nn.ReLU()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """
@@ -29,7 +30,7 @@ class DepthwiseSeparableConv1d(nn.Module):
         output: (batch, out_channels, seq_len_out)
         seq_len_out = (seq_len_in + 2 * (kernel_size // 2) - (kernel_size - 1) - 1) + 1
         """
-        return self.pointwise_conv(self.depthwise_conv(input))
+        return self.relu(self.pointwise_conv(self.depthwise_conv(input)))
 
 
 class TextEncoderConvBlock(nn.Module):
@@ -45,7 +46,6 @@ class TextEncoderConvBlock(nn.Module):
             kernel_size % 2 == 1
         ), "kernel_size has to be odd in order to preserve the sequence length"
         self.layer_norm = nn.LayerNorm(channels)
-        self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=dropout)
         self.conv = DepthwiseSeparableConv1d(channels, channels, kernel_size)
 
@@ -56,7 +56,7 @@ class TextEncoderConvBlock(nn.Module):
         """
         residual = input
         output = self.layer_norm(input)
-        output = self.relu(self.conv(output.transpose(1, 2))).transpose(1, 2)
+        output = self.conv(output.transpose(1, 2)).transpose(1, 2)
         output = self.dropout(output)
         return output + residual
 
