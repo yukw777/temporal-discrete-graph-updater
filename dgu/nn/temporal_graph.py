@@ -15,6 +15,7 @@ class TransformerConvStack(nn.Module):
         num_block: int,
         heads: int = 1,
         edge_dim: Optional[int] = None,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.stack = nn.ModuleList(
@@ -26,6 +27,7 @@ class TransformerConvStack(nn.Module):
                     output_dim,
                     edge_dim=edge_dim,
                     heads=heads,
+                    dropout=dropout,
                 )
                 for i in range(num_block)
             ]
@@ -68,6 +70,7 @@ class TemporalGraphNetwork(nn.Module):
         output_dim: int,
         transformer_conv_num_block: int,
         transformer_conv_num_heads: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.time_enc_dim = time_enc_dim
@@ -84,6 +87,7 @@ class TemporalGraphNetwork(nn.Module):
             transformer_conv_num_block,
             heads=transformer_conv_num_heads,
             edge_dim=event_embedding_dim + time_enc_dim,
+            dropout=dropout,
         )
 
     def forward(

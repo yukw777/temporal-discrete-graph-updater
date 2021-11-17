@@ -44,7 +44,9 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
         ),
     ],
 )
+@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
 def test_tgn_forward(
+    dropout,
     time_enc_dim,
     event_embedding_dim,
     output_dim,
@@ -53,13 +55,23 @@ def test_tgn_forward(
     batched_graph,
     num_node,
 ):
-    tgn = TemporalGraphNetwork(
-        time_enc_dim,
-        event_embedding_dim,
-        output_dim,
-        transformer_conv_num_block,
-        transformer_conv_num_heads,
-    )
+    if dropout is None:
+        tgn = TemporalGraphNetwork(
+            time_enc_dim,
+            event_embedding_dim,
+            output_dim,
+            transformer_conv_num_block,
+            transformer_conv_num_heads,
+        )
+    else:
+        tgn = TemporalGraphNetwork(
+            time_enc_dim,
+            event_embedding_dim,
+            output_dim,
+            transformer_conv_num_block,
+            transformer_conv_num_heads,
+            dropout=dropout,
+        )
     node_embeddings = tgn(
         torch.randint(10, (batched_graph.num_graphs,)).float(), batched_graph
     )
@@ -70,12 +82,23 @@ def test_tgn_forward(
     "node_dim,output_dim,num_block,heads,edge_dim,num_node,num_edge",
     [(16, 8, 1, 1, None, 1, 0), (16, 8, 4, 3, 12, 5, 4)],
 )
+@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
 def test_transformer_conv_stack_forward(
-    node_dim, output_dim, num_block, heads, edge_dim, num_node, num_edge
+    dropout, node_dim, output_dim, num_block, heads, edge_dim, num_node, num_edge
 ):
-    stack = TransformerConvStack(
-        node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
-    )
+    if dropout is None:
+        stack = TransformerConvStack(
+            node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
+        )
+    else:
+        stack = TransformerConvStack(
+            node_dim,
+            output_dim,
+            num_block,
+            heads=heads,
+            edge_dim=edge_dim,
+            dropout=dropout,
+        )
     assert (
         stack(
             torch.rand(num_node, node_dim),
