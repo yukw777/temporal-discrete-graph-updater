@@ -34,6 +34,7 @@ model:
   graph_event_decoder_num_dec_blocks: 1
   graph_event_decoder_dec_block_num_heads: 1
   max_decode_len: 100
+  dropout: 0.0
   pretrained_word_embedding_path: embedding/crawl-300d-2M.vec
 
 train:

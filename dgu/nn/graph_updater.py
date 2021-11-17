@@ -65,6 +65,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         graph_event_decoder_dec_block_num_heads: int = 1,
         max_decode_len: int = 100,
         learning_rate: float = 5e-4,
+        dropout: float = 0.3,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
         node_vocab_path: Optional[str] = None,
@@ -88,6 +89,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "graph_event_decoder_dec_block_num_heads",
             "max_decode_len",
             "learning_rate",
+            "dropout",
         )
         # preprocessor
         if word_vocab_path is None:
@@ -142,6 +144,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             text_encoder_kernel_size,
             hidden_dim,
             text_encoder_num_heads,
+            dropout=dropout,
         )
 
         # temporal graph network
@@ -151,6 +154,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             hidden_dim,
             tgn_num_gnn_block,
             tgn_num_gnn_head,
+            dropout=dropout,
         )
 
         # representation aggregator
@@ -168,25 +172,31 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_num_dec_blocks,
             graph_event_decoder_dec_block_num_heads,
             graph_event_decoder_hidden_dim,
+            dropout=dropout,
         )
-        self.event_type_head = EventTypeHead(graph_event_decoder_hidden_dim, hidden_dim)
+        self.event_type_head = EventTypeHead(
+            graph_event_decoder_hidden_dim, hidden_dim, dropout=dropout
+        )
         self.event_src_head = EventNodeHead(
             hidden_dim,
             graph_event_decoder_hidden_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
+            dropout=dropout,
         )
         self.event_dst_head = EventNodeHead(
             hidden_dim,
             graph_event_decoder_hidden_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
+            dropout=dropout,
         )
         self.event_label_head = EventStaticLabelHead(
             graph_event_decoder_hidden_dim,
             word_emb_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
+            dropout=dropout,
         )
 
         self.criterion = UncertaintyWeightedLoss()
