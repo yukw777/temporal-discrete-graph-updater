@@ -180,6 +180,7 @@ def test_transformer_graph_event_decoder_block(
     )
     if prev_input_seq_len == 0:
         prev_input_seq_mask = torch.ones(batch, 0).bool()
+        input_mask = torch.ones(batch).bool()
     else:
         prev_input_seq_mask = torch.cat(
             [
@@ -188,9 +189,15 @@ def test_transformer_graph_event_decoder_block(
             ],
             dim=1,
         )
+        if batch > 1:
+            input_mask = torch.cat(
+                [torch.tensor([True]), torch.randint(2, (batch - 1,)).bool()]
+            )
+        else:
+            input_mask = torch.ones(batch).bool()
     output = block(
         torch.rand(batch, hidden_dim),
-        torch.randint(2, (batch,)).bool(),
+        input_mask,
         torch.rand(batch, obs_len, aggr_dim),
         obs_mask,
         torch.rand(batch, prev_action_len, aggr_dim),
