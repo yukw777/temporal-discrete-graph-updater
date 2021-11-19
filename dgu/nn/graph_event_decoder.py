@@ -552,10 +552,8 @@ class TransformerGraphEventDecoder(nn.Module):
         # (batch, hidden_dim)
 
         batch = input_event_embedding.size(0)
-        updated_prev_input_event_emb_seq = (
-            prev_input_event_emb_seq
-            if prev_input_event_emb_seq is not None
-            else torch.empty(
+        if prev_input_event_emb_seq is None:
+            prev_input_event_emb_seq = torch.empty(
                 len(self.dec_blocks),
                 batch,
                 0,
@@ -563,16 +561,12 @@ class TransformerGraphEventDecoder(nn.Module):
                 dtype=torch.bool,
                 device=input_event_embedding.device,
             )
-        )
-        # (num_block, batch, prev_input_seq_len, hidden_dim)
-        updated_prev_input_event_emb_seq_mask = (
-            prev_input_event_emb_seq_mask
-            if prev_input_event_emb_seq_mask is not None
-            else torch.empty(
+            # (num_block, batch, prev_input_seq_len, hidden_dim)
+        if prev_input_event_emb_seq_mask is None:
+            prev_input_event_emb_seq_mask = torch.empty(
                 batch, 0, dtype=torch.bool, device=input_event_embedding.device
             )
-        )
-        # (batch, prev_input_seq_len)
+            # (batch, prev_input_seq_len)
 
         # keep track of inputs for each block per step
         output = pos_encoded_input
@@ -590,8 +584,8 @@ class TransformerGraphEventDecoder(nn.Module):
                 aggr_graph_obs,
                 aggr_graph_prev_action,
                 node_mask,
-                prev_input_seq=updated_prev_input_event_emb_seq[i],
-                prev_input_seq_mask=updated_prev_input_event_emb_seq_mask,
+                prev_input_seq=prev_input_event_emb_seq[i],
+                prev_input_seq_mask=prev_input_event_emb_seq_mask,
             )
             # (batch, hidden_dim)
         output = self.final_layer_norm(output)
@@ -599,11 +593,11 @@ class TransformerGraphEventDecoder(nn.Module):
         stacked_block_inputs = torch.stack(block_inputs)
         # (num_block, batch, hidden_dim)
         updated_prev_input_event_emb_seq = torch.cat(
-            [updated_prev_input_event_emb_seq, stacked_block_inputs.unsqueeze(2)], dim=2
+            [prev_input_event_emb_seq, stacked_block_inputs.unsqueeze(2)], dim=2
         )
         # (num_block, batch, input_seq_len, hidden_dim)
         updated_prev_input_event_emb_seq_mask = torch.cat(
-            [updated_prev_input_event_emb_seq_mask, event_mask.unsqueeze(-1)], dim=-1
+            [prev_input_event_emb_seq_mask, event_mask.unsqueeze(-1)], dim=-1
         )
         # (batch, input_seq_len)
 
