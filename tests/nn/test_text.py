@@ -36,8 +36,12 @@ def test_depthwise_separable_conv_1d(
         (15, 11, 5, 20),
     ],
 )
-def test_text_enc_conv_block(channels, kernel_size, batch_size, seq_len):
-    conv = TextEncoderConvBlock(channels, kernel_size)
+@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
+def test_text_enc_conv_block(dropout, channels, kernel_size, batch_size, seq_len):
+    if dropout is None:
+        conv = TextEncoderConvBlock(channels, kernel_size)
+    else:
+        conv = TextEncoderConvBlock(channels, kernel_size, dropout=dropout)
     assert conv(torch.rand(batch_size, seq_len, channels)).size() == (
         batch_size,
         seq_len,
@@ -52,12 +56,18 @@ def test_text_enc_conv_block(channels, kernel_size, batch_size, seq_len):
         (3, 5, 12, 3, 3, 10),
     ],
 )
+@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
 def test_text_enc_block(
-    num_conv_layers, kernel_size, hidden_dim, num_heads, batch_size, seq_len
+    dropout, num_conv_layers, kernel_size, hidden_dim, num_heads, batch_size, seq_len
 ):
-    text_enc_block = TextEncoderBlock(
-        num_conv_layers, kernel_size, hidden_dim, num_heads
-    )
+    if dropout is None:
+        text_enc_block = TextEncoderBlock(
+            num_conv_layers, kernel_size, hidden_dim, num_heads
+        )
+    else:
+        text_enc_block = TextEncoderBlock(
+            num_conv_layers, kernel_size, hidden_dim, num_heads, dropout=dropout
+        )
     # random tensors and increasing masks
     assert text_enc_block(
         torch.rand(batch_size, seq_len, hidden_dim),
@@ -78,7 +88,9 @@ def test_text_enc_block(
         (3, 5, 5, 10, 5, 3, 7),
     ],
 )
+@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
 def test_text_encoder(
+    dropout,
     num_enc_blocks,
     enc_block_num_conv_layers,
     enc_block_kernel_size,
@@ -87,13 +99,23 @@ def test_text_encoder(
     batch_size,
     seq_len,
 ):
-    text_encoder = TextEncoder(
-        num_enc_blocks,
-        enc_block_num_conv_layers,
-        enc_block_kernel_size,
-        enc_block_hidden_dim,
-        enc_block_num_heads,
-    )
+    if dropout is None:
+        text_encoder = TextEncoder(
+            num_enc_blocks,
+            enc_block_num_conv_layers,
+            enc_block_kernel_size,
+            enc_block_hidden_dim,
+            enc_block_num_heads,
+        )
+    else:
+        text_encoder = TextEncoder(
+            num_enc_blocks,
+            enc_block_num_conv_layers,
+            enc_block_kernel_size,
+            enc_block_hidden_dim,
+            enc_block_num_heads,
+            dropout=dropout,
+        )
     # random word ids and increasing masks
     assert text_encoder(
         torch.rand(batch_size, seq_len, enc_block_hidden_dim),

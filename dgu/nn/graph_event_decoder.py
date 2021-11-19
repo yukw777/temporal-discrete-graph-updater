@@ -9,16 +9,20 @@ from dgu.constants import EVENT_TYPES
 
 
 class EventTypeHead(nn.Module):
-    def __init__(self, graph_event_embedding_dim: int, hidden_dim: int) -> None:
+    def __init__(
+        self, graph_event_embedding_dim: int, hidden_dim: int, dropout: float = 0.3
+    ) -> None:
         super().__init__()
         self.linear = nn.Sequential(
             nn.Linear(graph_event_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, len(EVENT_TYPES)),
         )
         self.autoregressive_linear = nn.Sequential(
             nn.Linear(len(EVENT_TYPES), graph_event_embedding_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
         )
 
     def forward(self, graph_event_embeddings: torch.Tensor) -> torch.Tensor:
@@ -61,17 +65,20 @@ class EventNodeHead(nn.Module):
         autoregressive_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.key_query_dim = key_query_dim
         self.key_linear = nn.Sequential(
             nn.Linear(node_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.query_linear = nn.Sequential(
             nn.Linear(autoregressive_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.autoregressive_linear = nn.Linear(
@@ -153,6 +160,7 @@ class EventStaticLabelHead(nn.Module):
         label_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.label_embedding_dim = label_embedding_dim
@@ -160,11 +168,13 @@ class EventStaticLabelHead(nn.Module):
         self.key_linear = nn.Sequential(
             nn.Linear(self.label_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.query_linear = nn.Sequential(
             nn.Linear(autoregressive_embedding_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
 
@@ -255,34 +265,66 @@ class RNNGraphEventDecoder(nn.Module):
 
 
 class TransformerGraphEventDecoderBlock(nn.Module):
-    def __init__(self, aggr_dim: int, hidden_dim: int, num_heads: int) -> None:
+    def __init__(
+        self, aggr_dim: int, hidden_dim: int, num_heads: int, dropout: float = 0.3
+    ) -> None:
         super().__init__()
         assert hidden_dim % 2 == 0, "hidden_dim has to be even for positional encoding"
         self.num_heads = num_heads
 
-        self.self_attn = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
         self.self_attn_layer_norm = nn.LayerNorm(hidden_dim)
+        self.self_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True, dropout=dropout
+        )
+        self.self_attn_dropout = nn.Dropout(p=dropout)
+
+        self.cross_multi_head_attn_layer_norm = nn.LayerNorm(hidden_dim)
         self.aggr_obs_graph_attn = nn.MultiheadAttention(
-            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+            hidden_dim,
+            num_heads,
+            batch_first=True,
+            kdim=aggr_dim,
+            vdim=aggr_dim,
+            dropout=dropout,
         )
+        self.aggr_graph_obs_attn_dropout = nn.Dropout(p=dropout)
         self.aggr_prev_action_graph_attn = nn.MultiheadAttention(
-            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+            hidden_dim,
+            num_heads,
+            batch_first=True,
+            kdim=aggr_dim,
+            vdim=aggr_dim,
+            dropout=dropout,
         )
+        self.aggr_prev_action_graph_attn_dropout = nn.Dropout(p=dropout)
         self.aggr_graph_obs_attn = nn.MultiheadAttention(
-            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+            hidden_dim,
+            num_heads,
+            batch_first=True,
+            kdim=aggr_dim,
+            vdim=aggr_dim,
+            dropout=dropout,
         )
         self.aggr_graph_prev_action_attn = nn.MultiheadAttention(
-            hidden_dim, num_heads, batch_first=True, kdim=aggr_dim, vdim=aggr_dim
+            hidden_dim,
+            num_heads,
+            batch_first=True,
+            kdim=aggr_dim,
+            vdim=aggr_dim,
+            dropout=dropout,
         )
+
         self.combine_attn = nn.Sequential(
-            nn.Linear(4 * hidden_dim, hidden_dim), nn.ReLU()
+            nn.Linear(4 * hidden_dim, hidden_dim), nn.ReLU(), nn.Dropout(p=dropout)
         )
         self.linear_layer_norm = nn.LayerNorm(hidden_dim)
         self.linear_layers = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, hidden_dim),
         )
+        self.linear_dropout = nn.Dropout(p=dropout)
 
     def forward(
         self,
@@ -313,31 +355,34 @@ class TransformerGraphEventDecoderBlock(nn.Module):
 
         output: (batch, hidden_dim)
         """
-        last_tok_input = input.unsqueeze(1)
-        # (batch, 1, hidden_dim)
-        concat_input = torch.cat([last_tok_input, prev_input_seq], dim=1)
+        concat_input = torch.cat([prev_input_seq, input.unsqueeze(1)], dim=1)
         # (batch, input_seq_len, hidden_dim)
         concat_input_mask = torch.cat(
-            [input_mask.unsqueeze(1), prev_input_seq_mask], dim=1
+            [prev_input_seq_mask, input_mask.unsqueeze(1)], dim=1
         )
         # (batch, input_seq_len)
 
-        # self attention layer
-        input_residual = last_tok_input
+        # self attention
+        normalized_concat_input = self.self_attn_layer_norm(concat_input)
         # (batch, input_seq_len, hidden_dim)
-        input_attn, _ = self.self_attn(
-            last_tok_input,
-            concat_input,
-            concat_input,
+        self_attn, _ = self.self_attn(
+            # we only need to calculate the self attention for the last element
+            # in the input sequence
+            normalized_concat_input[:, -1:, :],
+            normalized_concat_input,
+            normalized_concat_input,
             key_padding_mask=~concat_input_mask,
         )
         # (batch, 1, hidden_dim)
-        input_attn += input_residual
+        self_attn = self.self_attn_dropout(self_attn)
+        # (batch, 1, hidden_dim)
+        self_attn += concat_input[:, -1:, :]
         # (batch, 1, hidden_dim)
 
-        # apply layer norm to the input self attention output to calculate the query
-        # for multi-headed attentions
-        query = self.self_attn_layer_norm(input_attn)
+        # cross multi-head attention
+        # apply layer norm to the self attention output.
+        # this is the query for the cross multi-head attentions.
+        query = self.cross_multi_head_attn_layer_norm(self_attn)
         # (batch, 1, hidden_dim)
 
         # calculate multi-headed attention using the aggregated observation and
@@ -349,6 +394,10 @@ class TransformerGraphEventDecoderBlock(nn.Module):
             key_padding_mask=~obs_mask,
         )
         # (batch, 1, hidden_dim)
+        obs_graph_attn = self.aggr_graph_obs_attn_dropout(obs_graph_attn)
+        # (batch, 1, hidden_dim)
+        obs_graph_attn += self_attn
+        # (batch, 1, hidden_dim)
 
         # calculate multi-headed attention using the aggregated previous action and
         # graph representation
@@ -358,6 +407,12 @@ class TransformerGraphEventDecoderBlock(nn.Module):
             aggr_prev_action_graph,
             key_padding_mask=~prev_action_mask,
         )
+        # (batch, 1, hidden_dim)
+        prev_action_graph_attn = self.aggr_prev_action_graph_attn_dropout(
+            prev_action_graph_attn
+        )
+        # (batch, 1, hidden_dim)
+        prev_action_graph_attn += self_attn
         # (batch, 1, hidden_dim)
 
         # calculate multi-headed attention using the aggregated graph and
@@ -382,6 +437,8 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         # (num_subgraph_with_node, 1, hidden_dim)
         graph_obs_attn[subgraphs_with_node_mask] = subgraph_with_node_obs_attn
         # (batch, 1, hidden_dim)
+        graph_obs_attn += self_attn
+        # (batch, 1, hidden_dim)
 
         # calculate multi-headed attention using the aggregated graph and
         # previous action
@@ -397,6 +454,8 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         graph_prev_action_attn[
             subgraphs_with_node_mask
         ] = subgraph_with_node_prev_action_attn
+        # (batch, 1, hidden_dim)
+        graph_prev_action_attn += self_attn
         # (batch, 1, hidden_dim)
 
         # combine multi-headed attentions
@@ -414,9 +473,11 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         # (batch, 1, hidden_dim)
 
         # linear layer
-        output = self.linear_layer_norm(combined_attn + input_attn)
+        output = self.linear_layer_norm(combined_attn)
         # (batch, 1, hidden_dim)
         output = self.linear_layers(output)
+        # (batch, 1, hidden_dim)
+        output = self.linear_dropout(output)
         # (batch, 1, hidden_dim)
         output += combined_attn
         # (batch, 1, hidden_dim)
@@ -432,15 +493,19 @@ class TransformerGraphEventDecoder(nn.Module):
         num_dec_blocks: int,
         dec_block_num_heads: int,
         hidden_dim: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.input_linear = nn.Linear(input_dim, hidden_dim)
         self.pos_encoder = PositionalEncoder(hidden_dim, 1024)
         self.dec_blocks = nn.ModuleList(
-            TransformerGraphEventDecoderBlock(aggr_dim, hidden_dim, dec_block_num_heads)
+            TransformerGraphEventDecoderBlock(
+                aggr_dim, hidden_dim, dec_block_num_heads, dropout=dropout
+            )
             for _ in range(num_dec_blocks)
         )
+        self.final_layer_norm = nn.LayerNorm(hidden_dim)
 
     def forward(
         self,
@@ -529,6 +594,8 @@ class TransformerGraphEventDecoder(nn.Module):
                 prev_input_seq_mask=updated_prev_input_event_emb_seq_mask,
             )
             # (batch, hidden_dim)
+        output = self.final_layer_norm(output)
+        # (batch, hidden_dim)
         stacked_block_inputs = torch.stack(block_inputs)
         # (num_block, batch, hidden_dim)
         updated_prev_input_event_emb_seq = torch.cat(

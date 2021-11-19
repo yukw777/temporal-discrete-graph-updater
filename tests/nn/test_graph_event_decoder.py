@@ -12,22 +12,30 @@ from dgu.nn.graph_event_decoder import (
 from dgu.constants import EVENT_TYPES
 
 
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
     "graph_event_embedding_dim,hidden_dim,batch", [(24, 12, 1), (128, 64, 8)]
 )
-def test_event_type_head(graph_event_embedding_dim, hidden_dim, batch):
-    head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
+def test_event_type_head(dropout, graph_event_embedding_dim, hidden_dim, batch):
+    if dropout == 0.0:
+        head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
+    else:
+        head = EventTypeHead(graph_event_embedding_dim, hidden_dim, dropout=dropout)
     logits = head(torch.rand(batch, graph_event_embedding_dim))
     assert logits.size() == (batch, len(EVENT_TYPES))
 
 
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
     "graph_event_embedding_dim,hidden_dim,batch", [(24, 12, 1), (128, 64, 8)]
 )
 def test_event_type_head_get_autoregressive_embedding(
-    graph_event_embedding_dim, hidden_dim, batch
+    graph_event_embedding_dim, hidden_dim, batch, dropout
 ):
-    head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
+    if dropout == 0.0:
+        head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
+    else:
+        head = EventTypeHead(graph_event_embedding_dim, hidden_dim, dropout=dropout)
     autoregressive_embedding = head.get_autoregressive_embedding(
         torch.rand(batch, graph_event_embedding_dim),
         torch.randint(len(EVENT_TYPES), (batch,)),
@@ -35,6 +43,7 @@ def test_event_type_head_get_autoregressive_embedding(
     assert autoregressive_embedding.size() == (batch, graph_event_embedding_dim)
 
 
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
     "node_embedding_dim,autoregressive_embedding_dim,hidden_dim,"
     "key_query_dim,batch,num_node",
@@ -52,10 +61,20 @@ def test_event_node_head(
     key_query_dim,
     batch,
     num_node,
+    dropout,
 ):
-    head = EventNodeHead(
-        node_embedding_dim, autoregressive_embedding_dim, hidden_dim, key_query_dim
-    )
+    if dropout == 0.0:
+        head = EventNodeHead(
+            node_embedding_dim, autoregressive_embedding_dim, hidden_dim, key_query_dim
+        )
+    else:
+        head = EventNodeHead(
+            node_embedding_dim,
+            autoregressive_embedding_dim,
+            hidden_dim,
+            key_query_dim,
+            dropout=dropout,
+        )
     logits, key = head(
         torch.rand(batch, autoregressive_embedding_dim),
         torch.rand(batch, num_node, node_embedding_dim),
@@ -73,6 +92,7 @@ def test_event_node_head(
     assert autoregressive_embedding.size() == (batch, autoregressive_embedding_dim)
 
 
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
     "autoregressive_embedding_dim,hidden_dim,key_query_dim,num_label,"
     "label_embedding_dim,batch",
@@ -89,10 +109,20 @@ def test_event_static_label_head(
     num_label,
     label_embedding_dim,
     batch,
+    dropout,
 ):
-    head = EventStaticLabelHead(
-        autoregressive_embedding_dim, label_embedding_dim, hidden_dim, key_query_dim
-    )
+    if dropout == 0.0:
+        head = EventStaticLabelHead(
+            autoregressive_embedding_dim, label_embedding_dim, hidden_dim, key_query_dim
+        )
+    else:
+        head = EventStaticLabelHead(
+            autoregressive_embedding_dim,
+            label_embedding_dim,
+            hidden_dim,
+            key_query_dim,
+            dropout=dropout,
+        )
     label_logits = head(
         torch.rand(batch, autoregressive_embedding_dim),
         torch.rand(num_label, label_embedding_dim),
@@ -180,6 +210,7 @@ def test_transformer_graph_event_decoder_block(
     )
     if prev_input_seq_len == 0:
         prev_input_seq_mask = torch.ones(batch, 0).bool()
+        input_mask = torch.ones(batch).bool()
     else:
         prev_input_seq_mask = torch.cat(
             [
@@ -188,9 +219,15 @@ def test_transformer_graph_event_decoder_block(
             ],
             dim=1,
         )
+        if batch > 1:
+            input_mask = torch.cat(
+                [torch.tensor([True]), torch.randint(2, (batch - 1,)).bool()]
+            )
+        else:
+            input_mask = torch.ones(batch).bool()
     output = block(
         torch.rand(batch, hidden_dim),
-        torch.randint(2, (batch,)).bool(),
+        input_mask,
         torch.rand(batch, obs_len, aggr_dim),
         obs_mask,
         torch.rand(batch, prev_action_len, aggr_dim),
