@@ -31,7 +31,14 @@ def main(cfg: DictConfig) -> None:
     )
 
     # fit
-    trainer.tune(lm, datamodule=dm)
+    lr_finder = trainer.tuner.lr_find(lm, datamodule=dm, min_lr=1e-4)
+    # plot
+    fig = lr_finder.plot(suggest=True)
+    fig.savefig("lr-finder.png")
+    fig.show()
+
+    # Get suggestion
+    print(f"Suggestion: {lr_finder.suggestion()}")
 
 
 if __name__ == "__main__":
