@@ -269,9 +269,6 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         self, aggr_dim: int, hidden_dim: int, num_heads: int, dropout: float = 0.3
     ) -> None:
         super().__init__()
-        assert hidden_dim % 2 == 0, "hidden_dim has to be even for positional encoding"
-        self.num_heads = num_heads
-
         self.self_attn_layer_norm = nn.LayerNorm(hidden_dim)
         self.self_attn = nn.MultiheadAttention(
             hidden_dim, num_heads, batch_first=True, dropout=dropout
