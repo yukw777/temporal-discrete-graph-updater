@@ -2,7 +2,6 @@ import torch
 
 from typing import List
 from torchmetrics import Metric
-from collections import Counter
 
 
 class F1(Metric):
@@ -21,15 +20,19 @@ class F1(Metric):
     ) -> None:
         assert len(batch_preds) == len(batch_targets)
         for preds, targets in zip(batch_preds, batch_targets):
-            if preds == targets:
+            preds_set = set(preds)
+            targets_set = set(targets)
+            if preds_set == targets_set:
                 self.score += 1  # type: ignore
             else:
-                intersection = Counter(preds) & Counter(targets)
-                matches = sum(intersection.values())
+                matches = 0
+                for pred in preds_set:
+                    if pred in targets_set:
+                        matches += 1
                 if matches != 0:
                     # calculate the f1 score
-                    precision = matches / len(preds)
-                    recall = matches / len(targets)
+                    precision = matches / len(preds_set)
+                    recall = matches / len(targets_set)
                     self.score += (2 * precision * recall) / (  # type: ignore
                         precision + recall
                     )
