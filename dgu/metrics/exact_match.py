@@ -26,11 +26,12 @@ class ExactMatch(Metric):
                     self.score += 1  # type: ignore
             else:
                 matches = 0
+                pred_set = set(preds)
                 target_set = set(targets)
-                for pred in preds:
+                for pred in pred_set:
                     if pred in target_set:
                         matches += 1
-                self.score += matches / len(preds)  # type: ignore
+                self.score += matches / len(pred_set)  # type: ignore
             self.total += 1  # type: ignore
 
     def compute(self) -> torch.Tensor:

@@ -39,7 +39,7 @@ from dgu.metrics import ExactMatch
                 ],
                 ["add , n0 , n1 , r0", "delete , n2 , n3 , r1", "add , n4 , n5 , r2"],
             ],
-            torch.tensor((2 / 3 + 4 / 5) / 2),
+            torch.tensor((2 / 3 + 2 / 3) / 2),
         ),
         (
             [
@@ -100,7 +100,7 @@ from dgu.metrics import ExactMatch
                 ],
                 ["c", "d", "b", "a", "<sep>", "g", "h", "i", "j"],
             ],
-            torch.tensor((7 / 9 + 24 / 24) / 2),
+            torch.tensor((9 / 9 + 7 / 9) / 2),
         ),
     ],
 )
