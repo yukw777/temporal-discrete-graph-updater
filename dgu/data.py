@@ -12,7 +12,17 @@ from torch_geometric.data import Batch
 
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
-from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.constants import (
+    EVENT_TYPE_ID_MAP,
+    TWO_ARGS_RELATIONS,
+    NORTH_OF,
+    SOUTH_OF,
+    EAST_OF,
+    WEST_OF,
+    PART_OF,
+    IS,
+    NEEDS,
+)
 from dgu.graph import process_triplet_cmd
 
 
@@ -48,6 +58,9 @@ class TWCmdGenTemporalDataset(Dataset):
         self.idx_map: List[Tuple[str, int, int]] = []
 
         for example in raw_data["examples"]:
+            example["target_commands"] = self.sort_target_commands(
+                example["target_commands"]
+            )
             game = example["game"]
             walkthrough_step, random_step = example["step"]
             self.idx_map.append((game, walkthrough_step, random_step))
@@ -58,6 +71,45 @@ class TWCmdGenTemporalDataset(Dataset):
             else:
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
+
+    @staticmethod
+    def sort_target_commands(list_of_cmds: List[str]) -> List[str]:
+        """
+        Copied from the original GATA code
+        """
+        list_of_cmd_tokens = [item.split(" , ") for item in list_of_cmds]
+
+        def key_fn(
+            cmd: List[str],
+        ) -> Tuple[bool, bool, bool, bool, bool, bool, bool, bool, str, str]:
+            return (
+                cmd[0] == "add",  # add always before delete
+                cmd[1] == "player",  # relations with player always first
+                cmd[2] == "player",  # relations with player always first
+                cmd[3]
+                in {
+                    WEST_OF,
+                    EAST_OF,
+                    NORTH_OF,
+                    SOUTH_OF,
+                },  # room connections always first
+                cmd[3] in {PART_OF},  # recipe
+                cmd[3] in set(TWO_ARGS_RELATIONS),  # two args relations first
+                cmd[3] in {IS},  # one arg state relations first
+                cmd[3] in {NEEDS},  # one arg requirement relations first
+                cmd[2],
+                cmd[1],
+            )
+
+        list_of_cmds = [
+            " , ".join(item)
+            for item in sorted(list_of_cmd_tokens, key=key_fn, reverse=True)
+        ]
+        res: List[str] = []
+        for cmd in list_of_cmds:
+            if cmd not in res:
+                res.append(cmd)
+        return res
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         game, walkthrough_step, random_step = self.idx_map[idx]

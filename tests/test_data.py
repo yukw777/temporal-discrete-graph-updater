@@ -60,6 +60,132 @@ def test_tw_cmd_gen_dataset_init():
 
 
 @pytest.mark.parametrize(
+    "tgt_cmds,expected",
+    [
+        # add always before delete
+        (
+            ["delete , n0 , n1 , r0", "add , n0 , n1 , r0"],
+            ["add , n0 , n1 , r0", "delete , n0 , n1 , r0"],
+        ),
+        # relations with player as a source before others
+        (
+            ["add , cookbook , table , on", "add , player , livingroom , in"],
+            ["add , player , livingroom , in", "add , cookbook , table , on"],
+        ),
+        # relations with player as a destination before others
+        (
+            [
+                "add , cookbook , table , on",
+                "add , player , livingroom , in",
+                "add , knife , player , in",
+            ],
+            [
+                "add , player , livingroom , in",
+                "add , knife , player , in",
+                "add , cookbook , table , on",
+            ],
+        ),
+        # room connections before others
+        (
+            ["add , cookbook , table , on", "add , exit , livingroom , west_of"],
+            ["add , exit , livingroom , west_of", "add , cookbook , table , on"],
+        ),
+        (
+            ["add , cookbook , table , on", "add , exit , livingroom , east_of"],
+            ["add , exit , livingroom , east_of", "add , cookbook , table , on"],
+        ),
+        (
+            ["add , cookbook , table , on", "add , exit , livingroom , north_of"],
+            ["add , exit , livingroom , north_of", "add , cookbook , table , on"],
+        ),
+        (
+            ["add , cookbook , table , on", "add , exit , livingroom , south_of"],
+            ["add , exit , livingroom , south_of", "add , cookbook , table , on"],
+        ),
+        # recipe before others
+        (
+            ["add , cookbook , table , on", "add , potato , recipe , part_of"],
+            ["add , potato , recipe , part_of", "add , cookbook , table , on"],
+        ),
+        # two args relations
+        (
+            ["add , potato , cooked , is", "add , cookbook , table , on"],
+            ["add , cookbook , table , on", "add , potato , cooked , is"],
+        ),
+        # skip one arg requirement relations as it's part of TWO_ARGS_RELATIONS
+        # reverse alphabetical, destination node
+        (
+            ["add , potato , stove , on", "add , potato , table , on"],
+            ["add , potato , table , on", "add , potato , stove , on"],
+        ),
+        # reverse alphabetical, source node
+        (
+            ["add , cookbook , table , on", "add , potato , table , on"],
+            ["add , potato , table , on", "add , cookbook , table , on"],
+        ),
+        (
+            [
+                "add , cookbook , table , on",
+                "add , counter , kitchen , at",
+                "add , fridge , closed , is",
+                "add , fridge , kitchen , at",
+                "add , oven , kitchen , at",
+                "add , player , kitchen , at",
+                "add , purple potato , counter , on",
+                "add , purple potato , sliced , is",
+                "add , red potato , counter , on",
+                "add , red potato , uncut , is",
+                "add , stove , kitchen , at",
+                "add , table , kitchen , at",
+            ],
+            [
+                "add , player , kitchen , at",
+                "add , cookbook , table , on",
+                "add , table , kitchen , at",
+                "add , stove , kitchen , at",
+                "add , oven , kitchen , at",
+                "add , fridge , kitchen , at",
+                "add , counter , kitchen , at",
+                "add , red potato , counter , on",
+                "add , purple potato , counter , on",
+                "add , red potato , uncut , is",
+                "add , purple potato , sliced , is",
+                "add , fridge , closed , is",
+            ],
+        ),
+        (
+            [
+                "add , fridge , open , is",
+                "add , parsley , fridge , in",
+                "add , parsley , uncut , is",
+                "add , red onion , fridge , in",
+                "add , red onion , raw , is",
+                "add , red onion , uncut , is",
+                "add , white onion , fridge , in",
+                "add , white onion , raw , is",
+                "add , white onion , sliced , is",
+                "delete , fridge , closed , is",
+            ],
+            [
+                "add , white onion , fridge , in",
+                "add , red onion , fridge , in",
+                "add , parsley , fridge , in",
+                "add , red onion , uncut , is",
+                "add , parsley , uncut , is",
+                "add , white onion , sliced , is",
+                "add , white onion , raw , is",
+                "add , red onion , raw , is",
+                "add , fridge , open , is",
+                "delete , fridge , closed , is",
+            ],
+        ),
+    ],
+)
+def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
+    assert TWCmdGenTemporalDataset.sort_target_commands(tgt_cmds) == expected
+
+
+@pytest.mark.parametrize(
     "obs,prev_actions,timestamps,expected",
     [
         (
