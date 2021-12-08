@@ -446,6 +446,29 @@ def test_sldgu_forward(
     assert results["updated_batched_graph"].edge_last_update.size() == (
         expected_num_edge,
     )
+    assert len(results["self_attn_weights"]) == len(sldgu.decoder.dec_blocks)
+    for self_attn_weights in results["self_attn_weights"]:
+        assert self_attn_weights.size() == (batch_size, 1, prev_input_seq_len + 1)
+    assert len(results["obs_graph_attn_weights"]) == len(sldgu.decoder.dec_blocks)
+    for obs_graph_attn_weights in results["obs_graph_attn_weights"]:
+        assert obs_graph_attn_weights.size() == (batch_size, 1, obs_len)
+    assert len(results["prev_action_graph_attn_weights"]) == len(
+        sldgu.decoder.dec_blocks
+    )
+    for prev_action_graph_attn_weights in results["prev_action_graph_attn_weights"]:
+        assert prev_action_graph_attn_weights.size() == (batch_size, 1, prev_action_len)
+    assert len(results["graph_obs_attn_weights"]) == len(sldgu.decoder.dec_blocks)
+    for graph_obs_attn_weights in results["graph_obs_attn_weights"]:
+        assert graph_obs_attn_weights.size() == (batch_size, 1, max_sub_graph_num_node)
+    assert len(results["graph_prev_action_attn_weights"]) == len(
+        sldgu.decoder.dec_blocks
+    )
+    for graph_prev_action_attn_weights in results["graph_prev_action_attn_weights"]:
+        assert graph_prev_action_attn_weights.size() == (
+            batch_size,
+            1,
+            max_sub_graph_num_node,
+        )
 
 
 @pytest.mark.parametrize("batch,num_node", [(1, 5), (8, 12)])
@@ -1428,6 +1451,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(1, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(1, 1, 0)],
+                    "graph_prev_action_attn_weights": [torch.rand(1, 1, 0)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1450,6 +1478,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(1, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(1, 1, 1)],
+                    "graph_prev_action_attn_weights": [torch.rand(1, 1, 1)],
                 },
             ],
             Batch(
@@ -1518,6 +1551,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(1, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(1, 1, 0)],
+                    "graph_prev_action_attn_weights": [torch.rand(1, 1, 0)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1542,6 +1580,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(1, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(1, 1, 1)],
+                    "graph_prev_action_attn_weights": [torch.rand(1, 1, 1)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1566,6 +1609,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(1, 1, 3)],
+                    "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(1, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(1, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1588,6 +1636,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(1, 1, 4)],
+                    "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(1, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(1, 1, 2)],
                 },
             ],
             Batch(
@@ -1658,6 +1711,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 0)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 0)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1682,6 +1740,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 1)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 1)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1706,6 +1769,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 3)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1730,6 +1798,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 4)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
             ],
             Batch(
@@ -1830,6 +1903,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 0)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 0)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1854,6 +1932,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 1)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 1)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1878,6 +1961,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 3)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1901,6 +1989,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 4)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
             ],
             Batch(
@@ -1973,6 +2066,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 0)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 0)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -1997,6 +2095,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 1)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 1)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2021,6 +2124,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.empty(0).long(),
                         edge_last_update=torch.empty(0),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 3)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2045,6 +2153,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 4)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2072,6 +2185,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 5)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2099,6 +2217,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([3]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 6)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
             ],
             Batch(
@@ -2229,6 +2352,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2253,6 +2381,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 3)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 3)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2281,6 +2414,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 3)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 4)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 4)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2309,6 +2447,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 4)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 4)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 4)],
                 },
             ],
             Batch(
@@ -2409,6 +2552,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 1)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 2)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 2)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2433,6 +2581,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 2)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 3)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 3)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2461,6 +2614,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4]),
                         edge_last_update=torch.tensor([4.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 3)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 4)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 4)],
                 },
                 {
                     "event_type_logits": torch.tensor(
@@ -2489,6 +2647,11 @@ def test_sldgu_filter_invalid_events(
                         edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
+                    "self_attn_weights": [torch.rand(2, 1, 4)],
+                    "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
+                    "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
+                    "graph_obs_attn_weights": [torch.rand(2, 1, 4)],
+                    "graph_prev_action_attn_weights": [torch.rand(2, 1, 4)],
                 },
             ],
             Batch(
