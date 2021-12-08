@@ -225,7 +225,7 @@ def test_transformer_graph_event_decoder_block(
             )
         else:
             input_mask = torch.ones(batch).bool()
-    output = block(
+    results = block(
         torch.rand(batch, hidden_dim),
         input_mask,
         torch.rand(batch, obs_len, aggr_dim),
@@ -238,8 +238,17 @@ def test_transformer_graph_event_decoder_block(
         torch.rand(batch, prev_input_seq_len, hidden_dim),
         prev_input_seq_mask,
     )
-    assert not output.isnan().any()
-    assert output.size() == (batch, hidden_dim)
+    assert not results["output"].isnan().any()
+    assert results["output"].size() == (batch, hidden_dim)
+    assert results["self_attn_weights"].size() == (batch, 1, prev_input_seq_len + 1)
+    assert results["obs_graph_attn_weights"].size() == (batch, 1, obs_len)
+    assert results["prev_action_graph_attn_weights"].size() == (
+        batch,
+        1,
+        prev_action_len,
+    )
+    assert results["graph_obs_attn_weights"].size() == (batch, 1, num_node)
+    assert results["graph_prev_action_attn_weights"].size() == (batch, 1, num_node)
 
 
 @pytest.mark.parametrize("prev_input_event_emb_seq_len", [0, 6, 8])
@@ -272,11 +281,7 @@ def test_transformer_graph_event_decoder(
     decoder = TransformerGraphEventDecoder(
         input_dim, aggr_dim, num_dec_blocks, dec_block_num_heads, hidden_dim
     )
-    (
-        output,
-        updated_prev_input_event_emb_seq,
-        updated_prev_input_event_emb_seq_mask,
-    ) = decoder(
+    results, attn = decoder(
         torch.rand(batch, input_dim),
         torch.randint(2, (batch,)).bool(),
         torch.rand(batch, obs_len, aggr_dim),
@@ -295,14 +300,30 @@ def test_transformer_graph_event_decoder(
         if prev_input_event_emb_seq_len == 0
         else torch.randint(2, (batch, prev_input_event_emb_seq_len)).bool(),
     )
-    assert output.size() == (batch, hidden_dim)
-    assert updated_prev_input_event_emb_seq.size() == (
+    assert results["output"].size() == (batch, hidden_dim)
+    assert results["updated_prev_input_event_emb_seq"].size() == (
         num_dec_blocks,
         batch,
         prev_input_event_emb_seq_len + 1,
         hidden_dim,
     )
-    assert updated_prev_input_event_emb_seq_mask.size() == (
+    assert results["updated_prev_input_event_emb_seq_mask"].size() == (
         batch,
         prev_input_event_emb_seq_len + 1,
     )
+
+    assert len(attn["self_attn_weights"]) == num_dec_blocks
+    for self_attn_weights in attn["self_attn_weights"]:
+        assert self_attn_weights.size() == (batch, 1, prev_input_event_emb_seq_len + 1)
+    assert len(attn["obs_graph_attn_weights"]) == num_dec_blocks
+    for obs_graph_attn_weights in attn["obs_graph_attn_weights"]:
+        assert obs_graph_attn_weights.size() == (batch, 1, obs_len)
+    assert len(attn["prev_action_graph_attn_weights"]) == num_dec_blocks
+    for prev_action_graph_attn_weights in attn["prev_action_graph_attn_weights"]:
+        assert prev_action_graph_attn_weights.size() == (batch, 1, prev_action_len)
+    assert len(attn["graph_obs_attn_weights"]) == num_dec_blocks
+    for graph_obs_attn_weights in attn["graph_obs_attn_weights"]:
+        assert graph_obs_attn_weights.size() == (batch, 1, num_node)
+    assert len(attn["graph_prev_action_attn_weights"]) == num_dec_blocks
+    for graph_prev_action_attn_weights in attn["graph_prev_action_attn_weights"]:
+        assert graph_prev_action_attn_weights.size() == (batch, 1, num_node)

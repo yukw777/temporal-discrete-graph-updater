@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict
 
 from dgu.nn.utils import masked_mean, PositionalEncoder
 from dgu.constants import EVENT_TYPES
@@ -336,7 +336,7 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         node_mask: torch.Tensor,
         prev_input_seq: torch.Tensor,
         prev_input_seq_mask: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> Dict[str, torch.Tensor]:
         """
         input: (batch, hidden_dim)
         input_mask: (batch)
@@ -350,7 +350,14 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         prev_input_seq: (batch, prev_input_seq_len, hidden_dim)
         prev_input_seq_mask: (batch, prev_input_seq_len)
 
-        output: (batch, hidden_dim)
+        output: {
+            "output": (batch, hidden_dim),
+            "self_attn_weights": (batch, 1, input_seq_len),
+            "obs_graph_attn_weights": (batch, 1, obs_len),
+            "prev_action_graph_attn_weights": (batch, 1, prev_action_len),
+            "graph_obs_attn_weights": (batch, 1, num_node),
+            "graph_prev_action_attn_weights": (batch, 1, num_node),
+        }
         """
         concat_input = torch.cat([prev_input_seq, input.unsqueeze(1)], dim=1)
         # (batch, input_seq_len, hidden_dim)
@@ -362,7 +369,7 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         # self attention
         normalized_concat_input = self.self_attn_layer_norm(concat_input)
         # (batch, input_seq_len, hidden_dim)
-        self_attn, _ = self.self_attn(
+        self_attn, self_attn_weights = self.self_attn(
             # we only need to calculate the self attention for the last element
             # in the input sequence
             normalized_concat_input[:, -1:, :],
@@ -370,7 +377,8 @@ class TransformerGraphEventDecoderBlock(nn.Module):
             normalized_concat_input,
             key_padding_mask=~concat_input_mask,
         )
-        # (batch, 1, hidden_dim)
+        # self_attn: (batch, 1, hidden_dim)
+        # self_attn_weights: (batch, 1, input_seq_len)
         self_attn = self.self_attn_dropout(self_attn)
         # (batch, 1, hidden_dim)
         self_attn += concat_input[:, -1:, :]
@@ -384,13 +392,14 @@ class TransformerGraphEventDecoderBlock(nn.Module):
 
         # calculate multi-headed attention using the aggregated observation and
         # graph representation
-        obs_graph_attn, _ = self.aggr_obs_graph_attn(
+        obs_graph_attn, obs_graph_attn_weights = self.aggr_obs_graph_attn(
             query,
             aggr_obs_graph,
             aggr_obs_graph,
             key_padding_mask=~obs_mask,
         )
-        # (batch, 1, hidden_dim)
+        # obs_graph_attn: (batch, 1, hidden_dim)
+        # obs_graph_attn_weights: (batch, 1, obs_len)
         obs_graph_attn = self.aggr_graph_obs_attn_dropout(obs_graph_attn)
         # (batch, 1, hidden_dim)
         obs_graph_attn += self_attn
@@ -398,13 +407,17 @@ class TransformerGraphEventDecoderBlock(nn.Module):
 
         # calculate multi-headed attention using the aggregated previous action and
         # graph representation
-        prev_action_graph_attn, _ = self.aggr_prev_action_graph_attn(
+        (
+            prev_action_graph_attn,
+            prev_action_graph_attn_weights,
+        ) = self.aggr_prev_action_graph_attn(
             query,
             aggr_prev_action_graph,
             aggr_prev_action_graph,
             key_padding_mask=~prev_action_mask,
         )
-        # (batch, 1, hidden_dim)
+        # prev_action_graph_attn: (batch, 1, hidden_dim)
+        # prev_action_graph_attn_weights: (batch, 1, prev_action_len)
         prev_action_graph_attn = self.aggr_prev_action_graph_attn_dropout(
             prev_action_graph_attn
         )
@@ -425,15 +438,27 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         # (batch)
         graph_obs_attn = torch.zeros_like(query)
         # (batch, 1, hidden_dim)
-        subgraph_with_node_obs_attn, _ = self.aggr_graph_obs_attn(
+        graph_obs_attn_weights = torch.zeros(
+            node_mask.size(0), 1, node_mask.size(1), device=node_mask.device
+        )
+        # (batch, 1, num_node)
+        (
+            subgraph_with_node_obs_attn,
+            # (num_subgraph_with_node, 1, hidden_dim)
+            subgraph_with_node_obs_attn_weights,
+            # (num_subgraph_with_node, 1, num_node)
+        ) = self.aggr_graph_obs_attn(
             query[subgraphs_with_node_mask],
             aggr_graph_obs[subgraphs_with_node_mask],
             aggr_graph_obs[subgraphs_with_node_mask],
             key_padding_mask=attn_node_mask[subgraphs_with_node_mask],
         )
-        # (num_subgraph_with_node, 1, hidden_dim)
         graph_obs_attn[subgraphs_with_node_mask] = subgraph_with_node_obs_attn
         # (batch, 1, hidden_dim)
+        graph_obs_attn_weights[
+            subgraphs_with_node_mask
+        ] = subgraph_with_node_obs_attn_weights
+        # (batch, 1, num_node)
         graph_obs_attn += self_attn
         # (batch, 1, hidden_dim)
 
@@ -441,17 +466,29 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         # previous action
         graph_prev_action_attn = torch.zeros_like(query)
         # (batch, 1, hidden_dim)
-        subgraph_with_node_prev_action_attn, _ = self.aggr_graph_prev_action_attn(
+        graph_prev_action_attn_weights = torch.zeros(
+            node_mask.size(0), 1, node_mask.size(1), device=node_mask.device
+        )
+        # (batch, 1, num_node)
+        (
+            subgraph_with_node_prev_action_attn,
+            # (num_subgraph_with_node, 1, hidden_dim)
+            subgraph_with_node_prev_action_attn_weights,
+            # (num_subgraph_with_node, 1, num_node)
+        ) = self.aggr_graph_prev_action_attn(
             query[subgraphs_with_node_mask],
             aggr_graph_prev_action[subgraphs_with_node_mask],
             aggr_graph_prev_action[subgraphs_with_node_mask],
             key_padding_mask=attn_node_mask[subgraphs_with_node_mask],
         )
-        # (num_subgraph_with_node, 1, hidden_dim)
         graph_prev_action_attn[
             subgraphs_with_node_mask
         ] = subgraph_with_node_prev_action_attn
         # (batch, 1, hidden_dim)
+        graph_prev_action_attn_weights[
+            subgraphs_with_node_mask
+        ] = subgraph_with_node_prev_action_attn_weights
+        # (batch, 1, num_node)
         graph_prev_action_attn += self_attn
         # (batch, 1, hidden_dim)
 
@@ -478,8 +515,16 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         # (batch, 1, hidden_dim)
         output += combined_attn
         # (batch, 1, hidden_dim)
-        return output.squeeze(1)
+        output = output.squeeze(1)
         # (batch, hidden_dim)
+        return {
+            "output": output,
+            "self_attn_weights": self_attn_weights,
+            "obs_graph_attn_weights": obs_graph_attn_weights,
+            "prev_action_graph_attn_weights": prev_action_graph_attn_weights,
+            "graph_obs_attn_weights": graph_obs_attn_weights,
+            "graph_prev_action_attn_weights": graph_prev_action_attn_weights,
+        }
 
 
 class TransformerGraphEventDecoder(nn.Module):
@@ -517,7 +562,7 @@ class TransformerGraphEventDecoder(nn.Module):
         node_mask: torch.Tensor,
         prev_input_event_emb_seq: Optional[torch.Tensor] = None,
         prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, List[torch.Tensor]]]:
         """
         input_event_embedding: (batch, input_dim)
         event_mask: (batch)
@@ -532,10 +577,21 @@ class TransformerGraphEventDecoder(nn.Module):
         prev_input_event_emb_seq_mask: (num_block, batch, prev_input_seq_len)
 
         output: (
-            output: (batch, hidden_dim),
-            updated_prev_input_event_emb_seq:
+        {
+            "output": (batch, hidden_dim),
+            "updated_prev_input_event_emb_seq":
                 (num_block, batch, input_seq_len, hidden_dim),
-            updated_prev_input_event_emb_seq_mask: (batch, input_seq_len),
+            "updated_prev_input_event_emb_seq_mask": (batch, input_seq_len),
+        },
+        {
+            "self_attn_weights": len([(batch, 1, input_seq_len), ...]) == num_block,
+            "obs_graph_attn_weights": len([(batch, 1, obs_len), ...]) == num_block,
+            "prev_action_graph_attn_weights":
+                len([(batch, 1, prev_action_len), ...]) == num_block,
+            "graph_obs_attn_weights": len([(batch, 1, num_node), ...]) == num_block,
+            "graph_prev_action_attn_weights":
+                len([(batch, 1, num_node), ...]) == num_block,
+        },
         )
         """
         # linearly resize the input input event embedding and
@@ -569,9 +625,14 @@ class TransformerGraphEventDecoder(nn.Module):
         output = pos_encoded_input
         # (batch, hidden_dim)
         block_inputs: List[torch.Tensor] = []
+        self_attn_weights: List[torch.Tensor] = []
+        obs_graph_attn_weights: List[torch.Tensor] = []
+        prev_action_graph_attn_weights: List[torch.Tensor] = []
+        graph_obs_attn_weights: List[torch.Tensor] = []
+        graph_prev_action_attn_weights: List[torch.Tensor] = []
         for i, dec_block in enumerate(self.dec_blocks):
             block_inputs.append(output)
-            output = dec_block(
+            dec_block_results = dec_block(
                 output,
                 event_mask,
                 aggr_obs_graph,
@@ -584,7 +645,17 @@ class TransformerGraphEventDecoder(nn.Module):
                 prev_input_seq=prev_input_event_emb_seq[i],
                 prev_input_seq_mask=prev_input_event_emb_seq_mask,
             )
+            output = dec_block_results["output"]
             # (batch, hidden_dim)
+            self_attn_weights.append(dec_block_results["self_attn_weights"])
+            obs_graph_attn_weights.append(dec_block_results["obs_graph_attn_weights"])
+            prev_action_graph_attn_weights.append(
+                dec_block_results["prev_action_graph_attn_weights"]
+            )
+            graph_obs_attn_weights.append(dec_block_results["graph_obs_attn_weights"])
+            graph_prev_action_attn_weights.append(
+                dec_block_results["graph_prev_action_attn_weights"]
+            )
         output = self.final_layer_norm(output)
         # (batch, hidden_dim)
         stacked_block_inputs = torch.stack(block_inputs)
@@ -598,8 +669,16 @@ class TransformerGraphEventDecoder(nn.Module):
         )
         # (batch, input_seq_len)
 
-        return (
-            output,
-            updated_prev_input_event_emb_seq,
-            updated_prev_input_event_emb_seq_mask,
-        )
+        return {
+            "output": output,
+            "updated_prev_input_event_emb_seq": updated_prev_input_event_emb_seq,
+            "updated_prev_input_event_emb_seq_mask": (
+                updated_prev_input_event_emb_seq_mask
+            ),
+        }, {
+            "self_attn_weights": self_attn_weights,
+            "obs_graph_attn_weights": obs_graph_attn_weights,
+            "prev_action_graph_attn_weights": prev_action_graph_attn_weights,
+            "graph_obs_attn_weights": graph_obs_attn_weights,
+            "graph_prev_action_attn_weights": graph_prev_action_attn_weights,
+        }
