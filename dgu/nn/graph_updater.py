@@ -303,6 +303,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 edge_attr: (num_edge)
                 edge_last_update: (num_edge)
             )
+            self_attn_weights:
+                len([(batch, 1, input_seq_len), ...]) == num_decoder_block,
+            obs_graph_attn_weights:
+                len([(batch, 1, obs_len), ...]) == num_decoder_block,
+            prev_action_graph_attn_weights:
+                len([(batch, 1, prev_action_len), ...]) == num_decoder_block,
+            graph_obs_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+            graph_prev_action_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
         }
         """
         if encoded_obs is None:
@@ -371,11 +381,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # h_ga: (batch, num_node, hidden_dim)
 
         # (batch)
-        (
-            decoded_event_logits,
-            updated_prev_input_event_emb_seq,
-            updated_prev_input_event_emb_seq_mask,
-        ) = self.decoder(
+        decoder_output, decoder_attn_weights = self.decoder(
             self.get_decoder_input(
                 event_type_ids,
                 event_src_ids,
@@ -400,16 +406,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         #     (num_block, batch, input_seq_len, hidden_dim)
         # updated_prev_input_event_emb_seq_mask: (batch, input_seq_len)
 
-        event_type_logits = self.event_type_head(decoded_event_logits)
+        event_type_logits = self.event_type_head(decoder_output["output"])
         # (batch, num_event_type)
         if groundtruth_event_type_ids is not None:
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
-                decoded_event_logits, groundtruth_event_type_ids
+                decoder_output["output"], groundtruth_event_type_ids
             )
             # (batch, hidden_dim)
         else:
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
-                decoded_event_logits, event_type_logits.argmax(dim=1)
+                decoder_output["output"], event_type_logits.argmax(dim=1)
             )
             # (batch, hidden_dim)
         event_src_logits, event_src_key = self.event_src_head(
@@ -459,13 +465,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "event_src_logits": event_src_logits,
             "event_dst_logits": event_dst_logits,
             "event_label_logits": label_logits,
-            "updated_prev_input_event_emb_seq": updated_prev_input_event_emb_seq,
+            "updated_prev_input_event_emb_seq": decoder_output[
+                "updated_prev_input_event_emb_seq"
+            ],
             "updated_prev_input_event_emb_seq_mask": (
-                updated_prev_input_event_emb_seq_mask
+                decoder_output["updated_prev_input_event_emb_seq_mask"]
             ),
             "encoded_obs": encoded_obs,
             "encoded_prev_action": encoded_prev_action,
             "updated_batched_graph": updated_batched_graph,
+            **decoder_attn_weights,
         }
 
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -964,14 +973,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_batch_graph: diagonally stacked batch of current graphs
 
         output:
-        [{
+        len([{
             decoded_event_type_ids: (batch)
             decoded_event_src_ids: (batch)
             decoded_event_dst_ids: (batch)
             decoded_event_label_ids: (batch)
             updated_batched_graph: diagonally stacked batch of updated graphs.
                 these are the graphs used to decode the graph events above
-        }, ...]
+            self_attn_weights:
+                len([(batch, 1, input_seq_len), ...]) == num_decoder_block,
+            obs_graph_attn_weights:
+                len([(batch, 1, obs_len), ...]) == num_decoder_block,
+            prev_action_graph_attn_weights:
+                len([(batch, 1, prev_action_len), ...]) == num_decoder_block,
+            graph_obs_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+            graph_prev_action_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+        }, ...]) == decode_len <= max_decode_len
         """
         # initialize the initial inputs
         batch_size = step_input.obs_word_ids.size(0)
@@ -1071,6 +1090,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     "decoded_event_dst_ids": decoded_dst_ids,
                     "decoded_event_label_ids": decoded_label_ids,
                     "updated_batched_graph": results["updated_batched_graph"],
+                    "self_attn_weights": results["self_attn_weights"],
+                    "obs_graph_attn_weights": results["obs_graph_attn_weights"],
+                    "prev_action_graph_attn_weights": results[
+                        "prev_action_graph_attn_weights"
+                    ],
+                    "graph_obs_attn_weights": results["graph_obs_attn_weights"],
+                    "graph_prev_action_attn_weights": results[
+                        "graph_prev_action_attn_weights"
+                    ],
                 }
             )
 
