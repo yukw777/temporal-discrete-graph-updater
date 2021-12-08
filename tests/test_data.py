@@ -13,6 +13,8 @@ from dgu.data import (
     TWCmdGenGraphEventStepInput,
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventGraphicalInput,
+    sort_target_commands,
+    TWCmdGenGraphEventFreeRunDataset,
 )
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -51,6 +53,18 @@ def test_tw_cmd_gen_dataset_init():
     dataset = TWCmdGenGraphEventDataset("tests/data/test_data.json")
     expected_dataset = []
     with open("tests/data/preprocessed_test_data.jsonl") as f:
+        for line in f:
+            expected_dataset.append(json.loads(line))
+
+    assert len(dataset) == len(expected_dataset)
+    for data, expected_data in zip(dataset, expected_dataset):
+        assert data == expected_data
+
+
+def test_tw_cmd_gen_free_run_dataset_init():
+    dataset = TWCmdGenGraphEventFreeRunDataset("tests/data/test_data.json")
+    expected_dataset = []
+    with open("tests/data/preprocessed_test_free_run_data.jsonl") as f:
         for line in f:
             expected_dataset.append(json.loads(line))
 
@@ -181,8 +195,8 @@ def test_tw_cmd_gen_dataset_init():
         ),
     ],
 )
-def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
-    assert TWCmdGenGraphEventDataset.sort_target_commands(tgt_cmds) == expected
+def test_sort_target_commands(tgt_cmds, expected):
+    assert sort_target_commands(tgt_cmds) == expected
 
 
 @pytest.mark.parametrize(
