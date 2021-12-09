@@ -36,11 +36,15 @@ class EventTypeHead(nn.Module):
         # (batch, num_event_type)
 
     def get_autoregressive_embedding(
-        self, graph_event_embeddings: torch.Tensor, event_type_ids: torch.Tensor
+        self,
+        graph_event_embeddings: torch.Tensor,
+        event_type_ids: torch.Tensor,
+        event_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
         graph_event_embeddings: (batch, graph_event_embedding_dim)
         event_type_ids: (batch)
+        event_mask: (batch)
 
         output: autoregressive_embedding, (batch, graph_event_embedding_dim)
         """
@@ -54,7 +58,7 @@ class EventTypeHead(nn.Module):
         encoded_event_type = self.autoregressive_linear(one_hot_event_type)
         # (batch, graph_event_embedding_dim)
         # add it to graph_event_embeddings to calculate the autoregressive embedding
-        return graph_event_embeddings + encoded_event_type
+        return graph_event_embeddings + encoded_event_type * event_mask.unsqueeze(-1)
         # (batch, graph_event_embedding_dim)
 
 
@@ -120,12 +124,16 @@ class EventNodeHead(nn.Module):
         autoregressive_embedding: torch.Tensor,
         node_ids: torch.Tensor,
         node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
+        event_node_mask: torch.Tensor,
         key: torch.Tensor,
     ) -> torch.Tensor:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         node_ids: (batch)
         node_embeddings: (batch, num_node, node_embedding_dim)
+        node_mask: (batch, num_node)
+        event_node_mask: (batch)
         key: (batch, num_node, key_query_dim)
 
         output: updated autoregressive embedding
@@ -135,9 +143,9 @@ class EventNodeHead(nn.Module):
             # if there are no nodes, just return without updating
             return autoregressive_embedding
         # get the one hot encoding of the selected nodes
-        one_hot_selected_node = F.one_hot(
-            node_ids, num_classes=node_embeddings.size(1)
-        ).float()
+        one_hot_selected_node = (
+            F.one_hot(node_ids, num_classes=node_embeddings.size(1)).float() * node_mask
+        )
         # (batch, num_node)
         # multiply by the key
         selected_node_embeddings = torch.bmm(
@@ -145,11 +153,19 @@ class EventNodeHead(nn.Module):
         ).squeeze(1)
         # (batch, key_query_dim)
         # pass it through a linear layer
-        selected_node_embeddings = self.autoregressive_linear(selected_node_embeddings)
+        selected_node_embeddings = self.autoregressive_linear(
+            selected_node_embeddings
+        ) * node_mask.any(dim=1).unsqueeze(
+            -1
+        )  # mask out pad nodes
         # (batch, hidden_dim)
         # add it to the autoregressive embedding
         # NOTE: make sure not to do an in-place += here as it messes with gradients
-        return autoregressive_embedding + selected_node_embeddings
+        return (
+            autoregressive_embedding
+            + selected_node_embeddings
+            * event_node_mask.unsqueeze(-1)  # mask out nodes that shouldn't be selected
+        )
         # (batch, hidden_dim)
 
 

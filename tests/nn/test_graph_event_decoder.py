@@ -39,6 +39,7 @@ def test_event_type_head_get_autoregressive_embedding(
     autoregressive_embedding = head.get_autoregressive_embedding(
         torch.rand(batch, graph_event_embedding_dim),
         torch.randint(len(EVENT_TYPES), (batch,)),
+        torch.randint(2, (batch,)).bool(),
     )
     assert autoregressive_embedding.size() == (batch, graph_event_embedding_dim)
 
@@ -85,6 +86,8 @@ def test_event_node_head(
         if num_node > 0
         else torch.zeros(batch).long(),
         torch.rand(batch, num_node, node_embedding_dim),
+        torch.randint(2, (batch, num_node)).bool(),
+        torch.randint(2, (batch,)).bool(),
         key,
     )
     assert logits.size() == (batch, num_node)

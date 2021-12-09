@@ -16,6 +16,7 @@ from torch_geometric.data import Batch
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
 from dgu.nn.utils import (
+    compute_masks_from_event_type_ids,
     masked_mean,
     load_fasttext,
     batchify_node_features,
@@ -237,9 +238,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         prev_input_event_emb_seq: Optional[torch.Tensor] = None,
         prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
         # groundtruth events for decoder teacher-force training
-        groundtruth_event_type_ids: Optional[torch.Tensor] = None,
-        groundtruth_event_src_ids: Optional[torch.Tensor] = None,
-        groundtruth_event_dst_ids: Optional[torch.Tensor] = None,
+        groundtruth_event: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         graph events: {
@@ -276,10 +275,13 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         Otherwise, they are calculated from obs_word_ids, obs_mask,
         prev_action_word_ids and prev_action_mask.
 
-        groundtruth graph event {
+        groundtruth event: {
             groundtruth_event_type_ids: (batch)
+            groundtruth_event_mask: (batch)
             groundtruth_event_src_ids: (batch)
+            groundtruth_event_src_mask: (batch)
             groundtruth_event_dst_ids: (batch)
+            groundtruth_event_dst_mask: (batch)
         }
         Ground-truth graph events used for teacher forcing of the decoder
 
@@ -408,14 +410,18 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         event_type_logits = self.event_type_head(decoder_output["output"])
         # (batch, num_event_type)
-        if groundtruth_event_type_ids is not None:
+        if groundtruth_event is not None:
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
-                decoder_output["output"], groundtruth_event_type_ids
+                decoder_output["output"],
+                groundtruth_event["groundtruth_event_type_ids"],
+                groundtruth_event["groundtruth_event_mask"],
             )
             # (batch, hidden_dim)
         else:
+            event_type_ids = event_type_logits.argmax(dim=1)
+            masks = compute_masks_from_event_type_ids(event_type_ids)
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
-                decoder_output["output"], event_type_logits.argmax(dim=1)
+                decoder_output["output"], event_type_ids, masks["event_mask"]
             )
             # (batch, hidden_dim)
         event_src_logits, event_src_key = self.event_src_head(
@@ -424,9 +430,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # event_src_logits: (batch, max_sub_graph_num_node)
         # event_src_key:
         #   (batch, max_sub_graph_num_node, graph_event_decoder_key_query_dim)
-        if groundtruth_event_src_ids is not None:
+        if groundtruth_event is not None:
             autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
-                autoregressive_emb, event_src_ids, batch_node_embeddings, event_src_key
+                autoregressive_emb,
+                event_src_ids,
+                batch_node_embeddings,
+                batch_node_mask,
+                groundtruth_event["groundtruth_event_src_mask"],
+                event_src_key,
             )
         elif event_src_logits.size(1) > 0:
             autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
@@ -435,6 +446,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     masked_softmax(event_src_logits, batch_node_mask, dim=1), dim=1
                 ),
                 batch_node_embeddings,
+                batch_node_mask,
+                masks["src_mask"],
                 event_src_key,
             )
         event_dst_logits, event_dst_key = self.event_dst_head(
@@ -443,9 +456,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # event_dst_logits: (batch, max_sub_graph_num_node)
         # event_dst_key:
         #   (batch, max_sub_graph_num_node, graph_event_decoder_key_query_dim)
-        if groundtruth_event_dst_ids is not None:
+        if groundtruth_event is not None:
             autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
-                autoregressive_emb, event_dst_ids, batch_node_embeddings, event_dst_key
+                autoregressive_emb,
+                event_dst_ids,
+                batch_node_embeddings,
+                batch_node_mask,
+                groundtruth_event["groundtruth_event_dst_mask"],
+                event_dst_key,
             )
         elif event_dst_logits.size(1) > 0:
             autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
@@ -454,6 +472,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     masked_softmax(event_dst_logits, batch_node_mask, dim=1), dim=1
                 ),
                 batch_node_embeddings,
+                batch_node_mask,
+                masks["dst_mask"],
                 event_dst_key,
             )
         label_logits = self.event_label_head(
@@ -531,9 +551,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 encoded_prev_action=encoded_prev_action,
                 prev_input_event_emb_seq=prev_input_event_emb_seq,
                 prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
-                groundtruth_event_type_ids=graphical_input.groundtruth_event_type_ids,
-                groundtruth_event_src_ids=graphical_input.groundtruth_event_src_ids,
-                groundtruth_event_dst_ids=graphical_input.groundtruth_event_dst_ids,
+                groundtruth_event={
+                    "groundtruth_event_type_ids": (
+                        graphical_input.groundtruth_event_type_ids
+                    ),
+                    "groundtruth_event_mask": graphical_input.groundtruth_event_mask,
+                    "groundtruth_event_src_ids": (
+                        graphical_input.groundtruth_event_src_ids
+                    ),
+                    "groundtruth_event_src_mask": (
+                        graphical_input.groundtruth_event_src_mask
+                    ),
+                    "groundtruth_event_dst_ids": (
+                        graphical_input.groundtruth_event_dst_ids
+                    ),
+                    "groundtruth_event_dst_mask": (
+                        graphical_input.groundtruth_event_dst_mask
+                    ),
+                },
             )
 
             # add results to the list
@@ -1060,7 +1095,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             decoded_label_ids = (
                 results["event_label_logits"]
                 .argmax(dim=1)
-                .masked_fill(end_event_mask, 0)
+                .masked_fill(end_event_mask, self.label_id_map[""])
             )
             # (batch)
 

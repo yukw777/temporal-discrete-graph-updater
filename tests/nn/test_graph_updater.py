@@ -34,8 +34,7 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 
 @pytest.mark.parametrize(
     "batch_size,event_type_ids,event_src_ids,event_dst_ids,obs_len,prev_action_len,"
-    "batched_graph,groundtruth_event_type_ids,groundtruth_event_src_ids,"
-    "groundtruth_event_dst_ids,expected_num_node,expected_num_edge",
+    "batched_graph,groundtruth_event,expected_num_node,expected_num_edge",
     [
         (
             1,
@@ -52,8 +51,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_attr=torch.empty(0).long(),
                 edge_last_update=torch.empty(0),
             ),
-            None,
-            None,
             None,
             0,
             0,
@@ -81,8 +78,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_last_update=torch.empty(0),
             ),
             None,
-            None,
-            None,
             0,
             0,
         ),
@@ -101,8 +96,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
-            None,
-            None,
             None,
             3,
             1,
@@ -130,8 +123,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_last_update=torch.tensor([2.0, 3.0]),
             ),
             None,
-            None,
-            None,
             6,
             2,
         ),
@@ -150,8 +141,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_attr=torch.randint(6, (1,)),
                 edge_last_update=torch.tensor([2.0]),
             ),
-            None,
-            None,
             None,
             4,
             1,
@@ -172,8 +161,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_last_update=torch.tensor([2.0]),
             ),
             None,
-            None,
-            None,
             2,
             1,
         ),
@@ -193,8 +180,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_last_update=torch.rand(3),
             ),
             None,
-            None,
-            None,
             9,
             4,
         ),
@@ -213,8 +198,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_attr=torch.randint(6, (4,)),
                 edge_last_update=torch.rand(4),
             ),
-            None,
-            None,
             None,
             9,
             3,
@@ -242,8 +225,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_last_update=torch.rand(3),
             ),
             None,
-            None,
-            None,
             9,
             4,
         ),
@@ -270,8 +251,6 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_last_update=torch.rand(4),
             ),
             None,
-            None,
-            None,
             12,
             4,
         ),
@@ -297,16 +276,21 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                 edge_attr=torch.randint(6, (4,)),
                 edge_last_update=torch.rand(4),
             ),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                ]
-            ),
-            torch.tensor([0, 5, 0, 1]),
-            torch.tensor([1, 0, 0, 0]),
+            {
+                "groundtruth_event_type_ids": torch.tensor(
+                    [
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["pad"],
+                    ]
+                ),
+                "groundtruth_event_mask": torch.tensor([True, True, True, False]),
+                "groundtruth_event_src_ids": torch.tensor([0, 5, 0, 1]),
+                "groundtruth_event_src_mask": torch.tensor([True, True, False, False]),
+                "groundtruth_event_dst_ids": torch.tensor([1, 0, 0, 0]),
+                "groundtruth_event_dst_mask": torch.tensor([True, False, False, False]),
+            },
             12,
             4,
         ),
@@ -325,9 +309,7 @@ def test_sldgu_forward(
     obs_len,
     prev_action_len,
     batched_graph,
-    groundtruth_event_type_ids,
-    groundtruth_event_src_ids,
-    groundtruth_event_dst_ids,
+    groundtruth_event,
     expected_num_node,
     expected_num_edge,
 ):
@@ -398,9 +380,7 @@ def test_sldgu_forward(
             sldgu.hparams.graph_event_decoder_hidden_dim,
         ),
         prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
-        groundtruth_event_type_ids=groundtruth_event_type_ids,
-        groundtruth_event_src_ids=groundtruth_event_src_ids,
-        groundtruth_event_dst_ids=groundtruth_event_dst_ids,
+        groundtruth_event=groundtruth_event,
     )
     assert results["event_type_logits"].size() == (batch_size, len(EVENT_TYPES))
     if results["updated_batched_graph"].batch.numel() > 0:
