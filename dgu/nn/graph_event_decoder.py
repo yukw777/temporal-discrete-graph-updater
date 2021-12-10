@@ -614,7 +614,7 @@ class TransformerGraphEventDecoder(nn.Module):
         # add the positional encodings to it
         pos_encoded_input = self.pos_encoder(
             self.input_linear(input_event_embedding),
-            prev_input_event_emb_seq.size(1)
+            prev_input_event_emb_seq.size(2)
             if prev_input_event_emb_seq is not None
             else 0,
         )
