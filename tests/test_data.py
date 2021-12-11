@@ -251,10 +251,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             Batch(
                 batch=torch.empty(0, dtype=torch.long),
                 x=torch.empty(0, dtype=torch.long),
-                node_last_update=torch.empty(0),
+                node_last_update=torch.empty(0, 2),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0),
+                edge_last_update=torch.empty(0, 2),
             ),
             (
                 TWCmdGenTemporalGraphicalInput(
@@ -273,10 +273,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.empty(0, dtype=torch.long),
                         x=torch.empty(0, dtype=torch.long),
-                        node_last_update=torch.empty(0),
+                        node_last_update=torch.empty(0, 2),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
             ),
@@ -294,10 +294,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             Batch(
                 batch=torch.tensor([0, 0]),
                 x=torch.tensor([1, 14]),
-                node_last_update=torch.tensor([0.0, 0.0]),
+                node_last_update=torch.tensor([[0.0, 0.0], [0.0, 1.0]]),
                 edge_index=torch.tensor([[0], [1]]),
                 edge_attr=torch.tensor([100]),
-                edge_last_update=torch.tensor([0.0]),
+                edge_last_update=torch.tensor([[0.0, 2.0]]),
             ),
             (
                 TWCmdGenTemporalGraphicalInput(
@@ -316,10 +316,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
                         x=torch.tensor([1, 14]),
-                        node_last_update=torch.tensor([0.0, 0.0]),
+                        node_last_update=torch.tensor([[0.0, 0.0], [0.0, 1.0]]),
                         edge_index=torch.tensor([[0], [1]]),
                         edge_attr=torch.tensor([100]),
-                        edge_last_update=torch.tensor([0.0]),
+                        edge_last_update=torch.tensor([[0.0, 2.0]]),
                     ),
                 ),
             ),
@@ -341,10 +341,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             Batch(
                 batch=torch.empty(0, dtype=torch.long),
                 x=torch.empty(0, dtype=torch.long),
-                node_last_update=torch.empty(0),
+                node_last_update=torch.empty(0, 2),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0),
+                edge_last_update=torch.empty(0, 2),
             ),
             (
                 TWCmdGenTemporalGraphicalInput(
@@ -365,10 +365,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.empty(0, dtype=torch.long),
                         x=torch.empty(0, dtype=torch.long),
-                        node_last_update=torch.empty(0),
+                        node_last_update=torch.empty(0, 2),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -389,10 +389,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.empty(0, dtype=torch.long),
                         x=torch.empty(0, dtype=torch.long),
-                        node_last_update=torch.empty(0),
+                        node_last_update=torch.empty(0, 2),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -413,10 +413,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0]),
                         x=torch.tensor([1]),
-                        node_last_update=torch.tensor([2.0]),
+                        node_last_update=torch.tensor([[2.0, 0.0]]),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -435,10 +435,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
                         x=torch.tensor([1, 14]),
-                        node_last_update=torch.tensor([2.0, 2.0]),
+                        node_last_update=torch.tensor([[2.0, 0.0], [2.0, 1.0]]),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
             ),
@@ -459,10 +459,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             Batch(
                 batch=torch.tensor([0, 0]),
                 x=torch.tensor([1, 14]),
-                node_last_update=torch.tensor([1.0, 1.0]),
+                node_last_update=torch.tensor([[1.0, 0.0], [1.0, 1.0]]),
                 edge_index=torch.tensor([[0], [1]]),
                 edge_attr=torch.tensor([100]),
-                edge_last_update=torch.tensor([1.0]),
+                edge_last_update=torch.tensor([[1.0, 2.0]]),
             ),
             (
                 TWCmdGenTemporalGraphicalInput(
@@ -483,10 +483,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
                         x=torch.tensor([1, 14]),
-                        node_last_update=torch.tensor([1.0, 1.0]),
+                        node_last_update=torch.tensor([[1.0, 0.0], [1.0, 1.0]]),
                         edge_index=torch.tensor([[0], [1]]),
                         edge_attr=torch.tensor([100]),
-                        edge_last_update=torch.tensor([1.0]),
+                        edge_last_update=torch.tensor([[1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -507,10 +507,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
                         x=torch.tensor([1, 14]),
-                        node_last_update=torch.tensor([1.0, 1.0]),
+                        node_last_update=torch.tensor([[1.0, 0.0], [1.0, 1.0]]),
                         edge_index=torch.tensor([[0], [1]]),
                         edge_attr=torch.tensor([100]),
-                        edge_last_update=torch.tensor([1.0]),
+                        edge_last_update=torch.tensor([[1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -529,10 +529,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0]),
                         x=torch.tensor([1, 14, 34]),
-                        node_last_update=torch.tensor([1.0, 1.0, 2.0]),
+                        node_last_update=torch.tensor(
+                            [[1.0, 0.0], [1.0, 1.0], [2.0, 0.0]]
+                        ),
                         edge_index=torch.tensor([[0], [1]]),
                         edge_attr=torch.tensor([100]),
-                        edge_last_update=torch.tensor([1.0]),
+                        edge_last_update=torch.tensor([[1.0, 2.0]]),
                     ),
                 ),
             ),
@@ -593,10 +595,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             Batch(
                 batch=torch.empty(0, dtype=torch.long),
                 x=torch.empty(0, dtype=torch.long),
-                node_last_update=torch.empty(0),
+                node_last_update=torch.empty(0, 2),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0),
+                edge_last_update=torch.empty(0, 2),
             ),
             (
                 TWCmdGenTemporalGraphicalInput(
@@ -622,10 +624,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.empty(0, dtype=torch.long),
                         x=torch.empty(0, dtype=torch.long),
-                        node_last_update=torch.empty(0),
+                        node_last_update=torch.empty(0, 2),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -654,10 +656,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.empty(0, dtype=torch.long),
                         x=torch.empty(0, dtype=torch.long),
-                        node_last_update=torch.empty(0),
+                        node_last_update=torch.empty(0, 2),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -686,10 +688,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 1]),
                         x=torch.tensor([1, 34]),
-                        node_last_update=torch.tensor([3.0, 1.0]),
+                        node_last_update=torch.tensor([[3.0, 0.0], [1.0, 0.0]]),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -718,10 +720,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1]),
                         x=torch.tensor([1, 14, 34, 14]),
-                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [[3.0, 0.0], [3.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
+                        ),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, dtype=torch.long),
-                        edge_last_update=torch.empty(0),
+                        edge_last_update=torch.empty(0, 2),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -750,10 +754,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1]),
                         x=torch.tensor([1, 14, 34, 14]),
-                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [[3.0, 0.0], [3.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
+                        ),
                         edge_index=torch.tensor([[0, 2], [1, 3]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -782,10 +788,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1]),
                         x=torch.tensor([1, 14, 34, 34, 14, 1]),
-                        node_last_update=torch.tensor([3.0, 3.0, 3.0, 1.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [3.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                            ]
+                        ),
                         edge_index=torch.tensor([[0, 3], [1, 4]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -815,11 +830,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([1, 14, 34, 34, 14, 1, 16]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 3.0, 1.0, 1.0, 1.0, 1.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [3.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [1.0, 4.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[0, 3, 2], [1, 4, 1]]),
                         edge_attr=torch.tensor([100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 3.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [3.0, 4.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -849,11 +874,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([1, 14, 34, 34, 14, 1, 16]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 3.0, 1.0, 1.0, 1.0, 1.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [3.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [1.0, 4.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[3, 2, 5], [4, 1, 6]]),
                         edge_attr=torch.tensor([100, 100, 100]),
-                        edge_last_update=torch.tensor([1.0, 3.0, 1.0]),
+                        edge_last_update=torch.tensor(
+                            [[1.0, 2.0], [3.0, 4.0], [1.0, 5.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -882,10 +917,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 34, 14, 1, 16]),
-                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [
+                                [3.0, 1.0],
+                                [3.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [1.0, 4.0],
+                            ]
+                        ),
                         edge_index=torch.tensor([[1, 4], [0, 5]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 4.0], [1.0, 5.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -914,10 +958,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
                         x=torch.tensor([14, 34, 34, 1, 16]),
-                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [[3.0, 1.0], [3.0, 3.0], [1.0, 0.0], [1.0, 3.0], [1.0, 4.0]]
+                        ),
                         edge_index=torch.tensor([[1, 3], [0, 4]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 4.0], [1.0, 5.0]]),
                     ),
                 ),
             ),
@@ -978,10 +1024,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             Batch(
                 batch=torch.tensor([0, 0, 1, 1, 1]),
                 x=torch.tensor([14, 34, 34, 1, 16]),
-                node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                node_last_update=torch.tensor(
+                    [[3.0, 0.0], [3.0, 1.0], [1.0, 0.0], [1.0, 1.0], [1.0, 3.0]]
+                ),
                 edge_index=torch.tensor([[1, 3], [0, 4]]),
                 edge_attr=torch.tensor([100, 100]),
-                edge_last_update=torch.tensor([3.0, 1.0]),
+                edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
             ),
             (
                 TWCmdGenTemporalGraphicalInput(
@@ -1007,10 +1055,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
                         x=torch.tensor([14, 34, 34, 1, 16]),
-                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [[3.0, 0.0], [3.0, 1.0], [1.0, 0.0], [1.0, 1.0], [1.0, 3.0]]
+                        ),
                         edge_index=torch.tensor([[1, 3], [0, 4]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1039,10 +1089,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
                         x=torch.tensor([14, 34, 34, 1, 16]),
-                        node_last_update=torch.tensor([3.0, 3.0, 1.0, 1.0, 1.0]),
+                        node_last_update=torch.tensor(
+                            [[3.0, 0.0], [3.0, 1.0], [1.0, 0.0], [1.0, 1.0], [1.0, 3.0]]
+                        ),
                         edge_index=torch.tensor([[1, 3], [0, 4]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1072,11 +1124,19 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 1, 34, 1, 16, 34]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 1.0, 1.0, 1.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 0.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 4], [0, 5]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1106,11 +1166,21 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 1, 14, 34, 1, 16, 34, 14]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 0.0],
+                                [4.0, 1.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 1.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 5], [0, 6]]),
                         edge_attr=torch.tensor([100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0]),
+                        edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1140,11 +1210,23 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 1, 14, 34, 1, 16, 34, 14]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 0.0],
+                                [4.0, 1.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 1.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 5, 2, 7], [0, 6, 3, 8]]),
                         edge_attr=torch.tensor([100, 100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [4.0, 2.0], [2.0, 2.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1174,11 +1256,25 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 1, 14, 34, 34, 1, 16, 34, 14, 1]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 0.0],
+                                [4.0, 1.0],
+                                [4.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 1.0],
+                                [2.0, 3.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 6, 2, 8], [0, 7, 3, 9]]),
                         edge_attr=torch.tensor([100, 100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [4.0, 2.0], [2.0, 2.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1208,11 +1304,26 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 1, 14, 34, 34, 1, 16, 34, 14, 1, 16]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 0.0],
+                                [4.0, 1.0],
+                                [4.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 1.0],
+                                [2.0, 3.0],
+                                [2.0, 4.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 6, 2, 8, 4], [0, 7, 3, 9, 3]]),
                         edge_attr=torch.tensor([100, 100, 100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0, 4.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [4.0, 2.0], [2.0, 2.0], [4.0, 4.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1242,11 +1353,26 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 1, 14, 34, 34, 1, 16, 34, 14, 1, 16]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 0.0],
+                                [4.0, 1.0],
+                                [4.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 1.0],
+                                [2.0, 3.0],
+                                [2.0, 4.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 6, 8, 4, 10], [0, 7, 9, 3, 11]]),
                         edge_attr=torch.tensor([100, 100, 100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 2.0, 4.0, 2.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [2.0, 2.0], [4.0, 4.0], [2.0, 5.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1276,11 +1402,25 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 14, 34, 34, 1, 16, 34, 14, 1, 16]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 1.0],
+                                [4.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 1.0],
+                                [2.0, 3.0],
+                                [2.0, 4.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 5, 3, 9], [0, 6, 2, 10]]),
                         edge_attr=torch.tensor([100, 100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [4.0, 4.0], [2.0, 5.0]]
+                        ),
                     ),
                 ),
                 TWCmdGenTemporalGraphicalInput(
@@ -1310,11 +1450,24 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor([14, 34, 14, 34, 34, 1, 16, 34, 1, 16]),
                         node_last_update=torch.tensor(
-                            [3.0, 3.0, 4.0, 4.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+                            [
+                                [3.0, 0.0],
+                                [3.0, 1.0],
+                                [4.0, 1.0],
+                                [4.0, 3.0],
+                                [1.0, 0.0],
+                                [1.0, 1.0],
+                                [1.0, 3.0],
+                                [2.0, 0.0],
+                                [2.0, 3.0],
+                                [2.0, 4.0],
+                            ]
                         ),
                         edge_index=torch.tensor([[1, 5, 3, 8], [0, 6, 2, 9]]),
                         edge_attr=torch.tensor([100, 100, 100, 100]),
-                        edge_last_update=torch.tensor([3.0, 1.0, 4.0, 2.0]),
+                        edge_last_update=torch.tensor(
+                            [[3.0, 2.0], [1.0, 2.0], [4.0, 4.0], [2.0, 5.0]]
+                        ),
                     ),
                 ),
             ),
@@ -1620,10 +1773,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                 initial_batched_graph=Batch(
                     batch=torch.empty(0, dtype=torch.long),
                     x=torch.empty(0, dtype=torch.long),
-                    node_last_update=torch.empty(0),
+                    node_last_update=torch.empty(0, 2),
                     edge_index=torch.empty(2, 0, dtype=torch.long),
                     edge_attr=torch.empty(0, dtype=torch.long),
-                    edge_last_update=torch.empty(0),
+                    edge_last_update=torch.empty(0, 2),
                 ),
                 graphical_input_seq=(
                     TWCmdGenTemporalGraphicalInput(
@@ -1644,10 +1797,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.empty(0, dtype=torch.long),
                             x=torch.empty(0, dtype=torch.long),
-                            node_last_update=torch.empty(0),
+                            node_last_update=torch.empty(0, 2),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0),
+                            edge_last_update=torch.empty(0, 2),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -1670,10 +1823,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.empty(0, dtype=torch.long),
                             x=torch.empty(0, dtype=torch.long),
-                            node_last_update=torch.empty(0),
+                            node_last_update=torch.empty(0, 2),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0),
+                            edge_last_update=torch.empty(0, 2),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -1696,10 +1849,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0]),
                             x=torch.tensor([1]),
-                            node_last_update=torch.tensor([2.0]),
+                            node_last_update=torch.tensor([[2.0, 0.0]]),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0),
+                            edge_last_update=torch.empty(0, 2),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -1722,10 +1875,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
                             x=torch.tensor([1, 14]),
-                            node_last_update=torch.tensor([2.0, 2.0]),
+                            node_last_update=torch.tensor([[2.0, 0.0], [2.0, 1.0]]),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0),
+                            edge_last_update=torch.empty(0, 2),
                         ),
                     ),
                 ),
@@ -1753,42 +1906,50 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         },
                     ],
                     "prev_graph_events": [
-                        {"type": "node-add", "label": "chicken leg", "timestamp": 2},
-                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "node-add",
+                            "label": "chicken leg",
+                            "timestamp": [2, 0],
+                        },
+                        {"type": "node-add", "label": "kitchen", "timestamp": [3, 0]},
                         {
                             "type": "edge-add",
                             "src_id": 0,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 4,
+                            "timestamp": [4, 0],
                         },
-                        {"type": "node-add", "label": "player", "timestamp": 5},
-                        {"type": "node-add", "label": "livingroom", "timestamp": 6},
+                        {"type": "node-add", "label": "player", "timestamp": [5, 0]},
+                        {
+                            "type": "node-add",
+                            "label": "livingroom",
+                            "timestamp": [6, 0],
+                        },
                         {
                             "type": "edge-add",
                             "src_id": 2,
                             "dst_id": 3,
                             "label": "in",
-                            "timestamp": 7,
+                            "timestamp": [7, 0],
                         },
                         {
                             "type": "edge-delete",
                             "src_id": 0,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 7,
+                            "timestamp": [7, 1],
                         },
                         {
                             "type": "node-delete",
                             "node_id": 1,
                             "label": "kitchen",
-                            "timestamp": 8,
+                            "timestamp": [8, 0],
                         },
                         {
                             "type": "node-delete",
                             "node_id": 0,
                             "label": "chicken leg",
-                            "timestamp": 8,
+                            "timestamp": [8, 1],
                         },
                     ],
                 },
@@ -1807,10 +1968,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                 initial_batched_graph=Batch(
                     batch=torch.tensor([0, 0]),
                     x=torch.tensor([1, 16]),
-                    node_last_update=torch.tensor([5.0, 6.0]),
+                    node_last_update=torch.tensor([[5.0, 0.0], [6.0, 0.0]]),
                     edge_index=torch.tensor([[0], [1]]),
                     edge_attr=torch.tensor([100]),
-                    edge_last_update=torch.tensor([7.0]),
+                    edge_last_update=torch.tensor([[7.0, 0.0]]),
                 ),
                 graphical_input_seq=(
                     TWCmdGenTemporalGraphicalInput(
@@ -1831,10 +1992,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
                             x=torch.tensor([1, 16]),
-                            node_last_update=torch.tensor([5.0, 6.0]),
+                            node_last_update=torch.tensor([[5.0, 0.0], [6.0, 0.0]]),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([7.0]),
+                            edge_last_update=torch.tensor([[7.0, 0.0]]),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -1857,10 +2018,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
                             x=torch.tensor([1, 16]),
-                            node_last_update=torch.tensor([5.0, 6.0]),
+                            node_last_update=torch.tensor([[5.0, 0.0], [6.0, 0.0]]),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([7.0]),
+                            edge_last_update=torch.tensor([[7.0, 0.0]]),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -1883,10 +2044,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0]),
                             x=torch.tensor([1, 16, 1]),
-                            node_last_update=torch.tensor([5.0, 6.0, 9.0]),
+                            node_last_update=torch.tensor(
+                                [[5.0, 0.0], [6.0, 0.0], [9.0, 0.0]]
+                            ),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([7.0]),
+                            edge_last_update=torch.tensor([[7.0, 0.0]]),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -1909,10 +2072,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0, 0]),
                             x=torch.tensor([1, 16, 1, 14]),
-                            node_last_update=torch.tensor([5.0, 6.0, 9.0, 9.0]),
+                            node_last_update=torch.tensor(
+                                [[5.0, 0.0], [6.0, 0.0], [9.0, 0.0], [9.0, 1.0]]
+                            ),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([7.0]),
+                            edge_last_update=torch.tensor([[7.0, 0.0]]),
                         ),
                     ),
                 ),
@@ -1934,35 +2099,39 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-add", "label": "kitchen"},
                     ],
                     "prev_graph_events": [
-                        {"type": "node-add", "label": "player", "timestamp": 1},
-                        {"type": "node-add", "label": "kitchen", "timestamp": 2},
+                        {"type": "node-add", "label": "player", "timestamp": [1, 0]},
+                        {"type": "node-add", "label": "kitchen", "timestamp": [2, 0]},
                         {
                             "type": "edge-add",
                             "src_id": 0,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 3,
+                            "timestamp": [3, 0],
                         },
-                        {"type": "node-add", "label": "chicken leg", "timestamp": 3},
+                        {
+                            "type": "node-add",
+                            "label": "chicken leg",
+                            "timestamp": [3, 1],
+                        },
                         {
                             "type": "edge-add",
                             "src_id": 2,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 4,
+                            "timestamp": [4, 0],
                         },
                         {
                             "type": "edge-delete",
                             "src_id": 0,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 5,
+                            "timestamp": [5, 0],
                         },
                         {
                             "type": "node-delete",
                             "node_id": 0,
                             "label": "player",
-                            "timestamp": 5,
+                            "timestamp": [5, 1],
                         },
                     ],
                 },
@@ -1985,42 +2154,50 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         {"type": "node-delete", "node_id": 0, "label": "player"},
                     ],
                     "prev_graph_events": [
-                        {"type": "node-add", "label": "chicken leg", "timestamp": 2},
-                        {"type": "node-add", "label": "kitchen", "timestamp": 3},
+                        {
+                            "type": "node-add",
+                            "label": "chicken leg",
+                            "timestamp": [2, 0],
+                        },
+                        {"type": "node-add", "label": "kitchen", "timestamp": [3, 0]},
                         {
                             "type": "edge-add",
                             "src_id": 0,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 4,
+                            "timestamp": [4, 0],
                         },
-                        {"type": "node-add", "label": "player", "timestamp": 5},
-                        {"type": "node-add", "label": "livingroom", "timestamp": 6},
+                        {"type": "node-add", "label": "player", "timestamp": [5, 0]},
+                        {
+                            "type": "node-add",
+                            "label": "livingroom",
+                            "timestamp": [6, 0],
+                        },
                         {
                             "type": "edge-add",
                             "src_id": 2,
                             "dst_id": 3,
                             "label": "in",
-                            "timestamp": 7,
+                            "timestamp": [7, 0],
                         },
                         {
                             "type": "edge-delete",
                             "src_id": 0,
                             "dst_id": 1,
                             "label": "in",
-                            "timestamp": 7,
+                            "timestamp": [7, 1],
                         },
                         {
                             "type": "node-delete",
                             "node_id": 1,
                             "label": "kitchen",
-                            "timestamp": 8,
+                            "timestamp": [8, 0],
                         },
                         {
                             "type": "node-delete",
                             "node_id": 0,
                             "label": "chicken leg",
-                            "timestamp": 8,
+                            "timestamp": [8, 1],
                         },
                     ],
                 },
@@ -2046,10 +2223,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                 initial_batched_graph=Batch(
                     batch=torch.tensor([0, 0, 1, 1]),
                     x=torch.tensor([14, 34, 1, 16]),
-                    node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                    node_last_update=torch.tensor(
+                        [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
+                    ),
                     edge_index=torch.tensor([[1, 2], [0, 3]]),
                     edge_attr=torch.tensor([100, 100]),
-                    edge_last_update=torch.tensor([4.0, 7.0]),
+                    edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
                 ),
                 graphical_input_seq=(
                     TWCmdGenTemporalGraphicalInput(
@@ -2078,10 +2257,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 1, 1]),
                             x=torch.tensor([14, 34, 1, 16]),
-                            node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                            node_last_update=torch.tensor(
+                                [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
+                            ),
                             edge_index=torch.tensor([[1, 2], [0, 3]]),
                             edge_attr=torch.tensor([100, 100]),
-                            edge_last_update=torch.tensor([4.0, 7.0]),
+                            edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -2110,10 +2291,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 1, 1]),
                             x=torch.tensor([14, 34, 1, 16]),
-                            node_last_update=torch.tensor([2.0, 3.0, 5.0, 6.0]),
+                            node_last_update=torch.tensor(
+                                [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
+                            ),
                             edge_index=torch.tensor([[1, 2], [0, 3]]),
                             edge_attr=torch.tensor([100, 100]),
-                            edge_last_update=torch.tensor([4.0, 7.0]),
+                            edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -2142,10 +2325,18 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0, 1, 1]),
                             x=torch.tensor([14, 34, 1, 1, 16]),
-                            node_last_update=torch.tensor([2.0, 3.0, 6.0, 5.0, 6.0]),
+                            node_last_update=torch.tensor(
+                                [
+                                    [2.0, 0.0],
+                                    [3.0, 1.0],
+                                    [6.0, 0.0],
+                                    [5.0, 0.0],
+                                    [6.0, 0.0],
+                                ]
+                            ),
                             edge_index=torch.tensor([[1], [0]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([4.0]),
+                            edge_last_update=torch.tensor([[4.0, 0.0]]),
                         ),
                     ),
                     TWCmdGenTemporalGraphicalInput(
@@ -2171,10 +2362,18 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0, 0, 1]),
                             x=torch.tensor([14, 34, 1, 14, 1]),
-                            node_last_update=torch.tensor([2.0, 3.0, 6.0, 6.0, 5.0]),
+                            node_last_update=torch.tensor(
+                                [
+                                    [2.0, 0.0],
+                                    [3.0, 1.0],
+                                    [6.0, 0.0],
+                                    [6.0, 1.0],
+                                    [5.0, 0.0],
+                                ]
+                            ),
                             edge_index=torch.tensor([[1], [0]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([4.0]),
+                            edge_last_update=torch.tensor([[4.0, 0.0]]),
                         ),
                     ),
                 ),

@@ -438,7 +438,14 @@ class TWCmdGenTemporalDataCollator:
                 tgt_event_src_ids,
                 tgt_event_dst_ids,
                 tgt_event_label_ids,
-                tgt_event_timestamps,
+                torch.stack(
+                    [
+                        tgt_event_timestamps,
+                        # we subtract 1 here since the target sequence is right-shfited
+                        torch.tensor(seq_step_num - 1).expand(batch_size),
+                    ],
+                    dim=1,
+                ),
             )
 
             # the current groundtruth events become the next target events
