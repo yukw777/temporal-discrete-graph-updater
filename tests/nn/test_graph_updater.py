@@ -46,10 +46,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.empty(0).long(),
                 x=torch.empty(0).long(),
-                node_last_update=torch.empty(0),
+                node_last_update=torch.empty(0, 2),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0).long(),
-                edge_last_update=torch.empty(0),
+                edge_last_update=torch.empty(0, 2),
             ),
             None,
             0,
@@ -72,10 +72,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.empty(0).long(),
                 x=torch.empty(0).long(),
-                node_last_update=torch.empty(0),
+                node_last_update=torch.empty(0, 2),
                 edge_index=torch.empty(2, 0).long(),
                 edge_attr=torch.empty(0).long(),
-                edge_last_update=torch.empty(0),
+                edge_last_update=torch.empty(0, 2),
             ),
             None,
             0,
@@ -91,10 +91,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([0, 0, 0]),
                 x=torch.randint(6, (3,)),
-                node_last_update=torch.rand(3),
+                node_last_update=torch.rand(3, 2),
                 edge_index=torch.tensor([[2], [0]]),
                 edge_attr=torch.randint(6, (1,)),
-                edge_last_update=torch.tensor([2.0]),
+                edge_last_update=torch.rand(1, 2),
             ),
             None,
             3,
@@ -117,10 +117,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([0, 0, 1, 2, 2, 3]),
                 x=torch.randint(6, (6,)),
-                node_last_update=torch.rand(6),
+                node_last_update=torch.rand(6, 2),
                 edge_index=torch.tensor([[1, 3], [0, 4]]),
                 edge_attr=torch.randint(6, (2,)),
-                edge_last_update=torch.tensor([2.0, 3.0]),
+                edge_last_update=torch.rand(2, 2),
             ),
             None,
             6,
@@ -136,10 +136,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([0, 0, 0]),
                 x=torch.randint(6, (3,)),
-                node_last_update=torch.rand(3),
+                node_last_update=torch.rand(3, 2),
                 edge_index=torch.tensor([[2], [0]]),
                 edge_attr=torch.randint(6, (1,)),
-                edge_last_update=torch.tensor([2.0]),
+                edge_last_update=torch.rand(1, 2),
             ),
             None,
             4,
@@ -155,10 +155,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([0, 0, 0]),
                 x=torch.randint(6, (3,)),
-                node_last_update=torch.rand(3),
+                node_last_update=torch.rand(3, 2),
                 edge_index=torch.tensor([[2], [0]]),
                 edge_attr=torch.randint(6, (1,)),
-                edge_last_update=torch.tensor([2.0]),
+                edge_last_update=torch.rand(1, 2),
             ),
             None,
             2,
@@ -174,10 +174,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.zeros(9).long(),
                 x=torch.randint(6, (9,)),
-                node_last_update=torch.rand(9),
+                node_last_update=torch.rand(9, 2),
                 edge_index=torch.tensor([[2, 1, 8], [0, 3, 6]]),
                 edge_attr=torch.randint(6, (3,)),
-                edge_last_update=torch.rand(3),
+                edge_last_update=torch.rand(3, 2),
             ),
             None,
             9,
@@ -193,10 +193,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.zeros(9).long(),
                 x=torch.randint(6, (9,)),
-                node_last_update=torch.rand(9),
+                node_last_update=torch.rand(9, 2),
                 edge_index=torch.tensor([[2, 1, 2, 8], [0, 3, 6, 6]]),
                 edge_attr=torch.randint(6, (4,)),
-                edge_last_update=torch.rand(4),
+                edge_last_update=torch.rand(4, 2),
             ),
             None,
             9,
@@ -219,10 +219,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([1, 1, 1, 2, 2, 3, 3, 3]),
                 x=torch.randint(6, (8,)),
-                node_last_update=torch.rand(8),
+                node_last_update=torch.rand(8, 2),
                 edge_index=torch.tensor([[0, 5, 7], [2, 6, 6]]),
                 edge_attr=torch.randint(6, (3,)),
-                edge_last_update=torch.rand(3),
+                edge_last_update=torch.rand(3, 2),
             ),
             None,
             9,
@@ -245,10 +245,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
                 x=torch.randint(6, (12,)),
-                node_last_update=torch.rand(12),
+                node_last_update=torch.rand(12, 2),
                 edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
                 edge_attr=torch.randint(6, (4,)),
-                edge_last_update=torch.rand(4),
+                edge_last_update=torch.rand(4, 2),
             ),
             None,
             12,
@@ -271,10 +271,10 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
                 x=torch.randint(6, (12,)),
-                node_last_update=torch.rand(12),
+                node_last_update=torch.rand(12, 2),
                 edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
                 edge_attr=torch.randint(6, (4,)),
-                edge_last_update=torch.rand(4),
+                edge_last_update=torch.rand(4, 2),
             ),
             {
                 "groundtruth_event_type_ids": torch.tensor(
@@ -420,11 +420,13 @@ def test_sldgu_forward(
     assert results["updated_batched_graph"].x.size() == (expected_num_node,)
     assert results["updated_batched_graph"].node_last_update.size() == (
         expected_num_node,
+        2,
     )
     assert results["updated_batched_graph"].edge_index.size() == (2, expected_num_edge)
     assert results["updated_batched_graph"].edge_attr.size() == (expected_num_edge,)
     assert results["updated_batched_graph"].edge_last_update.size() == (
         expected_num_edge,
+        2,
     )
     assert len(results["self_attn_weights"]) == len(sldgu.decoder.dec_blocks)
     for self_attn_weights in results["self_attn_weights"]:
