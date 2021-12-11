@@ -278,16 +278,16 @@ def update_batched_graph(
     batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
         batch: (num_node)
         x: (num_node, *)
-        node_last_update: (num_node)
+        node_last_update: (num_node, 2)
         edge_index: (2, num_edge)
         edge_attr: (num_edge, *)
-        edge_last_update: (num_edge)
+        edge_last_update: (num_edge, 2)
     )
     event_type_ids: (batch)
     event_src_ids: (batch)
     event_dst_ids: (batch)
     event_embeddings: (batch, *)
-    event_timestamps: (batch)
+    event_timestamps: (batch, 2)
 
     output: updated batch of graphs
     """
@@ -308,7 +308,7 @@ def update_batched_graph(
     added_node_batch = node_add_event_mask.nonzero().squeeze(-1)
     # (num_added_node)
     added_node_last_update = event_timestamps[node_add_event_mask]
-    # (num_added_node)
+    # (num_added_node, 2)
 
     # collect node delete events
     node_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
@@ -403,7 +403,7 @@ def update_batched_graph(
     added_edge_last_update = event_timestamps[edge_add_event_mask][
         delete_dup_added_edge_mask
     ]
-    # (num_added_edge)
+    # (num_added_edge, 2)
 
     # collect edge delete events
     edge_delete_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
