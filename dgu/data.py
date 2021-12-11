@@ -130,8 +130,8 @@ class TWCmdGenTemporalDataset(Dataset):
                 break
             else:
                 # set the timestamps and add them to prev_graph_events
-                for event in graph_events:
-                    event["timestamp"] = timestamp
+                for i, event in enumerate(graph_events):
+                    event["timestamp"] = [timestamp, i]
                 prev_graph_events.extend(graph_events)
         return {
             "game": game,
