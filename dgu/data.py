@@ -167,10 +167,10 @@ def empty_graph() -> Batch:
     return Batch(
         batch=torch.empty(0, dtype=torch.long),
         x=torch.empty(0, dtype=torch.long),
-        node_last_update=torch.empty(0),
+        node_last_update=torch.empty(0, 2),
         edge_index=torch.empty(2, 0, dtype=torch.long),
         edge_attr=torch.empty(0, dtype=torch.long),
-        edge_last_update=torch.empty(0),
+        edge_last_update=torch.empty(0, 2),
     )
 
 
@@ -457,17 +457,15 @@ class TWCmdGenTemporalDataCollator:
         output: Batch(
             batch: (num_node)
             x: (num_node)
-            node_last_update: (num_node)
+            node_last_update: (num_node, 2)
             edge_index: (2, num_edge)
             edge_attr: (num_edge)
-            edge_last_update: (num_edge)
+            edge_last_update: (num_edge, 2)
         )
         """
-        batch_prev_event_seq: List[List[Dict[str, Any]]] = []
-        # initialize empty batch graph and memory
+        batch_prev_event_seq = [step["prev_graph_events"] for step in batch]
+        # initialize empty batched graph
         batched_graph = empty_graph()
-        for step in batch:
-            batch_prev_event_seq.append(step["prev_graph_events"])
 
         max_prev_event_seq_len = max(
             len(event_seq) for event_seq in batch_prev_event_seq
@@ -478,7 +476,7 @@ class TWCmdGenTemporalDataCollator:
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
             batch_event_label_ids: List[int] = []
-            batch_event_timestamps: List[float] = []
+            batch_event_timestamps: List[List[float]] = []
             for event_seq in batch_prev_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
@@ -489,13 +487,13 @@ class TWCmdGenTemporalDataCollator:
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
                     batch_event_label_ids.append(self.label_id_map[event["label"]])
-                    batch_event_timestamps.append(float(event["timestamp"]))
+                    batch_event_timestamps.append(list(map(float, event["timestamp"])))
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
                     batch_event_label_ids.append(self.label_id_map[""])
-                    batch_event_timestamps.append(0.0)
+                    batch_event_timestamps.append([0.0, 0.0])
             batched_graph = update_batched_graph(
                 batched_graph,
                 torch.tensor(batch_event_type_ids),
