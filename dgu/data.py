@@ -26,7 +26,7 @@ from dgu.constants import (
 from dgu.graph import process_triplet_cmd
 
 
-class TWCmdGenTemporalDataset(Dataset):
+class TWCmdGenGraphEventDataset(Dataset):
     """
     TextWorld Command Generation temporal graph event dataset.
 
@@ -149,7 +149,7 @@ class TWCmdGenTemporalDataset(Dataset):
         return len(self.idx_map)
 
     def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalDataset):
+        if not isinstance(o, TWCmdGenGraphEventDataset):
             return False
         return (
             self.walkthrough_examples == o.walkthrough_examples
@@ -167,15 +167,15 @@ def empty_graph() -> Batch:
     return Batch(
         batch=torch.empty(0, dtype=torch.long),
         x=torch.empty(0, dtype=torch.long),
-        node_last_update=torch.empty(0, 2),
+        node_last_update=torch.empty(0, 2, dtype=torch.long),
         edge_index=torch.empty(2, 0, dtype=torch.long),
         edge_attr=torch.empty(0, dtype=torch.long),
-        edge_last_update=torch.empty(0, 2),
+        edge_last_update=torch.empty(0, 2, dtype=torch.long),
     )
 
 
 @dataclass(frozen=True)
-class TWCmdGenTemporalStepInput:
+class TWCmdGenGraphEventStepInput:
     obs_word_ids: torch.Tensor = field(default_factory=empty_tensor)
     obs_mask: torch.Tensor = field(default_factory=empty_tensor)
     prev_action_word_ids: torch.Tensor = field(default_factory=empty_tensor)
@@ -183,23 +183,23 @@ class TWCmdGenTemporalStepInput:
     timestamps: torch.Tensor = field(default_factory=empty_tensor)
 
     def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalStepInput):
+        if not isinstance(o, TWCmdGenGraphEventStepInput):
             return False
         return all(getattr(self, f).equal(getattr(o, f)) for f in self.__annotations__)
 
-    def to(self, *args, **kwargs) -> "TWCmdGenTemporalStepInput":
-        return TWCmdGenTemporalStepInput(
+    def to(self, *args, **kwargs) -> "TWCmdGenGraphEventStepInput":
+        return TWCmdGenGraphEventStepInput(
             **{f: getattr(self, f).to(*args, **kwargs) for f in self.__annotations__}
         )
 
-    def pin_memory(self) -> "TWCmdGenTemporalStepInput":
-        return TWCmdGenTemporalStepInput(
+    def pin_memory(self) -> "TWCmdGenGraphEventStepInput":
+        return TWCmdGenGraphEventStepInput(
             **{f: getattr(self, f).pin_memory() for f in self.__annotations__}
         )
 
 
 @dataclass(frozen=True)
-class TWCmdGenTemporalGraphicalInput:
+class TWCmdGenGraphEventGraphicalInput:
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
@@ -215,7 +215,7 @@ class TWCmdGenTemporalGraphicalInput:
     prev_batched_graph: Batch = field(default_factory=empty_graph)
 
     def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalGraphicalInput):
+        if not isinstance(o, TWCmdGenGraphEventGraphicalInput):
             return False
         return all(
             getattr(self, f).equal(getattr(o, f))
@@ -236,27 +236,27 @@ class TWCmdGenTemporalGraphicalInput:
             )
         )
 
-    def to(self, *args, **kwargs) -> "TWCmdGenTemporalGraphicalInput":
-        return TWCmdGenTemporalGraphicalInput(
+    def to(self, *args, **kwargs) -> "TWCmdGenGraphEventGraphicalInput":
+        return TWCmdGenGraphEventGraphicalInput(
             **{f: getattr(self, f).to(*args, **kwargs) for f in self.__annotations__}
         )
 
-    def pin_memory(self) -> "TWCmdGenTemporalGraphicalInput":
-        return TWCmdGenTemporalGraphicalInput(
+    def pin_memory(self) -> "TWCmdGenGraphEventGraphicalInput":
+        return TWCmdGenGraphEventGraphicalInput(
             **{f: getattr(self, f).pin_memory() for f in self.__annotations__}
         )
 
 
 @dataclass(frozen=True)
-class TWCmdGenTemporalBatch:
+class TWCmdGenGraphEventBatch:
     ids: Tuple[Tuple[str, int, int], ...]
-    step_input: TWCmdGenTemporalStepInput
+    step_input: TWCmdGenGraphEventStepInput
     initial_batched_graph: Batch
-    graphical_input_seq: Tuple[TWCmdGenTemporalGraphicalInput, ...]
+    graphical_input_seq: Tuple[TWCmdGenGraphEventGraphicalInput, ...]
     graph_commands: Tuple[Tuple[str, ...], ...]
 
     def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalBatch):
+        if not isinstance(o, TWCmdGenGraphEventBatch):
             return False
         return all(
             getattr(self, f) == getattr(o, f)
@@ -279,8 +279,8 @@ class TWCmdGenTemporalBatch:
             )
         )
 
-    def to(self, *args, **kwargs) -> "TWCmdGenTemporalBatch":
-        return TWCmdGenTemporalBatch(
+    def to(self, *args, **kwargs) -> "TWCmdGenGraphEventBatch":
+        return TWCmdGenGraphEventBatch(
             ids=self.ids,
             step_input=self.step_input.to(*args, **kwargs),
             initial_batched_graph=self.initial_batched_graph.to(*args, **kwargs),
@@ -290,8 +290,8 @@ class TWCmdGenTemporalBatch:
             graph_commands=self.graph_commands,
         )
 
-    def pin_memory(self) -> "TWCmdGenTemporalBatch":
-        return TWCmdGenTemporalBatch(
+    def pin_memory(self) -> "TWCmdGenGraphEventBatch":
+        return TWCmdGenGraphEventBatch(
             ids=self.ids,
             step_input=self.step_input.pin_memory(),
             initial_batched_graph=self.initial_batched_graph.pin_memory(),
@@ -302,7 +302,7 @@ class TWCmdGenTemporalBatch:
         )
 
 
-class TWCmdGenTemporalDataCollator:
+class TWCmdGenGraphEventDataCollator:
     def __init__(
         self,
         preprocessor: SpacyPreprocessor,
@@ -316,11 +316,11 @@ class TWCmdGenTemporalDataCollator:
         obs: List[str],
         prev_actions: List[str],
         timestamps: List[int],
-    ) -> TWCmdGenTemporalStepInput:
+    ) -> TWCmdGenGraphEventStepInput:
         """
         Collate step data such as observation, previous action and timestamp.
 
-        output: TWCmdGenTemporalStepInput(
+        output: TWCmdGenGraphEventStepInput(
             obs_word_ids: (batch, obs_len),
             obs_mask: (batch, obs_len),
             prev_action_word_ids: (batch, prev_action_len),
@@ -337,21 +337,21 @@ class TWCmdGenTemporalDataCollator:
         prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
             [prev_action.split() for prev_action in prev_actions]
         )
-        return TWCmdGenTemporalStepInput(
+        return TWCmdGenGraphEventStepInput(
             obs_word_ids=obs_word_ids,
             obs_mask=obs_mask,
             prev_action_word_ids=prev_action_word_ids,
             prev_action_mask=prev_action_mask,
-            timestamps=torch.tensor(timestamps, dtype=torch.float),
+            timestamps=torch.tensor(timestamps),
         )
 
     def collate_graphical_input_seq(
         self, batch: List[Dict[str, Any]], initial_batched_graph: Batch
-    ) -> Tuple[TWCmdGenTemporalGraphicalInput, ...]:
+    ) -> Tuple[TWCmdGenGraphEventGraphicalInput, ...]:
         """
         Collate the graphical input sequence of the given batch.
 
-        output: len([TWCmdGenTemporalGraphicalInput(
+        output: len([TWCmdGenGraphEventGraphicalInput(
             tgt_event_type_ids: (batch),
             tgt_event_src_ids: (batch),
             tgt_event_dst_ids: (batch),
@@ -382,12 +382,10 @@ class TWCmdGenTemporalDataCollator:
         tgt_event_src_ids = torch.tensor([0] * batch_size)
         tgt_event_dst_ids = torch.tensor([0] * batch_size)
         tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
-        tgt_event_timestamps = torch.tensor(
-            [float(step["timestamp"]) for step in batch]
-        )
+        tgt_event_timestamps = torch.tensor([step["timestamp"] for step in batch])
 
         prev_batched_graph = initial_batched_graph
-        collated: List[TWCmdGenTemporalGraphicalInput] = []
+        collated: List[TWCmdGenGraphEventGraphicalInput] = []
         for seq_step_num in range(max_event_seq_len):
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
@@ -414,7 +412,7 @@ class TWCmdGenTemporalDataCollator:
             groundtruth_event_label_ids = torch.tensor(batch_event_label_ids)
             masks = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
             collated.append(
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=tgt_event_type_ids,
                     tgt_event_src_ids=tgt_event_src_ids,
                     tgt_event_dst_ids=tgt_event_dst_ids,
@@ -483,7 +481,7 @@ class TWCmdGenTemporalDataCollator:
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
             batch_event_label_ids: List[int] = []
-            batch_event_timestamps: List[List[float]] = []
+            batch_event_timestamps: List[List[int]] = []
             for event_seq in batch_prev_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
@@ -494,13 +492,13 @@ class TWCmdGenTemporalDataCollator:
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
                     batch_event_label_ids.append(self.label_id_map[event["label"]])
-                    batch_event_timestamps.append(list(map(float, event["timestamp"])))
+                    batch_event_timestamps.append(event["timestamp"])
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
                     batch_event_label_ids.append(self.label_id_map[""])
-                    batch_event_timestamps.append([0.0, 0.0])
+                    batch_event_timestamps.append([0, 0])
             batched_graph = update_batched_graph(
                 batched_graph,
                 torch.tensor(batch_event_type_ids),
@@ -512,17 +510,17 @@ class TWCmdGenTemporalDataCollator:
 
         return batched_graph
 
-    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenTemporalBatch:
+    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenGraphEventBatch:
         """
         Each batch has a batch of IDs, batched textual input, batched graphical
         input, batched previous graph events and ground-truth graph commands.
 
-        TWCmdGenTemporalBatch(
+        TWCmdGenGraphEventBatch(
             ids=(
                 (game, walkthrough_step, random_step),
                 ...
             ),
-            step_input=TWCmdGenTemporalStepInput(
+            step_input=TWCmdGenGraphEventStepInput(
                 obs_word_ids: (batch, obs_len),
                 obs_mask: (batch, obs_len),
                 prev_action_word_ids: (batch, prev_action_len),
@@ -530,7 +528,7 @@ class TWCmdGenTemporalDataCollator:
                 timestamps: (batch)
             ),
             graphical_input_seq=(
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids: (batch),
                     tgt_event_src_ids: (batch),
                     tgt_event_dst_ids: (batch),
@@ -556,7 +554,7 @@ class TWCmdGenTemporalDataCollator:
         )
         """
         initial_batched_graph = self.collate_prev_graph_events(batch)
-        return TWCmdGenTemporalBatch(
+        return TWCmdGenGraphEventBatch(
             ids=tuple(
                 (
                     str(step["game"]),
@@ -578,7 +576,7 @@ class TWCmdGenTemporalDataCollator:
         )
 
 
-class TWCmdGenTemporalDataModule(pl.LightningDataModule):
+class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
     def __init__(
         self,
         train_path: str,
@@ -617,17 +615,17 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage is None:
-            self.train = TWCmdGenTemporalDataset(self.train_path)
-            self.valid = TWCmdGenTemporalDataset(self.val_path)
+            self.train = TWCmdGenGraphEventDataset(self.train_path)
+            self.valid = TWCmdGenGraphEventDataset(self.val_path)
 
         if stage == "test" or stage is None:
-            self.test = TWCmdGenTemporalDataset(self.test_path)
+            self.test = TWCmdGenGraphEventDataset(self.test_path)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train,
             batch_size=self.train_batch_size,
-            collate_fn=TWCmdGenTemporalDataCollator(
+            collate_fn=TWCmdGenGraphEventDataCollator(
                 self.preprocessor, self.label_id_map
             ),
             shuffle=True,
@@ -639,7 +637,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.valid,
             batch_size=self.val_batch_size,
-            collate_fn=TWCmdGenTemporalDataCollator(
+            collate_fn=TWCmdGenGraphEventDataCollator(
                 self.preprocessor, self.label_id_map
             ),
             pin_memory=True,
@@ -650,7 +648,7 @@ class TWCmdGenTemporalDataModule(pl.LightningDataModule):
         return DataLoader(
             self.test,
             batch_size=self.test_batch_size,
-            collate_fn=TWCmdGenTemporalDataCollator(
+            collate_fn=TWCmdGenGraphEventDataCollator(
                 self.preprocessor, self.label_id_map
             ),
             pin_memory=True,
