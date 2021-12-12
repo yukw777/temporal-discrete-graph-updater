@@ -1239,45 +1239,22 @@ def test_update_edge_index(
 
 
 @pytest.mark.parametrize(
-    "channels,max_len,batch_size,seq_len",
+    "channels,max_len,position_size",
     [
-        (4, 10, 5, 6),
-        (10, 12, 3, 10),
+        (4, 10, ()),
+        (4, 10, (5,)),
+        (4, 10, (5, 6)),
+        (10, 12, (3, 10)),
     ],
 )
-def test_pos_encoder(channels, max_len, batch_size, seq_len):
+def test_pos_encoder(channels, max_len, position_size):
     pe = PositionalEncoder(channels, max_len)
-    encoded = pe(
-        torch.zeros(
-            batch_size,
-            seq_len,
-            channels,
-        )
-    )
-    assert encoded.size() == (batch_size, seq_len, channels)
+    positions = torch.randint(max_len, position_size)
+    encoding = pe(positions)
+    assert encoding.size() == position_size + (channels,)
     # sanity check, make sure the values of the first dimension of both halves
-    # of the channels is sin(0, 1, 2, ...) and cos(0, 1, 2, ...)
-    for i in range(batch_size):
-        assert encoded[i, :, 0].equal(torch.sin(torch.arange(seq_len).float()))
-        assert encoded[i, :, channels // 2].equal(
-            torch.cos(torch.arange(seq_len).float())
-        )
-
-
-@pytest.mark.parametrize(
-    "channels,max_len,batch_size,step",
-    [
-        (4, 10, 5, 6),
-        (10, 12, 3, 10),
-    ],
-)
-def test_pos_encoder_step(channels, max_len, batch_size, step):
-    pe = PositionalEncoder(channels, max_len)
-    encoded = pe(torch.zeros(batch_size, channels), step=step)
-    assert encoded.size() == (batch_size, channels)
-    # sanity check, make sure the values of the first dimension of both halves
-    # of the channels is sin(0, 1, 2, ...) and cos(0, 1, 2, ...)
-    assert encoded[:, 0].equal(torch.sin(torch.tensor([step] * batch_size).float()))
-    assert encoded[:, channels // 2].equal(
-        torch.cos(torch.tensor([step] * batch_size).float())
-    )
+    # of the channels is sin(...) and cos(...)
+    flat_encoding = encoding.view(-1, channels)
+    flat_positions = positions.flatten()
+    assert flat_encoding[:, 0].equal(torch.sin(flat_positions.float()))
+    assert flat_encoding[:, channels // 2].equal(torch.cos(flat_positions.float()))

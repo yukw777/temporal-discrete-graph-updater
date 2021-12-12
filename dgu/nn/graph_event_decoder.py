@@ -612,11 +612,12 @@ class TransformerGraphEventDecoder(nn.Module):
         """
         # linearly resize the input input event embedding and
         # add the positional encodings to it
-        pos_encoded_input = self.pos_encoder(
-            self.input_linear(input_event_embedding),
-            prev_input_event_emb_seq.size(2)
+        pos_encoded_input = self.input_linear(input_event_embedding) + self.pos_encoder(
+            torch.tensor(
+                prev_input_event_emb_seq.size(2), device=input_event_embedding.device
+            )
             if prev_input_event_emb_seq is not None
-            else 0,
+            else torch.tensor(0, device=input_event_embedding.device),
         )
         # (batch, hidden_dim)
 

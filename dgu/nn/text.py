@@ -103,8 +103,11 @@ class TextEncoderBlock(nn.Module):
         mask: (batch, seq_len)
         output: (batch, seq_len, hidden_dim)
         """
-        # add the positional encodings
-        output = self.pos_encoder(input)
+        # add the positional encodings using broadcast
+        output = input + self.pos_encoder(
+            torch.arange(input.size(1), device=input.device)
+        )
+        # (batch, seq_len, hidden_dim)
 
         # conv layers
         output = self.conv_layers(output)
