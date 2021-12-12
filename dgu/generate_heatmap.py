@@ -71,7 +71,7 @@ def main(
             )
             node_id_offsets_list.append(
                 calculate_node_id_offsets(
-                    batch.initial_batched_graph.num_graphs,
+                    results["decoded_event_type_ids"].size(0),
                     results["updated_batched_graph"].batch,
                 )
                 # (batch)

@@ -7,8 +7,8 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
 
 
 @pytest.mark.parametrize(
-    "time_enc_dim,event_embedding_dim,output_dim,"
-    "transformer_conv_num_block,transformer_conv_num_heads,batched_graph,num_node",
+    "time_enc_dim,event_embedding_dim,output_dim,transformer_conv_num_block,"
+    "transformer_conv_num_heads,batched_graph,num_node,batch",
     [
         (
             16,
@@ -25,6 +25,7 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
                 edge_last_update=torch.empty(0, 2),
             ),
             11,
+            4,
         ),
         (
             16,
@@ -41,6 +42,7 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
                 edge_last_update=torch.rand(3, 2),
             ),
             11,
+            6,
         ),
         (
             32,
@@ -57,6 +59,7 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
                 edge_last_update=torch.rand(3, 2),
             ),
             11,
+            5,
         ),
     ],
 )
@@ -70,6 +73,7 @@ def test_tgn_forward(
     transformer_conv_num_heads,
     batched_graph,
     num_node,
+    batch,
 ):
     if dropout is None:
         tgn = TemporalGraphNetwork(
@@ -88,9 +92,7 @@ def test_tgn_forward(
             transformer_conv_num_heads,
             dropout=dropout,
         )
-    node_embeddings = tgn(
-        torch.randint(10, (batched_graph.num_graphs, 2)).float(), batched_graph
-    )
+    node_embeddings = tgn(torch.randint(10, (batch, 2)).float(), batched_graph)
     assert node_embeddings.size() == (num_node, output_dim)
 
 
