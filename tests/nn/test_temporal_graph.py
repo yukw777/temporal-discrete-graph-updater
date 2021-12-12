@@ -19,10 +19,26 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
             Batch(
                 batch=torch.tensor([0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]),
                 x=torch.rand(11, 20),
-                node_last_update=torch.rand(11),
+                node_last_update=torch.rand(11, 2),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 20),
+                edge_last_update=torch.empty(0, 2),
+            ),
+            11,
+        ),
+        (
+            16,
+            20,
+            12,
+            1,
+            1,
+            Batch(
+                batch=torch.tensor([0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]),
+                x=torch.rand(11, 20),
+                node_last_update=torch.rand(11, 2),
                 edge_index=torch.tensor([[5, 8, 10], [6, 9, 9]]),
                 edge_attr=torch.rand(3, 20),
-                edge_last_update=torch.rand(3),
+                edge_last_update=torch.rand(3, 2),
             ),
             11,
         ),
@@ -35,10 +51,10 @@ from dgu.nn.temporal_graph import TemporalGraphNetwork, TransformerConvStack
             Batch(
                 batch=torch.tensor([0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]),
                 x=torch.rand(11, 48),
-                node_last_update=torch.rand(11),
+                node_last_update=torch.rand(11, 2),
                 edge_index=torch.tensor([[5, 8, 10], [6, 9, 9]]),
                 edge_attr=torch.rand(3, 48),
-                edge_last_update=torch.rand(3),
+                edge_last_update=torch.rand(3, 2),
             ),
             11,
         ),
@@ -73,7 +89,7 @@ def test_tgn_forward(
             dropout=dropout,
         )
     node_embeddings = tgn(
-        torch.randint(10, (batched_graph.num_graphs,)).float(), batched_graph
+        torch.randint(10, (batched_graph.num_graphs, 2)).float(), batched_graph
     )
     assert node_embeddings.size() == (num_node, output_dim)
 

@@ -329,13 +329,27 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # (batch, prev_action_len, hidden_dim)
 
         # update the batched graph
+        # each timestamp is a 2-dimensional vector (game step, graph event step)
+        event_timestamps = torch.stack(
+            [
+                timestamps,
+                torch.tensor(
+                    prev_input_event_emb_seq.size(2)
+                    if prev_input_event_emb_seq is not None
+                    else 0,
+                    device=timestamps.device,
+                ).expand(timestamps.size(0)),
+            ],
+            dim=1,
+        )
+        # (batch, 2)
         updated_batched_graph = update_batched_graph(
             prev_batched_graph,
             event_type_ids,
             event_src_ids,
             event_dst_ids,
             event_label_ids,
-            timestamps,
+            event_timestamps,
         )
         if updated_batched_graph.num_nodes == 0:
             node_embeddings = torch.zeros(
@@ -346,7 +360,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # (0, hidden_dim)
         else:
             node_embeddings = self.tgn(
-                timestamps,
+                event_timestamps,
                 Batch(
                     batch=updated_batched_graph.batch,
                     x=self.label_embeddings(updated_batched_graph.x),
