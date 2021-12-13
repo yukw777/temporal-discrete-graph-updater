@@ -447,7 +447,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         if groundtruth_event is not None:
             autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
                 autoregressive_emb,
-                event_src_ids,
+                groundtruth_event["groundtruth_event_src_ids"],
                 batch_node_embeddings,
                 batch_node_mask,
                 groundtruth_event["groundtruth_event_src_mask"],
@@ -473,7 +473,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         if groundtruth_event is not None:
             autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
                 autoregressive_emb,
-                event_dst_ids,
+                groundtruth_event["groundtruth_event_dst_ids"],
                 batch_node_embeddings,
                 batch_node_mask,
                 groundtruth_event["groundtruth_event_dst_mask"],
