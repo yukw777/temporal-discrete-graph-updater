@@ -286,7 +286,7 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
                     ]
                 ),
                 "groundtruth_event_mask": torch.tensor([True, True, True, False]),
-                "groundtruth_event_src_ids": torch.tensor([0, 5, 0, 1]),
+                "groundtruth_event_src_ids": torch.tensor([0, 2, 0, 1]),
                 "groundtruth_event_src_mask": torch.tensor([True, True, False, False]),
                 "groundtruth_event_dst_ids": torch.tensor([1, 0, 0, 0]),
                 "groundtruth_event_dst_mask": torch.tensor([True, False, False, False]),
