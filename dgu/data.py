@@ -138,6 +138,7 @@ class TWCmdGenGraphEventFreeRunDataset(Dataset):
             "timestamp": timestamp,
             "target_commands": [graph commands, ...],
             "graph_events": [graph events, ...],
+            "previous_graph_seen": [(src, dst, rel), ...],
         },
         ...
     ]
@@ -151,6 +152,7 @@ class TWCmdGenGraphEventFreeRunDataset(Dataset):
         self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
             list
         )
+        self.graph_index = json.loads(raw_data["graph_index"])
 
         for example in raw_data["examples"]:
             example["target_commands"] = sort_target_commands(
@@ -188,6 +190,17 @@ class TWCmdGenGraphEventFreeRunDataset(Dataset):
                     "timestamp": timestamp,
                     "target_commands": example["target_commands"],
                     "graph_events": graph_events,
+                    "previous_graph_seen": [
+                        f"{self.graph_index['entities'][str(src)]} , "
+                        f"{self.graph_index['entities'][str(dst)]} , "
+                        f"{self.graph_index['relation_types'][str(rel)]}"
+                        for src, dst, rel in [
+                            self.graph_index["relations"][str(relation_id)]
+                            for relation_id in self.graph_index["graphs"][
+                                str(example["previous_graph_seen"])
+                            ]
+                        ]
+                    ],
                 }
             )
         return data
@@ -202,6 +215,7 @@ class TWCmdGenGraphEventFreeRunDataset(Dataset):
             self.walkthrough_examples == o.walkthrough_examples
             and self.walkthrough_example_ids == o.walkthrough_example_ids
             and self.random_examples == o.random_examples
+            and self.graph_index == o.graph_index
         )
 
 
