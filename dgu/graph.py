@@ -3,10 +3,11 @@ import networkx as nx
 from dataclasses import dataclass
 from typing import Dict, List, Any
 
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Batch
 from torch_geometric.utils import to_networkx
 
 from dgu.constants import IS
+from dgu.nn.utils import calculate_node_id_offsets
 
 
 @dataclass(frozen=True)
@@ -208,3 +209,29 @@ def data_to_networkx(data: Data, labels: List[str]) -> nx.DiGraph:
     for _, _, edge_data in nx_graph.edges.data():
         edge_data["label"] = labels[edge_data["edge_attr"]]
     return nx_graph
+
+
+def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
+    """
+    Split the given batched graph into a list of Data. We have to implement our own
+    b/c Batch.to_data_list() doesn't handle batched graphs that have not been created
+    using Batch.from_data_list(), which is what we have when we use
+    update_batched_graph().
+    """
+    data_list: List[Data] = []
+    node_id_offsets = calculate_node_id_offsets(batch_size, batch.batch)
+    for i in range(batch_size):
+        # mask for all the nodes that belong to the i'th subgraph
+        node_mask = batch.batch == i
+        # mask for all the edges that belong to the i'th subgraph
+        # use the source node
+        edge_mask = batch.batch[batch.edge_index[0]] == i
+        subgraph = Data(
+            x=batch.x[node_mask],
+            edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
+            edge_attr=batch.edge_attr[edge_mask],
+            node_last_update=batch.node_last_update[node_mask],
+            edge_last_update=batch.edge_last_update[edge_mask],
+        )
+        data_list.append(subgraph)
+    return data_list

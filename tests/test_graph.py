@@ -1,9 +1,16 @@
 import pytest
 import torch
 
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Batch
 
-from dgu.graph import Node, IsDstNode, ExitNode, process_triplet_cmd, data_to_networkx
+from dgu.graph import (
+    Node,
+    IsDstNode,
+    ExitNode,
+    process_triplet_cmd,
+    data_to_networkx,
+    batch_to_data_list,
+)
 
 from utils import EqualityDiGraph
 
@@ -232,3 +239,149 @@ def test_data_to_networkx(data, labels, expected_node_attrs, expected_edge_attrs
     nx_graph = data_to_networkx(data, labels)
     assert dict(nx_graph.nodes.data()) == expected_node_attrs
     assert list(nx_graph.edges.data()) == expected_edge_attrs
+
+
+@pytest.mark.parametrize(
+    "batch,batch_size,expected_list",
+    [
+        (
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, dtype=torch.long),
+                node_last_update=torch.empty(0, 2, dtype=torch.long),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0, 2, dtype=torch.long),
+            ),
+            3,
+            [
+                Data(
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+            ],
+        ),
+        (
+            Batch(
+                batch=torch.tensor([2, 2, 3, 3]),
+                x=torch.tensor([3, 4, 5, 6]),
+                node_last_update=torch.tensor([[1, 2], [2, 0], [3, 7], [4, 1]]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=torch.tensor([2]),
+                edge_last_update=torch.tensor([[4, 2]]),
+            ),
+            4,
+            [
+                Data(
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, dtype=torch.long),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.tensor([3, 4]),
+                    node_last_update=torch.tensor([[1, 2], [2, 0]]),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.tensor([5, 6]),
+                    node_last_update=torch.tensor([[3, 7], [4, 1]]),
+                    edge_index=torch.tensor([[1], [0]]),
+                    edge_attr=torch.tensor([2]),
+                    edge_last_update=torch.tensor([[4, 2]]),
+                ),
+            ],
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 3]),
+                x=torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+                node_last_update=torch.tensor(
+                    [
+                        [0, 2],
+                        [1, 0],
+                        [2, 3],
+                        [3, 1],
+                        [4, 6],
+                        [5, 9],
+                        [6, 1],
+                        [7, 3],
+                        [8, 2],
+                        [1, 2],
+                    ]
+                ),
+                edge_index=torch.tensor([[2, 5, 8], [0, 3, 6]]),
+                edge_attr=torch.tensor([1, 2, 3]),
+                edge_last_update=torch.tensor([[3, 2], [2, 2], [2, 5]]),
+            ),
+            4,
+            [
+                Data(
+                    x=torch.tensor([1, 2, 3]),
+                    node_last_update=torch.tensor([[0, 2], [1, 0], [2, 3]]),
+                    edge_index=torch.tensor([[2], [0]]),
+                    edge_attr=torch.tensor([1]),
+                    edge_last_update=torch.tensor([[3, 2]]),
+                ),
+                Data(
+                    x=torch.tensor([4, 5, 6]),
+                    node_last_update=torch.tensor([[3, 1], [4, 6], [5, 9]]),
+                    edge_index=torch.tensor([[2], [0]]),
+                    edge_attr=torch.tensor([2]),
+                    edge_last_update=torch.tensor([[2, 2]]),
+                ),
+                Data(
+                    x=torch.tensor([7, 8, 9]),
+                    node_last_update=torch.tensor([[6, 1], [7, 3], [8, 2]]),
+                    edge_index=torch.tensor([[2], [0]]),
+                    edge_attr=torch.tensor([3]),
+                    edge_last_update=torch.tensor([[2, 5]]),
+                ),
+                Data(
+                    batch=torch.tensor([3]),
+                    x=torch.tensor([10]),
+                    node_last_update=torch.tensor([[1, 2]]),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, dtype=torch.long),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+            ],
+        ),
+    ],
+)
+def test_batch_to_data_list(batch, batch_size, expected_list):
+    data_list = batch_to_data_list(batch, batch_size)
+    assert len(data_list) == len(expected_list)
+    for data, expected in zip(data_list, expected_list):
+        assert data.x.equal(expected.x)
+        assert data.node_last_update.equal(expected.node_last_update)
+        assert data.edge_index.equal(expected.edge_index)
+        assert data.edge_attr.equal(expected.edge_attr)
+        assert data.edge_last_update.equal(expected.edge_last_update)
