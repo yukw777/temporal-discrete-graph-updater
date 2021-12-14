@@ -249,3 +249,22 @@ def networkx_to_rdf(graph: nx.DiGraph) -> Set[str]:
         )
 
     return rdfs
+
+
+def update_rdf_graph(rdfs: Set[str], graph_cmds: List[str]) -> Set[str]:
+    """
+    Update the given RDF triple graph using the given graph commands.
+
+    We remove duplicate graph commands while preserving order.
+
+    Since Python 3.7, dict is guaranteed to keep insertion order.
+    """
+    graph_cmds = list(dict.fromkeys(graph_cmds))
+    for cmd in graph_cmds:
+        verb, src, dst, relation = cmd.split(" , ")
+        rdf = " , ".join([src, dst, relation])
+        if verb == "add" and rdf not in rdfs:
+            rdfs.add(rdf)
+        elif verb == "delete" and rdf in rdfs:
+            rdfs.remove(rdf)
+    return rdfs

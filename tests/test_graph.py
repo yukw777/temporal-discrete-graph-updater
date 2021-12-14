@@ -12,6 +12,7 @@ from dgu.graph import (
     data_to_networkx,
     batch_to_data_list,
     networkx_to_rdf,
+    update_rdf_graph,
 )
 
 from utils import EqualityDiGraph
@@ -414,3 +415,38 @@ def test_networkx_to_rdf(node_attrs, edge_attrs, expected):
     graph.add_nodes_from(node_attrs)
     graph.add_edges_from(edge_attrs)
     assert networkx_to_rdf(graph) == expected
+
+
+@pytest.mark.parametrize(
+    "rdfs,graph_cmds,expected",
+    [
+        (
+            set(),
+            ["add , player , living room , at", "add , exit , living room , east_of"],
+            {"player , living room , at", "exit , living room , east_of"},
+        ),
+        (
+            {"player , living room , at", "exit , living room , east_of"},
+            [
+                "delete , player , living room , at",
+                "delete , exit , living room , east_of",
+            ],
+            set(),
+        ),
+        (
+            set(),
+            ["add , player , living room , at", "add , player , living room , at"],
+            {"player , living room , at"},
+        ),
+        (
+            {"player , living room , at", "exit , living room , east_of"},
+            [
+                "delete , exit , living room , east_of",
+                "delete , exit , living room , east_of",
+            ],
+            {"player , living room , at"},
+        ),
+    ],
+)
+def test_update_rdf_graph(rdfs, graph_cmds, expected):
+    assert update_rdf_graph(rdfs, graph_cmds) == expected
