@@ -1,7 +1,7 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 
 from torch_geometric.data import Data, Batch
 from torch_geometric.utils import to_networkx
@@ -235,3 +235,17 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
         )
         data_list.append(subgraph)
     return data_list
+
+
+def networkx_to_rdf(graph: nx.DiGraph) -> Set[str]:
+    """
+    Turn the given networkx graph into a set of RDF triples.
+    """
+    rdfs: Set[str] = set()
+    for src, dst, edge_data in graph.edges.data():
+        rdfs.add(
+            f"{graph.nodes[src]['label']} , {graph.nodes[dst]['label']} ,"
+            f" {'_'.join(edge_data['label'].split())}"
+        )
+
+    return rdfs

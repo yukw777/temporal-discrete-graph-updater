@@ -1,5 +1,6 @@
 import pytest
 import torch
+import networkx as nx
 
 from torch_geometric.data import Data, Batch
 
@@ -10,6 +11,7 @@ from dgu.graph import (
     process_triplet_cmd,
     data_to_networkx,
     batch_to_data_list,
+    networkx_to_rdf,
 )
 
 from utils import EqualityDiGraph
@@ -385,3 +387,30 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
         assert data.edge_index.equal(expected.edge_index)
         assert data.edge_attr.equal(expected.edge_attr)
         assert data.edge_last_update.equal(expected.edge_last_update)
+
+
+@pytest.mark.parametrize(
+    "node_attrs,edge_attrs,expected",
+    [
+        ([], [], set()),
+        (
+            [(0, {"label": "player"}), (1, {"label": "living room"})],
+            [(0, 1, {"label": "at"})],
+            {"player , living room , at"},
+        ),
+        (
+            [
+                (0, {"label": "player"}),
+                (1, {"label": "living room"}),
+                (2, {"label": "exit"}),
+            ],
+            [(0, 1, {"label": "at"}), (2, 1, {"label": "west of"})],
+            {"player , living room , at", "exit , living room , west_of"},
+        ),
+    ],
+)
+def test_networkx_to_rdf(node_attrs, edge_attrs, expected):
+    graph = nx.DiGraph()
+    graph.add_nodes_from(node_attrs)
+    graph.add_edges_from(edge_attrs)
+    assert networkx_to_rdf(graph) == expected
