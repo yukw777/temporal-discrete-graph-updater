@@ -1,9 +1,13 @@
 import networkx as nx
 
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
+
+from torch_geometric.data import Data, Batch
+from torch_geometric.utils import to_networkx
 
 from dgu.constants import IS
+from dgu.nn.utils import calculate_node_id_offsets
 
 
 @dataclass(frozen=True)
@@ -185,3 +189,82 @@ def process_triplet_cmd(
             graph, src_label, rel_label.replace("_", " "), dst_label
         )
     raise ValueError(f"Unknown command {cmd}")
+
+
+def data_to_networkx(data: Data, labels: List[str]) -> nx.DiGraph:
+    """
+    Turn torch_geometric.Data into a networkx graph. Note that there is a bug
+    in to_networkx() where it turns an attribute that is a list with one
+    element into a scalar, so you do need more than one node and edge for this
+    to work properly. This is OK, b/c we use this to compare and a render final
+    graph of a game step.
+    """
+    nx_graph = to_networkx(
+        data,
+        node_attrs=["x", "node_last_update"],
+        edge_attrs=["edge_attr", "edge_last_update"],
+    )
+    for _, node_data in nx_graph.nodes.data():
+        node_data["label"] = labels[node_data["x"]]
+    for _, _, edge_data in nx_graph.edges.data():
+        edge_data["label"] = labels[edge_data["edge_attr"]]
+    return nx_graph
+
+
+def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
+    """
+    Split the given batched graph into a list of Data. We have to implement our own
+    b/c Batch.to_data_list() doesn't handle batched graphs that have not been created
+    using Batch.from_data_list(), which is what we have when we use
+    update_batched_graph().
+    """
+    data_list: List[Data] = []
+    node_id_offsets = calculate_node_id_offsets(batch_size, batch.batch)
+    for i in range(batch_size):
+        # mask for all the nodes that belong to the i'th subgraph
+        node_mask = batch.batch == i
+        # mask for all the edges that belong to the i'th subgraph
+        # use the source node
+        edge_mask = batch.batch[batch.edge_index[0]] == i
+        subgraph = Data(
+            x=batch.x[node_mask],
+            edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
+            edge_attr=batch.edge_attr[edge_mask],
+            node_last_update=batch.node_last_update[node_mask],
+            edge_last_update=batch.edge_last_update[edge_mask],
+        )
+        data_list.append(subgraph)
+    return data_list
+
+
+def networkx_to_rdf(graph: nx.DiGraph) -> Set[str]:
+    """
+    Turn the given networkx graph into a set of RDF triples.
+    """
+    rdfs: Set[str] = set()
+    for src, dst, edge_data in graph.edges.data():
+        rdfs.add(
+            f"{graph.nodes[src]['label']} , {graph.nodes[dst]['label']} ,"
+            f" {'_'.join(edge_data['label'].split())}"
+        )
+
+    return rdfs
+
+
+def update_rdf_graph(rdfs: Set[str], graph_cmds: List[str]) -> Set[str]:
+    """
+    Update the given RDF triple graph using the given graph commands.
+
+    We remove duplicate graph commands while preserving order.
+
+    Since Python 3.7, dict is guaranteed to keep insertion order.
+    """
+    graph_cmds = list(dict.fromkeys(graph_cmds))
+    for cmd in graph_cmds:
+        verb, src, dst, relation = cmd.split(" , ")
+        rdf = " , ".join([src, dst, relation])
+        if verb == "add" and rdf not in rdfs:
+            rdfs.add(rdf)
+        elif verb == "delete" and rdf in rdfs:
+            rdfs.remove(rdf)
+    return rdfs

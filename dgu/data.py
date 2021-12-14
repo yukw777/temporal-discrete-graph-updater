@@ -3,9 +3,9 @@ import pytorch_lightning as pl
 import torch
 import networkx as nx
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Iterator
 from collections import defaultdict
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, IterableDataset
 from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
@@ -58,7 +58,7 @@ class TWCmdGenGraphEventDataset(Dataset):
         self.idx_map: List[Tuple[str, int, int]] = []
 
         for example in raw_data["examples"]:
-            example["target_commands"] = self.sort_target_commands(
+            example["target_commands"] = sort_target_commands(
                 example["target_commands"]
             )
             game = example["game"]
@@ -71,45 +71,6 @@ class TWCmdGenGraphEventDataset(Dataset):
             else:
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
-
-    @staticmethod
-    def sort_target_commands(list_of_cmds: List[str]) -> List[str]:
-        """
-        Copied from the original GATA code
-        """
-        list_of_cmd_tokens = [item.split(" , ") for item in list_of_cmds]
-
-        def key_fn(
-            cmd: List[str],
-        ) -> Tuple[bool, bool, bool, bool, bool, bool, bool, bool, str, str]:
-            return (
-                cmd[0] == "add",  # add always before delete
-                cmd[1] == "player",  # relations with player always first
-                cmd[2] == "player",  # relations with player always first
-                cmd[3]
-                in {
-                    WEST_OF,
-                    EAST_OF,
-                    NORTH_OF,
-                    SOUTH_OF,
-                },  # room connections always first
-                cmd[3] in {PART_OF},  # recipe
-                cmd[3] in set(TWO_ARGS_RELATIONS),  # two args relations first
-                cmd[3] in {IS},  # one arg state relations first
-                cmd[3] in {NEEDS},  # one arg requirement relations first
-                cmd[2],
-                cmd[1],
-            )
-
-        list_of_cmds = [
-            " , ".join(item)
-            for item in sorted(list_of_cmd_tokens, key=key_fn, reverse=True)
-        ]
-        res: List[str] = []
-        for cmd in list_of_cmds:
-            if cmd not in res:
-                res.append(cmd)
-        return res
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         game, walkthrough_step, random_step = self.idx_map[idx]
@@ -157,6 +118,195 @@ class TWCmdGenGraphEventDataset(Dataset):
             and self.random_examples == o.random_examples
             and self.idx_map == o.idx_map
         )
+
+
+class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
+    """
+    TextWorld Command Generation graph event dataset for free run evaluation.
+
+    Free run means we run the model from the beginning of the game (empty graph)
+    till the end.
+
+    This dataset is an iterable dataset that keeps a batch of walkthroughs then
+    produces batches of game steps, where each game step is a dictionary:
+    {
+        "game": "game name",
+        "walkthrough_step": walkthrough step,
+        "random_step": random step,
+        "observation": "observation...",
+        "previous_action": "previous action...",
+        "timestamp": timestamp,
+        "target_commands": [graph commands, ...],
+        "graph_events": [graph events, ...],
+        "previous_graph_seen": [(src, dst, rel), ...],
+    }
+    """
+
+    def __init__(self, path: str, batch_size: int) -> None:
+        self.batch_size = batch_size
+        with open(path, "r") as f:
+            raw_data = json.load(f)
+        self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self.walkthrough_example_ids: List[Tuple[str, int]] = []
+        self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
+            list
+        )
+        self.graph_index = json.loads(raw_data["graph_index"])
+
+        for example in raw_data["examples"]:
+            example["target_commands"] = sort_target_commands(
+                example["target_commands"]
+            )
+            game = example["game"]
+            walkthrough_step, random_step = example["step"]
+            if random_step == 0:
+                # walkthrough example
+                self.walkthrough_examples[(game, walkthrough_step)] = example
+                self.walkthrough_example_ids.append((game, walkthrough_step))
+            else:
+                # random example
+                self.random_examples[(game, walkthrough_step)].append(example)
+
+    def __iter__(self) -> Iterator[List[Tuple[int, Dict[str, Any]]]]:
+        walkthrough_id_to_step: Dict[int, Tuple[int, List[Dict[str, Any]]]] = {}
+        last_added_walkthrough_id = 0
+        while (
+            last_added_walkthrough_id < len(self.walkthrough_example_ids)
+            or len(walkthrough_id_to_step) > 0
+        ):
+            # fetch a batch of walkthroughs
+            while (
+                last_added_walkthrough_id < len(self.walkthrough_example_ids)
+                and len(walkthrough_id_to_step) < self.batch_size
+            ):
+                walkthrough_id_to_step[last_added_walkthrough_id] = (
+                    0,
+                    self._get_walkthrough(last_added_walkthrough_id),
+                )
+                last_added_walkthrough_id += 1
+            while True:
+                yield [
+                    (walkthrough_id, walkthrough[step_id])
+                    for walkthrough_id, (
+                        step_id,
+                        walkthrough,
+                    ) in walkthrough_id_to_step.items()
+                ]
+
+                # update the step ids for walkthroughs
+                for walkthrough_id, (
+                    step_id,
+                    walkthrough,
+                ) in walkthrough_id_to_step.items():
+                    walkthrough_id_to_step[walkthrough_id] = (step_id + 1, walkthrough)
+
+                # remove finished walkthroughs
+                finished_walkthrough_ids = [
+                    walkthrough_id
+                    for walkthrough_id, (step_id, _) in walkthrough_id_to_step.items()
+                    if step_id >= self._get_walkthrough_len(walkthrough_id)
+                ]
+                for walkthrough_id in finished_walkthrough_ids:
+                    walkthrough_id_to_step.pop(walkthrough_id)
+
+                # if there are finished walkthroughs, break and fetch more.
+                if len(finished_walkthrough_ids) > 0:
+                    break
+
+    def _get_walkthrough_len(self, walkthrough_id: int) -> int:
+        game, walkthrough_step = self.walkthrough_example_ids[walkthrough_id]
+        return (
+            walkthrough_step + 1 + len(self.random_examples[(game, walkthrough_step)])
+        )
+
+    def _get_walkthrough(self, walkthrough_id: int) -> List[Dict[str, Any]]:
+        game, walkthrough_step = self.walkthrough_example_ids[walkthrough_id]
+        walkthrough_examples = [
+            self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
+        ]
+        random_examples = self.random_examples[(game, walkthrough_step)]
+        data: List[Dict[str, Any]] = []
+        graph = nx.DiGraph()
+        for timestamp, example in enumerate(walkthrough_examples + random_examples):
+            graph_events: List[Dict[str, Any]] = []
+            for cmd in example["target_commands"]:
+                sub_event_seq = process_triplet_cmd(graph, timestamp, cmd)
+                graph_events.extend(sub_event_seq)
+            data.append(
+                {
+                    "game": game,
+                    "walkthrough_step": walkthrough_step,
+                    "observation": example["observation"],
+                    "previous_action": example["previous_action"],
+                    "timestamp": timestamp,
+                    "target_commands": example["target_commands"],
+                    "graph_events": graph_events,
+                    "previous_graph_seen": [
+                        f"{self.graph_index['entities'][str(src)]} , "
+                        f"{self.graph_index['entities'][str(dst)]} , "
+                        f"{self.graph_index['relation_types'][str(rel)]}"
+                        for src, dst, rel in [
+                            self.graph_index["relations"][str(relation_id)]
+                            for relation_id in self.graph_index["graphs"][
+                                str(example["previous_graph_seen"])
+                            ]
+                        ]
+                    ],
+                }
+            )
+        return data
+
+    def __len__(self) -> int:
+        return len(self.walkthrough_example_ids)
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenGraphEventFreeRunDataset):
+            return False
+        return (
+            self.walkthrough_examples == o.walkthrough_examples
+            and self.walkthrough_example_ids == o.walkthrough_example_ids
+            and self.random_examples == o.random_examples
+            and self.graph_index == o.graph_index
+        )
+
+
+def sort_target_commands(list_of_cmds: List[str]) -> List[str]:
+    """
+    Copied from the original GATA code
+    """
+    list_of_cmd_tokens = [item.split(" , ") for item in list_of_cmds]
+
+    def key_fn(
+        cmd: List[str],
+    ) -> Tuple[bool, bool, bool, bool, bool, bool, bool, bool, str, str]:
+        return (
+            cmd[0] == "add",  # add always before delete
+            cmd[1] == "player",  # relations with player always first
+            cmd[2] == "player",  # relations with player always first
+            cmd[3]
+            in {
+                WEST_OF,
+                EAST_OF,
+                NORTH_OF,
+                SOUTH_OF,
+            },  # room connections always first
+            cmd[3] in {PART_OF},  # recipe
+            cmd[3] in set(TWO_ARGS_RELATIONS),  # two args relations first
+            cmd[3] in {IS},  # one arg state relations first
+            cmd[3] in {NEEDS},  # one arg requirement relations first
+            cmd[2],
+            cmd[1],
+        )
+
+    list_of_cmds = [
+        " , ".join(item)
+        for item in sorted(list_of_cmd_tokens, key=key_fn, reverse=True)
+    ]
+    res: List[str] = []
+    for cmd in list_of_cmds:
+        if cmd not in res:
+            res.append(cmd)
+    return res
 
 
 def empty_tensor() -> torch.Tensor:

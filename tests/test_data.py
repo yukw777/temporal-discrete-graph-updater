@@ -13,6 +13,8 @@ from dgu.data import (
     TWCmdGenGraphEventStepInput,
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventGraphicalInput,
+    sort_target_commands,
+    TWCmdGenGraphEventFreeRunDataset,
 )
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -57,6 +59,23 @@ def test_tw_cmd_gen_dataset_init():
     assert len(dataset) == len(expected_dataset)
     for data, expected_data in zip(dataset, expected_dataset):
         assert data == expected_data
+
+
+@pytest.mark.parametrize("batch_size", [1, 3])
+def test_tw_cmd_gen_free_run_dataset_init(batch_size):
+    dataset = TWCmdGenGraphEventFreeRunDataset("tests/data/test_data.json", batch_size)
+    expected_dataset = []
+    with open(
+        f"tests/data/preprocessed_test_free_run_data_batch_{batch_size}.jsonl"
+    ) as f:
+        for line in f:
+            expected_dataset.append(json.loads(line))
+
+    assert len(dataset) == 5  # number of walkthroughs
+    generated_dataset = list(iter(dataset))
+    assert len(generated_dataset) == len(expected_dataset)
+    for data, expected_data in zip(generated_dataset, expected_dataset):
+        assert data == list(map(tuple, expected_data))
 
 
 @pytest.mark.parametrize(
@@ -181,8 +200,8 @@ def test_tw_cmd_gen_dataset_init():
         ),
     ],
 )
-def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
-    assert TWCmdGenGraphEventDataset.sort_target_commands(tgt_cmds) == expected
+def test_sort_target_commands(tgt_cmds, expected):
+    assert sort_target_commands(tgt_cmds) == expected
 
 
 @pytest.mark.parametrize(
