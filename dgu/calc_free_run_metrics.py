@@ -64,6 +64,12 @@ def main(
                 graph_f1.update([generated_rdfs], [groundtruth_rdfs])  # type: ignore
                 graph_em.update([generated_rdfs], [groundtruth_rdfs])  # type: ignore
                 pbar.update()
+                pbar.set_postfix(
+                    {
+                        "graph_f1": graph_f1.compute().item(),
+                        "graph_em": graph_em.compute().item(),
+                    }
+                )
 
             # new games are the ones that were not in game_id_to_graph, but are now
             # part of the new batch.
