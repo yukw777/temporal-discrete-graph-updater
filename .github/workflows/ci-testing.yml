@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04]
-        python-version: [3.7, 3.8]
+        python-version: [3.6, 3.7, 3.8]
 
     # Timeout: https://stackoverflow.com/a/59076067/4521646
     timeout-minutes: 35
@@ -63,7 +63,8 @@ jobs:
 
     - name: Lint with mypy
       run: |
-        mypy dgu --ignore-missing-imports --follow-imports=silent --show-column-numbers
+        # --install-types --non-interactive is only really necessary for Python 3.6
+        mypy dgu --ignore-missing-imports --follow-imports=silent --show-column-numbers --install-types --non-interactive
 
     - name: Tests
       run: |
