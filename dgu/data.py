@@ -3,9 +3,9 @@ import pytorch_lightning as pl
 import torch
 import networkx as nx
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Iterator
 from collections import defaultdict
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, IterableDataset
 from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
@@ -120,31 +120,30 @@ class TWCmdGenGraphEventDataset(Dataset):
         )
 
 
-class TWCmdGenGraphEventFreeRunDataset(Dataset):
+class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
     """
     TextWorld Command Generation graph event dataset for free run evaluation.
 
     Free run means we run the model from the beginning of the game (empty graph)
     till the end.
 
-    Each data point is a sequence of game steps.
-    [
-        {
-            "game": "game name",
-            "walkthrough_step": walkthrough step,
-            "random_step": random step,
-            "observation": "observation...",
-            "previous_action": "previous action...",
-            "timestamp": timestamp,
-            "target_commands": [graph commands, ...],
-            "graph_events": [graph events, ...],
-            "previous_graph_seen": [(src, dst, rel), ...],
-        },
-        ...
-    ]
+    This dataset is an iterable dataset that keeps a batch of walkthroughs then
+    produces batches of game steps, where each game step is a dictionary:
+    {
+        "game": "game name",
+        "walkthrough_step": walkthrough step,
+        "random_step": random step,
+        "observation": "observation...",
+        "previous_action": "previous action...",
+        "timestamp": timestamp,
+        "target_commands": [graph commands, ...],
+        "graph_events": [graph events, ...],
+        "previous_graph_seen": [(src, dst, rel), ...],
+    }
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, batch_size: int) -> None:
+        self.batch_size = batch_size
         with open(path, "r") as f:
             raw_data = json.load(f)
         self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
@@ -168,8 +167,60 @@ class TWCmdGenGraphEventFreeRunDataset(Dataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __getitem__(self, idx: int) -> List[Dict[str, Any]]:
-        game, walkthrough_step = self.walkthrough_example_ids[idx]
+    def __iter__(self) -> Iterator[List[Tuple[int, Dict[str, Any]]]]:
+        walkthrough_id_to_step: Dict[int, Tuple[int, List[Dict[str, Any]]]] = {}
+        last_added_walkthrough_id = 0
+        while (
+            last_added_walkthrough_id < len(self.walkthrough_example_ids)
+            or len(walkthrough_id_to_step) > 0
+        ):
+            # fetch a batch of walkthroughs
+            while (
+                last_added_walkthrough_id < len(self.walkthrough_example_ids)
+                and len(walkthrough_id_to_step) < self.batch_size
+            ):
+                walkthrough_id_to_step[last_added_walkthrough_id] = (
+                    0,
+                    self._get_walkthrough(last_added_walkthrough_id),
+                )
+                last_added_walkthrough_id += 1
+            while True:
+                yield [
+                    (walkthrough_id, walkthrough[step_id])
+                    for walkthrough_id, (
+                        step_id,
+                        walkthrough,
+                    ) in walkthrough_id_to_step.items()
+                ]
+
+                # update the step ids for walkthroughs
+                for walkthrough_id, (
+                    step_id,
+                    walkthrough,
+                ) in walkthrough_id_to_step.items():
+                    walkthrough_id_to_step[walkthrough_id] = (step_id + 1, walkthrough)
+
+                # remove finished walkthroughs
+                finished_walkthrough_ids = [
+                    walkthrough_id
+                    for walkthrough_id, (step_id, _) in walkthrough_id_to_step.items()
+                    if step_id >= self._get_walkthrough_len(walkthrough_id)
+                ]
+                for walkthrough_id in finished_walkthrough_ids:
+                    walkthrough_id_to_step.pop(walkthrough_id)
+
+                # if there are finished walkthroughs, break and fetch more.
+                if len(finished_walkthrough_ids) > 0:
+                    break
+
+    def _get_walkthrough_len(self, walkthrough_id: int) -> int:
+        game, walkthrough_step = self.walkthrough_example_ids[walkthrough_id]
+        return (
+            walkthrough_step + 1 + len(self.random_examples[(game, walkthrough_step)])
+        )
+
+    def _get_walkthrough(self, walkthrough_id: int) -> List[Dict[str, Any]]:
+        game, walkthrough_step = self.walkthrough_example_ids[walkthrough_id]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
@@ -209,7 +260,7 @@ class TWCmdGenGraphEventFreeRunDataset(Dataset):
         return len(self.walkthrough_example_ids)
 
     def __eq__(self, o: object) -> bool:
-        if not isinstance(o, TWCmdGenTemporalDataset):
+        if not isinstance(o, TWCmdGenGraphEventFreeRunDataset):
             return False
         return (
             self.walkthrough_examples == o.walkthrough_examples
