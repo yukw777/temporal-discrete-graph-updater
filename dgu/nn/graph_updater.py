@@ -30,12 +30,12 @@ from dgu.nn.graph_event_decoder import (
     EventNodeHead,
     EventStaticLabelHead,
 )
-from dgu.nn.temporal_graph import TemporalGraphNetwork
+from dgu.nn.dynamic_gnn import DynamicGNN
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import (
-    TWCmdGenTemporalBatch,
-    TWCmdGenTemporalGraphicalInput,
-    TWCmdGenTemporalStepInput,
+    TWCmdGenGraphEventBatch,
+    TWCmdGenGraphEventGraphicalInput,
+    TWCmdGenGraphEventStepInput,
     read_label_vocab_files,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -52,9 +52,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         hidden_dim: int = 8,
         word_emb_dim: int = 300,
-        tgn_time_enc_dim: int = 8,
-        tgn_num_gnn_block: int = 1,
-        tgn_num_gnn_head: int = 1,
+        dgnn_timestamp_enc_dim: int = 8,
+        dgnn_num_gnn_block: int = 1,
+        dgnn_num_gnn_head: int = 1,
         text_encoder_num_blocks: int = 1,
         text_encoder_num_conv_layers: int = 3,
         text_encoder_kernel_size: int = 5,
@@ -76,9 +76,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.save_hyperparameters(
             "hidden_dim",
             "word_emb_dim",
-            "tgn_time_enc_dim",
-            "tgn_num_gnn_block",
-            "tgn_num_gnn_head",
+            "dgnn_timestamp_enc_dim",
+            "dgnn_num_gnn_block",
+            "dgnn_num_gnn_head",
             "text_encoder_num_blocks",
             "text_encoder_num_conv_layers",
             "text_encoder_kernel_size",
@@ -149,12 +149,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
 
         # temporal graph network
-        self.tgn = TemporalGraphNetwork(
-            tgn_time_enc_dim,
+        self.dgnn = DynamicGNN(
+            dgnn_timestamp_enc_dim,
             word_emb_dim,
             hidden_dim,
-            tgn_num_gnn_block,
-            tgn_num_gnn_head,
+            dgnn_num_gnn_block,
+            dgnn_num_gnn_head,
             dropout=dropout,
         )
 
@@ -359,8 +359,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
             # (0, hidden_dim)
         else:
-            node_embeddings = self.tgn(
-                event_timestamps,
+            node_embeddings = self.dgnn(
                 Batch(
                     batch=updated_batched_graph.batch,
                     x=self.label_embeddings(updated_batched_graph.x),
@@ -368,7 +367,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     edge_index=updated_batched_graph.edge_index,
                     edge_attr=self.label_embeddings(updated_batched_graph.edge_attr),
                     edge_last_update=updated_batched_graph.edge_last_update,
-                ),
+                )
             )
             # (num_node, hidden_dim)
 
@@ -524,8 +523,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def teacher_force(
         self,
-        step_input: TWCmdGenTemporalStepInput,
-        graphical_input_seq: Sequence[TWCmdGenTemporalGraphicalInput],
+        step_input: TWCmdGenGraphEventStepInput,
+        graphical_input_seq: Sequence[TWCmdGenGraphEventGraphicalInput],
     ) -> List[Dict[str, Any]]:
         """
         step_input: the current step input
@@ -758,7 +757,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return batch_groundtruth_tokens
 
     def training_step(  # type: ignore
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+        self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> torch.Tensor:
         """
         batch: the batch data
@@ -790,7 +789,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return loss
 
     def eval_step(
-        self, batch: TWCmdGenTemporalBatch, log_prefix: str
+        self, batch: TWCmdGenGraphEventBatch, log_prefix: str
     ) -> List[Tuple[str, ...]]:
         # [(id, groundtruth commands, teacher-force commands, greedy-decode commands)]
         # id = (game|walkthrough_step|random_step)
@@ -975,12 +974,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return table_data
 
     def validation_step(  # type: ignore
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+        self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> List[Tuple[str, ...]]:
         return self.eval_step(batch, "val")
 
     def test_step(  # type: ignore
-        self, batch: TWCmdGenTemporalBatch, batch_idx: int
+        self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> List[Tuple[str, ...]]:
         return self.eval_step(batch, "test")
 
@@ -1015,7 +1014,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
     def greedy_decode(
-        self, step_input: TWCmdGenTemporalStepInput, prev_batched_graph: Batch
+        self, step_input: TWCmdGenGraphEventStepInput, prev_batched_graph: Batch
     ) -> List[Dict[str, Any]]:
         """
         step_input: the current step input

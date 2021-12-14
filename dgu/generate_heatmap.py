@@ -8,8 +8,8 @@ from torch.utils.data import DataLoader
 
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.data import (
-    TWCmdGenTemporalDataset,
-    TWCmdGenTemporalDataCollator,
+    TWCmdGenGraphEventDataset,
+    TWCmdGenGraphEventDataCollator,
     read_label_vocab_files,
 )
 from dgu.preprocessor import SpacyPreprocessor
@@ -27,14 +27,14 @@ def main(
     num_dataloader_worker: int,
     device: str,
 ) -> None:
-    dataset = TWCmdGenTemporalDataset(data_filename)
+    dataset = TWCmdGenGraphEventDataset(data_filename)
     preprocessor = SpacyPreprocessor.load_from_file(word_vocab_path)
     labels, label_id_map = read_label_vocab_files(node_vocab_path, relation_vocab_path)
     sampled_ids = random.sample(range(len(dataset)), num_datapoints)
     dataloader = DataLoader(  # type: ignore
         [dataset[i] for i in sampled_ids],  # type: ignore
         batch_size=num_datapoints,
-        collate_fn=TWCmdGenTemporalDataCollator(preprocessor, label_id_map),
+        collate_fn=TWCmdGenGraphEventDataCollator(preprocessor, label_id_map),
         pin_memory=True,
         num_workers=num_dataloader_worker,
     )

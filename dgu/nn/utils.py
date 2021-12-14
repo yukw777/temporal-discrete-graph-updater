@@ -528,7 +528,7 @@ def update_edge_index(
 
 class PositionalEncoder(nn.Module):
     """
-    Add positional encodings to the given input. This is the tensor2tensor
+    Return positional encodings for the given positions. This is the tensor2tensor
     implementation of the positional encoding, which is slightly different
     from the one used by the original Transformer paper.
     Specifically, there are 2 key differences:
@@ -565,12 +565,10 @@ class PositionalEncoder(nn.Module):
         )
         self.register_buffer("pe", pe)
 
-    def forward(self, input: torch.Tensor, step: Optional[int] = None) -> torch.Tensor:
+    def forward(self, positions: torch.Tensor) -> torch.Tensor:
         """
-        input: (batch, seq_len, channels) or (batch, channels) if step is set.
-        output: (batch, seq_len, channels) or (batch, channels) if step is set
+        positions: (*)
+
+        output: (*, channels)
         """
-        # add positional encodings to the input using broadcast
-        if step is None:
-            return input + self.pe[: input.size(1)]  # type: ignore
-        return input + self.pe[step]  # type: ignore
+        return self.pe[positions]  # type: ignore

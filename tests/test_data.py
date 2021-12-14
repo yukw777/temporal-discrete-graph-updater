@@ -6,13 +6,13 @@ import shutil
 from torch_geometric.data import Batch
 
 from dgu.data import (
-    TWCmdGenTemporalDataset,
-    TWCmdGenTemporalDataModule,
-    TWCmdGenTemporalDataCollator,
+    TWCmdGenGraphEventDataset,
+    TWCmdGenGraphEventDataModule,
+    TWCmdGenGraphEventDataCollator,
     read_label_vocab_files,
-    TWCmdGenTemporalStepInput,
-    TWCmdGenTemporalBatch,
-    TWCmdGenTemporalGraphicalInput,
+    TWCmdGenGraphEventStepInput,
+    TWCmdGenGraphEventBatch,
+    TWCmdGenGraphEventGraphicalInput,
 )
 from dgu.preprocessor import SpacyPreprocessor
 from dgu.constants import EVENT_TYPE_ID_MAP
@@ -22,7 +22,7 @@ from dgu.constants import EVENT_TYPE_ID_MAP
 def tw_cmd_gen_datamodule(tmpdir):
     # copy test files to tmpdir so that the serialized files would be saved there
     shutil.copy2("tests/data/test_data.json", tmpdir)
-    return TWCmdGenTemporalDataModule(
+    return TWCmdGenGraphEventDataModule(
         tmpdir / "test_data.json",
         1,
         tmpdir / "test_data.json",
@@ -42,13 +42,13 @@ def tw_cmd_gen_collator():
     _, label_id_map = read_label_vocab_files(
         "vocabs/node_vocab.txt", "vocabs/relation_vocab.txt"
     )
-    return TWCmdGenTemporalDataCollator(
+    return TWCmdGenGraphEventDataCollator(
         SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt"), label_id_map
     )
 
 
 def test_tw_cmd_gen_dataset_init():
-    dataset = TWCmdGenTemporalDataset("tests/data/test_data.json")
+    dataset = TWCmdGenGraphEventDataset("tests/data/test_data.json")
     expected_dataset = []
     with open("tests/data/preprocessed_test_data.jsonl") as f:
         for line in f:
@@ -182,7 +182,7 @@ def test_tw_cmd_gen_dataset_init():
     ],
 )
 def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
-    assert TWCmdGenTemporalDataset.sort_target_commands(tgt_cmds) == expected
+    assert TWCmdGenGraphEventDataset.sort_target_commands(tgt_cmds) == expected
 
 
 @pytest.mark.parametrize(
@@ -192,14 +192,14 @@ def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
             ["you are hungry ! let 's cook a delicious meal ."],
             ["drop knife"],
             [2],
-            TWCmdGenTemporalStepInput(
+            TWCmdGenGraphEventStepInput(
                 obs_word_ids=torch.tensor(
                     [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                 ),
                 obs_mask=torch.ones(1, 11).bool(),
                 prev_action_word_ids=torch.tensor([[257, 404]]),
                 prev_action_mask=torch.ones(1, 2).bool(),
-                timestamps=torch.tensor([2.0]),
+                timestamps=torch.tensor([2]),
             ),
         ),
         (
@@ -209,7 +209,7 @@ def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
             ],
             ["drop knife", "take knife from table"],
             [2, 3],
-            TWCmdGenTemporalStepInput(
+            TWCmdGenGraphEventStepInput(
                 obs_word_ids=torch.tensor(
                     [
                         [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
@@ -221,7 +221,7 @@ def test_tw_cmd_gen_dataset_sort_target_commands(tgt_cmds, expected):
                     [[257, 404, 0, 0], [663, 404, 315, 661]]
                 ),
                 prev_action_mask=torch.tensor([[True, True, False, False], [True] * 4]),
-                timestamps=torch.tensor([2.0, 3.0]),
+                timestamps=torch.tensor([2, 3]),
             ),
         ),
     ],
@@ -257,7 +257,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 edge_last_update=torch.empty(0, 2),
             ),
             (
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -300,7 +300,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 edge_last_update=torch.tensor([[0.0, 2.0]]),
             ),
             (
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -347,7 +347,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 edge_last_update=torch.empty(0, 2),
             ),
             (
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -371,7 +371,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -395,7 +395,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -419,7 +419,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([1]),
@@ -465,7 +465,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 edge_last_update=torch.tensor([[1.0, 2.0]]),
             ),
             (
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -489,7 +489,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
@@ -513,7 +513,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
                     tgt_event_src_ids=torch.tensor([2]),
                     tgt_event_dst_ids=torch.tensor([1]),
@@ -601,7 +601,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 edge_last_update=torch.empty(0, 2),
             ),
             (
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["start"]]
                     ),
@@ -630,7 +630,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -662,7 +662,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -694,7 +694,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -728,7 +728,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.empty(0, 2),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -762,7 +762,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -803,7 +803,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-delete"],
@@ -847,7 +847,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-delete"],
@@ -891,7 +891,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["end"],
@@ -932,7 +932,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 4.0], [1.0, 5.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["pad"],
@@ -1032,7 +1032,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
             ),
             (
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["start"], EVENT_TYPE_ID_MAP["start"]]
                     ),
@@ -1063,7 +1063,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -1097,7 +1097,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -1139,7 +1139,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -1183,7 +1183,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         edge_last_update=torch.tensor([[3.0, 2.0], [1.0, 2.0]]),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -1229,7 +1229,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -1277,7 +1277,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-delete"],
@@ -1326,7 +1326,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-delete"],
@@ -1375,7 +1375,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["end"],
@@ -1423,7 +1423,7 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                     ),
                 ),
-                TWCmdGenTemporalGraphicalInput(
+                TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["pad"],
@@ -1514,10 +1514,10 @@ def test_read_label_vocab_files():
             Batch(
                 batch=torch.empty(0, dtype=torch.long),
                 x=torch.empty(0, dtype=torch.long),
-                node_last_update=torch.empty(0, 2),
+                node_last_update=torch.empty(0, 2, dtype=torch.long),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
                 edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0, 2),
+                edge_last_update=torch.empty(0, 2, dtype=torch.long),
             ),
         ),
         (
@@ -1543,10 +1543,10 @@ def test_read_label_vocab_files():
             Batch(
                 batch=torch.tensor([0, 0]),
                 x=torch.tensor([1, 14]),
-                node_last_update=torch.tensor([[2.0, 0.0], [3.0, 0.0]]),
+                node_last_update=torch.tensor([[2, 0], [3, 0]]),
                 edge_index=torch.tensor([[0], [1]]),
                 edge_attr=torch.tensor([100]),
-                edge_last_update=torch.tensor([[3.0, 1.0]]),
+                edge_last_update=torch.tensor([[3, 1]]),
             ),
         ),
         (
@@ -1593,12 +1593,10 @@ def test_read_label_vocab_files():
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
                 x=torch.tensor([1, 14, 1, 16]),
-                node_last_update=torch.tensor(
-                    [[1.0, 3.0], [2.0, 1.0], [4.0, 2.0], [5.0, 1.0]]
-                ),
+                node_last_update=torch.tensor([[1, 3], [2, 1], [4, 2], [5, 1]]),
                 edge_index=torch.tensor([[0, 2], [1, 3]]),
                 edge_attr=torch.tensor([100, 100]),
-                edge_last_update=torch.tensor([[3.0, 0.0], [6.0, 2.0]]),
+                edge_last_update=torch.tensor([[3, 0], [6, 2]]),
             ),
         ),
         (
@@ -1710,12 +1708,10 @@ def test_read_label_vocab_files():
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
                 x=torch.tensor([14, 34, 1, 16]),
-                node_last_update=torch.tensor(
-                    [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
-                ),
+                node_last_update=torch.tensor([[2, 0], [3, 1], [5, 0], [6, 0]]),
                 edge_index=torch.tensor([[1, 2], [0, 3]]),
                 edge_attr=torch.tensor([100, 100]),
-                edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
+                edge_last_update=torch.tensor([[4, 0], [7, 0]]),
             ),
         ),
     ],
@@ -1759,27 +1755,27 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     "prev_graph_events": [],
                 },
             ],
-            TWCmdGenTemporalBatch(
+            TWCmdGenGraphEventBatch(
                 ids=(("g1", 0, 0),),
-                step_input=TWCmdGenTemporalStepInput(
+                step_input=TWCmdGenGraphEventStepInput(
                     obs_word_ids=torch.tensor(
                         [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                     ),
                     obs_mask=torch.ones(1, 11).bool(),
                     prev_action_word_ids=torch.tensor([[257, 404]]),
                     prev_action_mask=torch.ones(1, 2).bool(),
-                    timestamps=torch.tensor([2.0]),
+                    timestamps=torch.tensor([2]),
                 ),
                 initial_batched_graph=Batch(
                     batch=torch.empty(0, dtype=torch.long),
                     x=torch.empty(0, dtype=torch.long),
-                    node_last_update=torch.empty(0, 2),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
                     edge_index=torch.empty(2, 0, dtype=torch.long),
                     edge_attr=torch.empty(0, dtype=torch.long),
-                    edge_last_update=torch.empty(0, 2),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
                 graphical_input_seq=(
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([0]),
@@ -1797,13 +1793,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.empty(0, dtype=torch.long),
                             x=torch.empty(0, dtype=torch.long),
-                            node_last_update=torch.empty(0, 2),
+                            node_last_update=torch.empty(0, 2, dtype=torch.long),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0, 2),
+                            edge_last_update=torch.empty(0, 2, dtype=torch.long),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
@@ -1823,13 +1819,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.empty(0, dtype=torch.long),
                             x=torch.empty(0, dtype=torch.long),
-                            node_last_update=torch.empty(0, 2),
+                            node_last_update=torch.empty(0, 2, dtype=torch.long),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0, 2),
+                            edge_last_update=torch.empty(0, 2, dtype=torch.long),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
@@ -1849,13 +1845,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0]),
                             x=torch.tensor([1]),
-                            node_last_update=torch.tensor([[2.0, 0.0]]),
+                            node_last_update=torch.tensor([[2, 0]]),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0, 2),
+                            edge_last_update=torch.empty(0, 2, dtype=torch.long),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["edge-add"]]
                         ),
@@ -1875,10 +1871,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
                             x=torch.tensor([1, 14]),
-                            node_last_update=torch.tensor([[2.0, 0.0], [2.0, 1.0]]),
+                            node_last_update=torch.tensor([[2, 0], [2, 1]]),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, dtype=torch.long),
-                            edge_last_update=torch.empty(0, 2),
+                            edge_last_update=torch.empty(0, 2, dtype=torch.long),
                         ),
                     ),
                 ),
@@ -1954,27 +1950,27 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     ],
                 },
             ],
-            TWCmdGenTemporalBatch(
+            TWCmdGenGraphEventBatch(
                 ids=(("g1", 0, 0),),
-                step_input=TWCmdGenTemporalStepInput(
+                step_input=TWCmdGenGraphEventStepInput(
                     obs_word_ids=torch.tensor(
                         [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
                     ),
                     obs_mask=torch.ones(1, 11).bool(),
                     prev_action_word_ids=torch.tensor([[257, 404]]),
                     prev_action_mask=torch.ones(1, 2).bool(),
-                    timestamps=torch.tensor([9.0]),
+                    timestamps=torch.tensor([9]),
                 ),
                 initial_batched_graph=Batch(
                     batch=torch.tensor([0, 0]),
                     x=torch.tensor([1, 16]),
-                    node_last_update=torch.tensor([[5.0, 0.0], [6.0, 0.0]]),
+                    node_last_update=torch.tensor([[5, 0], [6, 0]]),
                     edge_index=torch.tensor([[0], [1]]),
                     edge_attr=torch.tensor([100]),
-                    edge_last_update=torch.tensor([[7.0, 0.0]]),
+                    edge_last_update=torch.tensor([[7, 0]]),
                 ),
                 graphical_input_seq=(
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([0]),
@@ -1992,13 +1988,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
                             x=torch.tensor([1, 16]),
-                            node_last_update=torch.tensor([[5.0, 0.0], [6.0, 0.0]]),
+                            node_last_update=torch.tensor([[5, 0], [6, 0]]),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([[7.0, 0.0]]),
+                            edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
@@ -2018,13 +2014,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
                             x=torch.tensor([1, 16]),
-                            node_last_update=torch.tensor([[5.0, 0.0], [6.0, 0.0]]),
+                            node_last_update=torch.tensor([[5, 0], [6, 0]]),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([[7.0, 0.0]]),
+                            edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
@@ -2044,15 +2040,13 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0]),
                             x=torch.tensor([1, 16, 1]),
-                            node_last_update=torch.tensor(
-                                [[5.0, 0.0], [6.0, 0.0], [9.0, 0.0]]
-                            ),
+                            node_last_update=torch.tensor([[5, 0], [6, 0], [9, 0]]),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([[7.0, 0.0]]),
+                            edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["edge-add"]]
                         ),
@@ -2073,11 +2067,11 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                             batch=torch.tensor([0, 0, 0, 0]),
                             x=torch.tensor([1, 16, 1, 14]),
                             node_last_update=torch.tensor(
-                                [[5.0, 0.0], [6.0, 0.0], [9.0, 0.0], [9.0, 1.0]]
+                                [[5, 0], [6, 0], [9, 0], [9, 1]]
                             ),
                             edge_index=torch.tensor([[0], [1]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([[7.0, 0.0]]),
+                            edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
                 ),
@@ -2202,9 +2196,9 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     ],
                 },
             ],
-            TWCmdGenTemporalBatch(
+            TWCmdGenGraphEventBatch(
                 ids=(("g1", 0, 1), ("g2", 2, 3)),
-                step_input=TWCmdGenTemporalStepInput(
+                step_input=TWCmdGenGraphEventStepInput(
                     obs_word_ids=torch.tensor(
                         [
                             [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
@@ -2218,20 +2212,18 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                     prev_action_mask=torch.tensor(
                         [[True, True, False, False], [True] * 4]
                     ),
-                    timestamps=torch.tensor([6.0, 9.0]),
+                    timestamps=torch.tensor([6, 9]),
                 ),
                 initial_batched_graph=Batch(
                     batch=torch.tensor([0, 0, 1, 1]),
                     x=torch.tensor([14, 34, 1, 16]),
-                    node_last_update=torch.tensor(
-                        [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
-                    ),
+                    node_last_update=torch.tensor([[2, 0], [3, 1], [5, 0], [6, 0]]),
                     edge_index=torch.tensor([[1, 2], [0, 3]]),
                     edge_attr=torch.tensor([100, 100]),
-                    edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
+                    edge_last_update=torch.tensor([[4, 0], [7, 0]]),
                 ),
                 graphical_input_seq=(
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [
                                 EVENT_TYPE_ID_MAP["start"],
@@ -2258,14 +2250,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                             batch=torch.tensor([0, 0, 1, 1]),
                             x=torch.tensor([14, 34, 1, 16]),
                             node_last_update=torch.tensor(
-                                [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
+                                [[2, 0], [3, 1], [5, 0], [6, 0]]
                             ),
                             edge_index=torch.tensor([[1, 2], [0, 3]]),
                             edge_attr=torch.tensor([100, 100]),
-                            edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
+                            edge_last_update=torch.tensor([[4, 0], [7, 0]]),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [
                                 EVENT_TYPE_ID_MAP["node-add"],
@@ -2292,14 +2284,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                             batch=torch.tensor([0, 0, 1, 1]),
                             x=torch.tensor([14, 34, 1, 16]),
                             node_last_update=torch.tensor(
-                                [[2.0, 0.0], [3.0, 1.0], [5.0, 0.0], [6.0, 0.0]]
+                                [[2, 0], [3, 1], [5, 0], [6, 0]]
                             ),
                             edge_index=torch.tensor([[1, 2], [0, 3]]),
                             edge_attr=torch.tensor([100, 100]),
-                            edge_last_update=torch.tensor([[4.0, 0.0], [7.0, 0.0]]),
+                            edge_last_update=torch.tensor([[4, 0], [7, 0]]),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [
                                 EVENT_TYPE_ID_MAP["node-add"],
@@ -2326,20 +2318,14 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                             batch=torch.tensor([0, 0, 0, 1, 1]),
                             x=torch.tensor([14, 34, 1, 1, 16]),
                             node_last_update=torch.tensor(
-                                [
-                                    [2.0, 0.0],
-                                    [3.0, 1.0],
-                                    [6.0, 0.0],
-                                    [5.0, 0.0],
-                                    [6.0, 0.0],
-                                ]
+                                [[2, 0], [3, 1], [6, 0], [5, 0], [6, 0]]
                             ),
                             edge_index=torch.tensor([[1], [0]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([[4.0, 0.0]]),
+                            edge_last_update=torch.tensor([[4, 0]]),
                         ),
                     ),
-                    TWCmdGenTemporalGraphicalInput(
+                    TWCmdGenGraphEventGraphicalInput(
                         tgt_event_type_ids=torch.tensor(
                             [
                                 EVENT_TYPE_ID_MAP["end"],
@@ -2363,17 +2349,11 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                             batch=torch.tensor([0, 0, 0, 0, 1]),
                             x=torch.tensor([14, 34, 1, 14, 1]),
                             node_last_update=torch.tensor(
-                                [
-                                    [2.0, 0.0],
-                                    [3.0, 1.0],
-                                    [6.0, 0.0],
-                                    [6.0, 1.0],
-                                    [5.0, 0.0],
-                                ]
+                                [[2, 0], [3, 1], [6, 0], [6, 1], [5, 0]]
                             ),
                             edge_index=torch.tensor([[1], [0]]),
                             edge_attr=torch.tensor([100]),
-                            edge_last_update=torch.tensor([[4.0, 0.0]]),
+                            edge_last_update=torch.tensor([[4, 0]]),
                         ),
                     ),
                 ),
