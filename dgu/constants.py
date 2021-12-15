@@ -118,3 +118,5 @@ EVENT_TYPES = [
     "edge-delete",
 ]
 EVENT_TYPE_ID_MAP = {v: k for k, v in enumerate(EVENT_TYPES)}
+
+COMMANDS_TO_IGNORE = ["look", "examine", "inventory"]
