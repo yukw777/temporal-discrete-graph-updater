@@ -129,7 +129,7 @@ def test_masked_softmax(batched_input, batched_mask):
             torch.ones(1, 2).bool(),
             torch.tensor([[False, True]]),
             torch.zeros(1, 2).bool(),
-            torch.ones(1, 2).bool(),
+            torch.tensor([[True, False]]),
         ),
         (
             torch.tensor(
@@ -143,7 +143,7 @@ def test_masked_softmax(batched_input, batched_mask):
             torch.ones(1, 2).bool(),
             torch.ones(1, 2).bool(),
             torch.ones(1, 2).bool(),
-            torch.ones(1, 2).bool(),
+            torch.tensor([[True, False]]),
         ),
         (
             torch.tensor(
@@ -160,7 +160,7 @@ def test_masked_softmax(batched_input, batched_mask):
             torch.ones(1, 5).bool(),
             torch.tensor([[False, False, True, True, True]]),
             torch.tensor([[False, False, True, True, False]]),
-            torch.tensor([[False, True, True, True, True]]),
+            torch.tensor([[False, True, True, False, False]]),
         ),
         (
             torch.tensor(
@@ -189,7 +189,7 @@ def test_masked_softmax(batched_input, batched_mask):
                 [[False, False, True, True, False], [False, True, True, False, False]]
             ),
             torch.tensor(
-                [[False, True, True, True, True], [True, True, True, True, False]]
+                [[False, True, True, False, False], [True, True, False, False, False]]
             ),
         ),
     ],
