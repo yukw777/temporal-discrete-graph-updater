@@ -6,7 +6,7 @@ from torch_geometric.data import Data, Batch
 
 from dgu.graph import (
     Node,
-    IsDstNode,
+    DstNode,
     ExitNode,
     process_triplet_cmd,
     data_to_networkx,
@@ -84,7 +84,7 @@ from utils import EqualityDiGraph
             EqualityDiGraph(
                 {
                     Node("steak"): {
-                        IsDstNode("cooked", "steak"): {"label": "is", "last_update": 1}
+                        DstNode("cooked", "steak"): {"label": "is", "last_update": 1}
                     }
                 }
             ),
@@ -162,8 +162,8 @@ from utils import EqualityDiGraph
             EqualityDiGraph(
                 {
                     Node("steak"): {
-                        IsDstNode("cooked", "steak"): {"label": "is", "last_update": 3},
-                        IsDstNode("delicious", "steak"): {
+                        DstNode("cooked", "steak"): {"label": "is", "last_update": 3},
+                        DstNode("delicious", "steak"): {
                             "label": "is",
                             "last_update": 3,
                         },

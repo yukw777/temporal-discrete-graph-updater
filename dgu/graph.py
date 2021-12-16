@@ -15,7 +15,7 @@ class Node:
 
 
 @dataclass(frozen=True)
-class IsDstNode(Node):
+class DstNode(Node):
     src_label: str
 
 
@@ -56,7 +56,7 @@ def process_add_triplet_cmd(
         # if the relation is "is", check if the destination node with the
         # given label exists for the source node with the given label,
         # and add if it doesn't.
-        dst_node = IsDstNode(dst_label, src_label)
+        dst_node = DstNode(dst_label, src_label)
         if dst_node not in graph:
             graph.add_node(dst_node)
             events.append({"type": "node-add", "label": dst_label})
@@ -105,7 +105,7 @@ def process_delete_triplet_cmd(
     # get the destination node
     dst_node: Node
     if rel_label == IS:
-        dst_node = IsDstNode(dst_label, src_label)
+        dst_node = DstNode(dst_label, src_label)
     else:
         dst_node = Node(dst_label)
     if dst_node not in graph:
