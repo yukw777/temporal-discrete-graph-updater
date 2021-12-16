@@ -74,10 +74,10 @@ def main(
                 ).to(device),
                 Batch.from_data_list([graph]),
             )
-        graph = results_list[-1]["updated_batched_graph"]
+        graph = batch_to_data_list(results_list[-1]["updated_batched_graph"], 1)[0]
 
         # visualize the graph
-        nx_graph = data_to_networkx(batch_to_data_list(graph, 1)[0], lm.labels)
+        nx_graph = data_to_networkx(graph, lm.labels)
         plt.figure(figsize=(30, 30))
         pos = nx.spring_layout(nx_graph)
         nx.draw(nx_graph, pos=pos, labels=nx.get_node_attributes(nx_graph, "label"))
