@@ -1506,7 +1506,7 @@ def test_read_label_vocab_files():
     labels, label_id_map = read_label_vocab_files(
         "tests/data/test_node_vocab.txt", "tests/data/test_relation_vocab.txt"
     )
-    assert labels == ["", "player", "inventory", "chopped", "in", "is"]
+    assert labels == ["", "player", "inventory", "chopped", "in", "is", "east of"]
     assert label_id_map == {
         "": 0,
         "player": 1,
@@ -1514,6 +1514,7 @@ def test_read_label_vocab_files():
         "chopped": 3,
         "in": 4,
         "is": 5,
+        "east of": 6,
     }
 
 
