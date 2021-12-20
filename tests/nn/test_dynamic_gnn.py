@@ -3,7 +3,7 @@ import torch
 
 from torch_geometric.data import Batch
 
-from dgu.nn.dynamic_gnn import DynamicGNN, TransformerConvStack
+from dgu.nn.dynamic_gnn import DynamicGNN, TransformerConvStack, ZeroPositionalEncoder
 
 
 @pytest.mark.parametrize(
@@ -61,7 +61,9 @@ from dgu.nn.dynamic_gnn import DynamicGNN, TransformerConvStack
     ],
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
+@pytest.mark.parametrize("zero_timestamp_encoder", [True, False])
 def test_dgnn_forward(
+    zero_timestamp_encoder,
     dropout,
     timestamp_enc_dim,
     event_embedding_dim,
@@ -78,6 +80,7 @@ def test_dgnn_forward(
             output_dim,
             transformer_conv_num_block,
             transformer_conv_num_heads,
+            zero_timestamp_encoder=zero_timestamp_encoder,
         )
     else:
         dgnn = DynamicGNN(
@@ -87,6 +90,7 @@ def test_dgnn_forward(
             transformer_conv_num_block,
             transformer_conv_num_heads,
             dropout=dropout,
+            zero_timestamp_encoder=zero_timestamp_encoder,
         )
     node_embeddings = dgnn(batched_graph)
     assert node_embeddings.size() == (num_node, output_dim)
@@ -121,3 +125,13 @@ def test_transformer_conv_stack_forward(
         ).size()
         == (num_node, output_dim)
     )
+
+
+@pytest.mark.parametrize(
+    "channels,input_size", [(8, (2,)), (8, (2, 3)), (16, (2,)), (16, (2, 3))]
+)
+def test_zero_positional_encoder(channels, input_size):
+    enc = ZeroPositionalEncoder(channels)
+    encoded = enc(torch.rand(*input_size))
+    assert encoded.size() == input_size + (channels,)
+    assert torch.all(encoded == 0)

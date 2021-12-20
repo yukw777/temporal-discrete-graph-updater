@@ -14,14 +14,15 @@ from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from dgu.data import TWCmdGenGraphEventStepInput
 
 
-@pytest.fixture
-def sldgu(tmp_path):
+@pytest.fixture(params=[True, False])
+def sldgu(tmp_path, request):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
     return StaticLabelDiscreteGraphUpdater(
         pretrained_word_embedding_path=f"{tmp_path}/test-fasttext.vec",
         word_vocab_path="tests/data/test_word_vocab.txt",
         node_vocab_path="tests/data/test_node_vocab.txt",
         relation_vocab_path="tests/data/test_relation_vocab.txt",
+        dgnn_zero_timestamp_encoder=request.param,
     )
 
 
