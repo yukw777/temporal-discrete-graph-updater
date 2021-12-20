@@ -3,11 +3,14 @@ import torch
 import networkx as nx
 
 from torch_geometric.data import Data, Batch
+from copy import deepcopy
 
 from dgu.graph import (
     Node,
     DstNode,
     ExitNode,
+    FoodNameNode,
+    FoodAdjNode,
     process_triplet_cmd,
     data_to_networkx,
     batch_to_data_list,
@@ -183,8 +186,87 @@ from utils import EqualityDiGraph
         ),
     ],
 )
-def test_process_triplet_cmd(graph, timestamp, cmd, expected):
-    assert process_triplet_cmd(graph, timestamp, cmd) == expected
+@pytest.mark.parametrize("allow_objs_with_same_label", [False, True])
+def test_process_triplet_cmd(
+    allow_objs_with_same_label, graph, timestamp, cmd, expected
+):
+    assert (
+        process_triplet_cmd(
+            # need to deep copy the graph to avoid side effects from previous tests
+            deepcopy(graph),
+            timestamp,
+            cmd,
+            allow_objs_with_same_label=allow_objs_with_same_label,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "graph,timestamp,cmd,expected",
+    [
+        (
+            EqualityDiGraph(),
+            0,
+            "add , red onion , counter , on",
+            [
+                {"type": "node-add", "label": "onion"},
+                {"type": "node-add", "label": "red"},
+                {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "is"},
+                {"type": "node-add", "label": "counter"},
+                {"type": "edge-add", "src_id": 0, "dst_id": 2, "label": "on"},
+            ],
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    FoodNameNode("onion", "red onion"): {
+                        FoodAdjNode("red", FoodNameNode("onion", "red onion")): {
+                            "label": "is",
+                            "last_update": 0,
+                        },
+                        Node("counter"): {"label": "on", "last_update": 0},
+                    }
+                }
+            ),
+            1,
+            "add , red onion , player , in",
+            [
+                {"type": "node-add", "label": "player"},
+                {"type": "edge-add", "src_id": 0, "dst_id": 3, "label": "in"},
+            ],
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    FoodNameNode("onion", "red onion"): {
+                        FoodAdjNode("red", FoodNameNode("onion", "red onion")): {
+                            "label": "is",
+                            "last_update": 0,
+                        },
+                        Node("counter"): {"label": "on", "last_update": 0},
+                    }
+                }
+            ),
+            1,
+            "delete , red onion , counter , on",
+            [
+                {"type": "edge-delete", "src_id": 0, "dst_id": 2, "label": "on"},
+                {"type": "node-delete", "node_id": 2, "label": "counter"},
+                {"type": "edge-delete", "src_id": 0, "dst_id": 1, "label": "is"},
+                {"type": "node-delete", "node_id": 1, "label": "red"},
+                {"type": "node-delete", "node_id": 0, "label": "onion"},
+            ],
+        ),
+    ],
+)
+def test_process_triplet_cmd_allow_objs_with_same_label(
+    graph, timestamp, cmd, expected
+):
+    assert (
+        process_triplet_cmd(graph, timestamp, cmd, allow_objs_with_same_label=True)
+        == expected
+    )
 
 
 @pytest.mark.parametrize(

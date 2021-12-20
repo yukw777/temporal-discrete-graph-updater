@@ -120,3 +120,23 @@ EVENT_TYPES = [
 EVENT_TYPE_ID_MAP = {v: k for k, v in enumerate(EVENT_TYPES)}
 
 COMMANDS_TO_IGNORE = ["look", "examine", "inventory"]
+
+FOOD_KINDS = {
+    "red tuna": "tuna",
+    "white tuna": "tuna",
+    "red onion": "onion",
+    "white onion": "onion",
+    "yellow onion": "onion",
+    "red potato": "potato",
+    "yellow potato": "potato",
+    "purple potato": "potato",
+    "red apple": "apple",
+    "yellow apple": "apple",
+    "green apple": "apple",
+    "red hot pepper": "hot pepper",
+    "green hot pepper": "hot pepper",
+    "red bell pepper": "bell pepper",
+    "yellow bell pepper": "bell pepper",
+    "green bell pepper": "bell pepper",
+    "orange bell pepper": "bell pepper",
+}

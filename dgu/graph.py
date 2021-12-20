@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Set
 
 from torch_geometric.data import Data, Batch
 
-from dgu.constants import IS
+from dgu.constants import IS, FOOD_KINDS
 from dgu.nn.utils import calculate_node_id_offsets
 
 
@@ -25,12 +25,23 @@ class ExitNode(Node):
     dst_label: str
 
 
+@dataclass(frozen=True)
+class FoodNameNode(Node):
+    name: str
+
+
+@dataclass(frozen=True)
+class FoodAdjNode(Node):
+    food_name_node: FoodNameNode
+
+
 def process_add_triplet_cmd(
     graph: nx.DiGraph,
     timestamp: int,
     src_label: str,
     rel_label: str,
     dst_label: str,
+    allow_objs_with_same_label: bool,
 ) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     # take care of the source node
@@ -42,6 +53,26 @@ def process_add_triplet_cmd(
         if src_node not in graph:
             graph.add_node(src_node)
             events.append({"type": "node-add", "label": src_label})
+    elif allow_objs_with_same_label and src_label in FOOD_KINDS:
+        # we split the node into two nodes: one for the adjective, one for the noun
+        src_node = FoodNameNode(FOOD_KINDS[src_label], src_label)
+        if src_node not in graph:
+            graph.add_node(src_node)
+            events.append({"type": "node-add", "label": src_node.label})
+            adj = src_label.split()[0]
+            adj_node = FoodAdjNode(adj, src_node)
+            graph.add_node(adj_node)
+            events.append({"type": "node-add", "label": adj})
+            graph.add_edge(src_node, adj_node, label=IS, last_update=timestamp)
+            node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
+            events.append(
+                {
+                    "type": "edge-add",
+                    "src_id": node_id_map[src_node],
+                    "dst_id": node_id_map[adj_node],
+                    "label": IS,
+                }
+            )
     else:
         # if it's a regular node, check if a node with the same label exists
         # and add if it doesn't.
@@ -90,12 +121,15 @@ def process_delete_triplet_cmd(
     src_label: str,
     rel_label: str,
     dst_label: str,
+    allow_objs_with_same_label: bool,
 ) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     # get the source node
     src_node: Node
     if src_label == "exit":
         src_node = ExitNode(src_label, rel_label, dst_label)
+    elif allow_objs_with_same_label and src_label in FOOD_KINDS:
+        src_node = FoodNameNode(FOOD_KINDS[src_label], src_label)
     else:
         src_node = Node(src_label)
     if src_node not in graph:
@@ -137,9 +171,36 @@ def process_delete_triplet_cmd(
             {
                 "type": "node-delete",
                 "node_id": node_id_map[dst_node],
-                "label": dst_label,
+                "label": dst_node.label,
             }
         )
+    # if the source node is FoodNameNode and it only has one degree, it's the
+    # FoodAdjNode, so delete it.
+    if isinstance(src_node, FoodNameNode) and graph.degree[src_node] == 1:
+        adj_node = FoodAdjNode(src_label.split()[0], src_node)
+        # sanity check
+        assert graph.has_edge(src_node, adj_node)
+        node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
+        graph.remove_edge(src_node, adj_node)
+        events.append(
+            {
+                "type": "edge-delete",
+                "src_id": node_id_map[src_node],
+                "dst_id": node_id_map[adj_node],
+                "label": IS,
+            }
+        )
+        # sanity check
+        assert graph.degree[adj_node] == 0
+        graph.remove_node(adj_node)
+        events.append(
+            {
+                "type": "node-delete",
+                "node_id": node_id_map[adj_node],
+                "label": adj_node.label,
+            }
+        )
+
     if graph.degree[src_node] == 0:
         node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
         graph.remove_node(src_node)
@@ -147,14 +208,17 @@ def process_delete_triplet_cmd(
             {
                 "type": "node-delete",
                 "node_id": node_id_map[src_node],
-                "label": src_label,
+                "label": src_node.label,
             }
         )
     return events
 
 
 def process_triplet_cmd(
-    graph: nx.DiGraph, timestamp: int, cmd: str
+    graph: nx.DiGraph,
+    timestamp: int,
+    cmd: str,
+    allow_objs_with_same_label: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Update the internal graph based on the given triplet command and return
@@ -181,11 +245,20 @@ def process_triplet_cmd(
     rel_label = rel_label.replace("_", " ")
     if cmd_type == "add":
         return process_add_triplet_cmd(
-            graph, timestamp, src_label, rel_label.replace("_", " "), dst_label
+            graph,
+            timestamp,
+            src_label,
+            rel_label.replace("_", " "),
+            dst_label,
+            allow_objs_with_same_label,
         )
     elif cmd_type == "delete":
         return process_delete_triplet_cmd(
-            graph, src_label, rel_label.replace("_", " "), dst_label
+            graph,
+            src_label,
+            rel_label.replace("_", " "),
+            dst_label,
+            allow_objs_with_same_label,
         )
     raise ValueError(f"Unknown command {cmd}")
 
