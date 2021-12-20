@@ -55,6 +55,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         dgnn_timestamp_enc_dim: int = 8,
         dgnn_num_gnn_block: int = 1,
         dgnn_num_gnn_head: int = 1,
+        dgnn_zero_timestamp_encoder: bool = False,
         text_encoder_num_blocks: int = 1,
         text_encoder_num_conv_layers: int = 3,
         text_encoder_kernel_size: int = 5,
@@ -79,6 +80,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "dgnn_timestamp_enc_dim",
             "dgnn_num_gnn_block",
             "dgnn_num_gnn_head",
+            "dgnn_zero_timestamp_encoder",
             "text_encoder_num_blocks",
             "text_encoder_num_conv_layers",
             "text_encoder_kernel_size",
@@ -156,6 +158,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             dgnn_num_gnn_block,
             dgnn_num_gnn_head,
             dropout=dropout,
+            zero_timestamp_encoder=dgnn_zero_timestamp_encoder,
         )
 
         # representation aggregator

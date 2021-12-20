@@ -63,6 +63,22 @@ class TransformerConvStack(nn.Module):
         # (num_node, output_dim)
 
 
+class ZeroPositionalEncoder(nn.Module):
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.channels = channels
+
+    def forward(self, positions: torch.Tensor) -> torch.Tensor:
+        """
+        Simply return zero encodings. Useful for ablation studies.
+
+        positions: (*)
+
+        output: (*, channels)
+        """
+        return torch.zeros(*positions.size(), self.channels, device=positions.device)
+
+
 class DynamicGNN(nn.Module):
     def __init__(
         self,
@@ -72,6 +88,7 @@ class DynamicGNN(nn.Module):
         transformer_conv_num_block: int,
         transformer_conv_num_heads: int,
         dropout: float = 0.3,
+        zero_timestamp_encoder: bool = False,
     ) -> None:
         super().__init__()
         self.timestamp_enc_dim = timestamp_enc_dim
@@ -79,7 +96,11 @@ class DynamicGNN(nn.Module):
         self.output_dim = output_dim
 
         # timestamp encoder
-        self.timestamp_encoder = PositionalEncoder(timestamp_enc_dim // 2, 128)
+        self.timestamp_encoder: nn.Module
+        if zero_timestamp_encoder:
+            self.timestamp_encoder = ZeroPositionalEncoder(timestamp_enc_dim // 2)
+        else:
+            self.timestamp_encoder = PositionalEncoder(timestamp_enc_dim // 2, 128)
 
         # TransformerConvStack for the final node embeddings
         self.gnn = TransformerConvStack(
