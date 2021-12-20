@@ -61,6 +61,20 @@ def test_tw_cmd_gen_dataset_init():
         assert data == expected_data
 
 
+def test_tw_cmd_gen_dataset_init_allow_objs_with_same_label():
+    dataset = TWCmdGenGraphEventDataset(
+        "tests/data/test_data_same_label_obj.json", allow_objs_with_same_label=True
+    )
+    expected_dataset = []
+    with open("tests/data/preprocessed_objs_with_same_label_test_data.jsonl") as f:
+        for line in f:
+            expected_dataset.append(json.loads(line))
+
+    assert len(dataset) == len(expected_dataset)
+    for data, expected_data in zip(dataset, expected_dataset):
+        assert data == expected_data
+
+
 @pytest.mark.parametrize("batch_size", [1, 3])
 def test_tw_cmd_gen_free_run_dataset_init(batch_size):
     dataset = TWCmdGenGraphEventFreeRunDataset("tests/data/test_data.json", batch_size)

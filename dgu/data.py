@@ -47,7 +47,8 @@ class TWCmdGenGraphEventDataset(Dataset):
     under prev_graph_events contain timestamp information too.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, allow_objs_with_same_label: bool = False) -> None:
+        self.allow_objs_with_same_label = allow_objs_with_same_label
         with open(path, "r") as f:
             raw_data = json.load(f)
         self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
@@ -84,7 +85,12 @@ class TWCmdGenGraphEventDataset(Dataset):
         for timestamp, example in enumerate(game_steps):
             graph_events: List[Dict[str, Any]] = []
             for cmd in example["target_commands"]:
-                sub_event_seq = process_triplet_cmd(graph, timestamp, cmd)
+                sub_event_seq = process_triplet_cmd(
+                    graph,
+                    timestamp,
+                    cmd,
+                    allow_objs_with_same_label=self.allow_objs_with_same_label,
+                )
                 graph_events.extend(sub_event_seq)
             if timestamp == len(game_steps) - 1:
                 # last step so break
