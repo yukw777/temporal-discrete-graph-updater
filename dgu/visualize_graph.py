@@ -4,11 +4,17 @@ import matplotlib.pyplot as plt
 import networkx as nx
 
 from torch_geometric.data import Data, Batch
-from dgu.graph import batch_to_data_list, data_to_networkx
+from dgu.graph import (
+    batch_to_data_list,
+    data_to_networkx,
+    networkx_to_rdf,
+    update_rdf_graph,
+)
+from typing import Set
 
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.data import TWCmdGenGraphEventStepInput
-from dgu.constants import COMMANDS_TO_IGNORE
+from dgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
 
 
 def main(
@@ -18,6 +24,7 @@ def main(
     node_vocab_path: str,
     relation_vocab_path: str,
     device: str,
+    verbose: bool,
 ) -> None:
     # load the model
     lm = StaticLabelDiscreteGraphUpdater.load_from_checkpoint(
@@ -41,6 +48,7 @@ def main(
         edge_attr=torch.empty(0, dtype=torch.long),
         edge_last_update=torch.empty(0, 2, dtype=torch.long),
     ).to(device)
+    rdf_graph: Set[str] = set()
 
     # turn on interactive mode
     plt.ion()
@@ -49,14 +57,6 @@ def main(
     while not done:
         # print the observation
         print(obs)
-
-        # print the available actions
-        avail_actions = [
-            a for a in infos["admissible_commands"] if a not in COMMANDS_TO_IGNORE
-        ]
-        print("Available actions:")
-        for i, a in enumerate(avail_actions):
-            print(f"{i}. {a}")
 
         # update the graph to the current step
         obs_word_ids, obs_mask = lm.preprocessor.clean_and_preprocess([obs])
@@ -76,6 +76,69 @@ def main(
             )
         graph = batch_to_data_list(results_list[-1]["updated_batched_graph"], 1)[0]
 
+        # verbose output
+        if verbose:
+            batch_graph_cmds, _ = lm.generate_batch_graph_triples_seq(
+                [results["decoded_event_type_ids"] for results in results_list],
+                [results["decoded_event_src_ids"] for results in results_list],
+                [results["decoded_event_dst_ids"] for results in results_list],
+                [results["decoded_event_label_ids"] for results in results_list],
+                [results["updated_batched_graph"] for results in results_list],
+            )
+            graph_cmds = batch_graph_cmds[0]
+            print()
+            print("--------graph cmds---------")
+            for cmd in graph_cmds:
+                print(cmd)
+            print("------graph events---------")
+            for results in results_list:
+                for event_type_id, event_src_id, event_dst_id, event_label_id in zip(
+                    results["decoded_event_type_ids"],
+                    results["decoded_event_src_ids"],
+                    results["decoded_event_dst_ids"],
+                    results["decoded_event_label_ids"],
+                ):
+                    event_type = EVENT_TYPES[event_type_id]
+                    event_label = lm.labels[event_label_id]
+                    if event_type == "node-add":
+                        print((event_type, event_label))
+                    elif event_type == "node-delete":
+                        event_src_label = lm.labels[
+                            results["updated_batched_graph"].x[event_src_id]
+                        ]
+                        print(
+                            (
+                                event_type,
+                                (event_src_id.item(), event_src_label),
+                                event_label,
+                            )
+                        )
+                    else:
+                        event_src_label = lm.labels[
+                            results["updated_batched_graph"].x[event_src_id]
+                        ]
+                        event_dst_label = lm.labels[
+                            results["updated_batched_graph"].x[event_dst_id]
+                        ]
+                        print(
+                            (
+                                event_type,
+                                (event_src_id.item(), event_src_label),
+                                (event_dst_id.item(), event_dst_label),
+                                event_dst_label,
+                                event_label,
+                            )
+                        )
+            print("------graph event rdfs-----")
+            for rdf in sorted(networkx_to_rdf(data_to_networkx(graph, lm.labels))):
+                print(rdf)
+            print("------graph cmd rdfs------")
+            rdf_graph = update_rdf_graph(rdf_graph, graph_cmds)
+            for rdf in sorted(rdf_graph):
+                print(rdf)
+            print("---------------------------")
+            print()
+
         # visualize the graph
         nx_graph = data_to_networkx(graph, lm.labels)
         plt.figure(figsize=(30, 30))
@@ -87,6 +150,12 @@ def main(
         plt.show()
 
         # get the next action
+        avail_actions = [
+            a for a in infos["admissible_commands"] if a not in COMMANDS_TO_IGNORE
+        ]
+        print("Available actions:")
+        for i, a in enumerate(avail_actions):
+            print(f"{i}. {a}")
         action = avail_actions[int(input(">> "))]
         obs, _, done, infos = env.step(action)
 
@@ -101,6 +170,7 @@ if __name__ == "__main__":
     parser.add_argument("--node-vocab-path", default="vocabs/node_vocab.txt")
     parser.add_argument("--relation-vocab-path", default="vocabs/relation_vocab.txt")
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--verbose", default=False, action="store_true")
     args = parser.parse_args()
     main(
         args.game_filename,
@@ -109,4 +179,5 @@ if __name__ == "__main__":
         args.node_vocab_path,
         args.relation_vocab_path,
         args.device,
+        args.verbose,
     )
