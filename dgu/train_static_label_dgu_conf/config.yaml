@@ -48,3 +48,4 @@ trainer:
 defaults:
   - _self_
   - trainer/logger: null
+  - objs_with_same_label: null

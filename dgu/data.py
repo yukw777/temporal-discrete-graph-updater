@@ -148,7 +148,10 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
     }
     """
 
-    def __init__(self, path: str, batch_size: int) -> None:
+    def __init__(
+        self, path: str, batch_size: int, allow_objs_with_same_label: bool = False
+    ) -> None:
+        self.allow_objs_with_same_label = allow_objs_with_same_label
         self.batch_size = batch_size
         with open(path, "r") as f:
             raw_data = json.load(f)
@@ -236,7 +239,12 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
         for timestamp, example in enumerate(walkthrough_examples + random_examples):
             graph_events: List[Dict[str, Any]] = []
             for cmd in example["target_commands"]:
-                sub_event_seq = process_triplet_cmd(graph, timestamp, cmd)
+                sub_event_seq = process_triplet_cmd(
+                    graph,
+                    timestamp,
+                    cmd,
+                    allow_objs_with_same_label=self.allow_objs_with_same_label,
+                )
                 graph_events.extend(sub_event_seq)
             data.append(
                 {
@@ -747,6 +755,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         word_vocab_path: str,
         node_vocab_path: str,
         relation_vocab_path: str,
+        allow_objs_with_same_label: bool = False,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
@@ -758,6 +767,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         self.test_path = to_absolute_path(test_path)
         self.test_batch_size = test_batch_size
         self.test_num_worker = test_num_worker
+        self.allow_objs_with_same_label = allow_objs_with_same_label
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_path)
@@ -774,16 +784,29 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage is None:
-            self.train = TWCmdGenGraphEventDataset(self.train_path)
-            self.valid = TWCmdGenGraphEventDataset(self.val_path)
+            self.train = TWCmdGenGraphEventDataset(
+                self.train_path,
+                allow_objs_with_same_label=self.allow_objs_with_same_label,
+            )
+            self.valid = TWCmdGenGraphEventDataset(
+                self.val_path,
+                allow_objs_with_same_label=self.allow_objs_with_same_label,
+            )
             self.valid_free_run = TWCmdGenGraphEventFreeRunDataset(
-                self.val_path, self.val_batch_size
+                self.val_path,
+                self.val_batch_size,
+                allow_objs_with_same_label=self.allow_objs_with_same_label,
             )
 
         if stage == "test" or stage is None:
-            self.test = TWCmdGenGraphEventDataset(self.test_path)
+            self.test = TWCmdGenGraphEventDataset(
+                self.test_path,
+                allow_objs_with_same_label=self.allow_objs_with_same_label,
+            )
             self.test_free_run = TWCmdGenGraphEventFreeRunDataset(
-                self.test_path, self.test_batch_size
+                self.test_path,
+                self.test_batch_size,
+                allow_objs_with_same_label=self.allow_objs_with_same_label,
             )
 
     def train_dataloader(self) -> DataLoader:
