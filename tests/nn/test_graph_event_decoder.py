@@ -97,39 +97,23 @@ def test_event_node_head(
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
-    "autoregressive_embedding_dim,hidden_dim,key_query_dim,num_label,"
-    "label_embedding_dim,batch",
+    "autoregressive_embedding_dim,hidden_dim,num_label,batch",
     [
-        (24, 12, 8, 4, 24, 1),
-        (24, 12, 8, 4, 24, 10),
-        (48, 24, 12, 8, 48, 24),
+        (24, 12, 4, 1),
+        (24, 12, 4, 10),
+        (48, 24, 8, 24),
     ],
 )
 def test_event_static_label_head(
-    autoregressive_embedding_dim,
-    hidden_dim,
-    key_query_dim,
-    num_label,
-    label_embedding_dim,
-    batch,
-    dropout,
+    dropout, autoregressive_embedding_dim, hidden_dim, num_label, batch
 ):
     if dropout == 0.0:
-        head = EventStaticLabelHead(
-            autoregressive_embedding_dim, label_embedding_dim, hidden_dim, key_query_dim
-        )
+        head = EventStaticLabelHead(autoregressive_embedding_dim, hidden_dim, num_label)
     else:
         head = EventStaticLabelHead(
-            autoregressive_embedding_dim,
-            label_embedding_dim,
-            hidden_dim,
-            key_query_dim,
-            dropout=dropout,
+            autoregressive_embedding_dim, hidden_dim, num_label, dropout=dropout
         )
-    label_logits = head(
-        torch.rand(batch, autoregressive_embedding_dim),
-        torch.rand(num_label, label_embedding_dim),
-    )
+    label_logits = head(torch.rand(batch, autoregressive_embedding_dim))
     assert label_logits.size() == (batch, num_label)
 
 
