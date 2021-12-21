@@ -2,6 +2,7 @@ import textworld
 import torch
 import matplotlib.pyplot as plt
 import networkx as nx
+import json
 
 from torch_geometric.data import Data, Batch
 from dgu.graph import (
@@ -10,11 +11,61 @@ from dgu.graph import (
     networkx_to_rdf,
     update_rdf_graph,
 )
-from typing import Set
+from typing import Set, Tuple, List
+from pathlib import Path
 
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.data import TWCmdGenGraphEventStepInput
 from dgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
+
+
+class Env:
+    def __init__(self, game_file: str) -> None:
+        game_file_path = Path(game_file)
+        self.game_file_type = game_file_path.suffix
+        if self.game_file_type == ".z8":
+            env_infos = textworld.EnvInfos(admissible_commands=True)
+            self.env = textworld.start(game_file, env_infos)
+            self.env = textworld.envs.wrappers.Filter(self.env)
+        elif self.game_file_type == ".jsonl":
+            self.step_pointer = 0
+            with open(game_file) as f:
+                self.steps = []
+                for line in f:
+                    self.steps.append(json.loads(line))
+        else:
+            raise ValueError(f"Unknown game file type: {self.game_file_type}")
+
+    def reset(self) -> Tuple[str, List[str]]:
+        if self.game_file_type == ".z8":
+            obs, infos = self.env.reset()
+            return obs, infos["admissible_commands"]
+        elif self.game_file_type == ".jsonl":
+            self.step_pointer = 0
+            return (
+                self.steps[self.step_pointer]["observation"],
+                [self.steps[self.step_pointer]["taken_action"]],
+            )
+        else:
+            raise ValueError(f"Unknown game file type: {self.game_file_type}")
+
+    def step(self, action: str) -> Tuple[str, bool, List[str]]:
+        if self.game_file_type == ".z8":
+            obs, _, done, infos = self.env.step(action)
+            return obs, done, infos["admissible_commands"]
+        elif self.game_file_type == ".jsonl":
+            self.step_pointer += 1
+            if self.step_pointer == len(self.steps) - 1:
+                done = True
+            else:
+                done = False
+            return (
+                self.steps[self.step_pointer]["observation"],
+                done,
+                [self.steps[self.step_pointer]["taken_action"]],
+            )
+        else:
+            raise ValueError(f"Unknown game file type: {self.game_file_type}")
 
 
 def main(
@@ -36,10 +87,8 @@ def main(
     lm.eval()
     lm = lm.to(device)
 
-    env_infos = textworld.EnvInfos(admissible_commands=True)
-    env = textworld.start(game_file, env_infos)
-    env = textworld.envs.wrappers.Filter(env)
-    obs, infos = env.reset()
+    env = Env(game_file)
+    obs, admissible_cmds = env.reset()
     action = "restart"
     graph = Data(
         x=torch.empty(0, dtype=torch.long),
@@ -150,14 +199,12 @@ def main(
         plt.show()
 
         # get the next action
-        avail_actions = [
-            a for a in infos["admissible_commands"] if a not in COMMANDS_TO_IGNORE
-        ]
+        avail_actions = [a for a in admissible_cmds if a not in COMMANDS_TO_IGNORE]
         print("Available actions:")
         for i, a in enumerate(avail_actions):
             print(f"{i}. {a}")
         action = avail_actions[int(input(">> "))]
-        obs, _, done, infos = env.step(action)
+        obs, done, admissible_cmds = env.step(action)
 
 
 if __name__ == "__main__":
