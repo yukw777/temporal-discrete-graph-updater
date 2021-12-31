@@ -21,7 +21,13 @@ class TransformerConvStack(nn.Module):
         super().__init__()
         self.stack = nn.ModuleList(
             [
-                TransformerConv(node_dim, output_dim, edge_dim=edge_dim, heads=heads)
+                TransformerConv(
+                    node_dim,
+                    output_dim,
+                    edge_dim=edge_dim,
+                    heads=heads,
+                    dropout=dropout,
+                )
                 if i == 0
                 else TransformerConv(
                     node_dim + heads * output_dim,
