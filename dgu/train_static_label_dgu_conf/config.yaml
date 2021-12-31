@@ -21,6 +21,7 @@ model:
   _target_: dgu.nn.graph_updater.StaticLabelDiscreteGraphUpdater
   hidden_dim: 64
   word_emb_dim: 300
+  dgnn_gnn: TransformerConv
   dgnn_timestamp_enc_dim: 16
   dgnn_num_gnn_block: 1
   dgnn_num_gnn_head: 1

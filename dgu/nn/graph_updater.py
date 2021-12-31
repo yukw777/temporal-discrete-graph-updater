@@ -11,6 +11,7 @@ from torch.optim import AdamW, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
+from torch_geometric.nn import TransformerConv, GATv2Conv
 from torch_geometric.data import Batch
 
 from dgu.nn.text import TextEncoder
@@ -52,6 +53,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         hidden_dim: int = 8,
         word_emb_dim: int = 300,
+        dgnn_gnn: str = "TransformerConv",
         dgnn_timestamp_enc_dim: int = 8,
         dgnn_num_gnn_block: int = 1,
         dgnn_num_gnn_head: int = 1,
@@ -77,6 +79,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.save_hyperparameters(
             "hidden_dim",
             "word_emb_dim",
+            "dgnn_gnn",
             "dgnn_timestamp_enc_dim",
             "dgnn_num_gnn_block",
             "dgnn_num_gnn_head",
@@ -151,7 +154,15 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
 
         # temporal graph network
+        gnn_module: nn.Module
+        if dgnn_gnn == "TransformerConv":
+            gnn_module = TransformerConv
+        elif dgnn_gnn == "GATv2Conv":
+            gnn_module = GATv2Conv
+        else:
+            raise ValueError(f"Unknown GNN: {dgnn_gnn}")
         self.dgnn = DynamicGNN(
+            gnn_module,
             dgnn_timestamp_enc_dim,
             word_emb_dim,
             hidden_dim,
