@@ -2,8 +2,9 @@ import pytest
 import torch
 
 from torch_geometric.data import Batch
+from torch_geometric.nn import TransformerConv, GATv2Conv
 
-from dgu.nn.dynamic_gnn import DynamicGNN, TransformerConvStack, ZeroPositionalEncoder
+from dgu.nn.dynamic_gnn import DynamicGNN, GNNStack, ZeroPositionalEncoder
 
 
 @pytest.mark.parametrize(
@@ -62,7 +63,9 @@ from dgu.nn.dynamic_gnn import DynamicGNN, TransformerConvStack, ZeroPositionalE
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
 @pytest.mark.parametrize("zero_timestamp_encoder", [True, False])
+@pytest.mark.parametrize("gnn_module", [TransformerConv, GATv2Conv])
 def test_dgnn_forward(
+    gnn_module,
     zero_timestamp_encoder,
     dropout,
     timestamp_enc_dim,
@@ -75,6 +78,7 @@ def test_dgnn_forward(
 ):
     if dropout is None:
         dgnn = DynamicGNN(
+            gnn_module,
             timestamp_enc_dim,
             event_embedding_dim,
             output_dim,
@@ -84,6 +88,7 @@ def test_dgnn_forward(
         )
     else:
         dgnn = DynamicGNN(
+            gnn_module,
             timestamp_enc_dim,
             event_embedding_dim,
             output_dim,
@@ -101,15 +106,25 @@ def test_dgnn_forward(
     [(16, 8, 1, 1, None, 1, 0), (16, 8, 4, 3, 12, 5, 4)],
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
-def test_transformer_conv_stack_forward(
-    dropout, node_dim, output_dim, num_block, heads, edge_dim, num_node, num_edge
+@pytest.mark.parametrize("gnn_module", [TransformerConv, GATv2Conv])
+def test_gnn_stack_forward(
+    gnn_module,
+    dropout,
+    node_dim,
+    output_dim,
+    num_block,
+    heads,
+    edge_dim,
+    num_node,
+    num_edge,
 ):
     if dropout is None:
-        stack = TransformerConvStack(
-            node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
+        stack = GNNStack(
+            gnn_module, node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
         )
     else:
-        stack = TransformerConvStack(
+        stack = GNNStack(
+            gnn_module,
             node_dim,
             output_dim,
             num_block,
