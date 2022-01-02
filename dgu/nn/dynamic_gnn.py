@@ -2,15 +2,15 @@ import torch
 import torch.nn as nn
 
 from typing import Optional
-from torch_geometric.nn import TransformerConv
 from torch_geometric.data import Batch
 
 from dgu.nn.utils import PositionalEncoder
 
 
-class TransformerConvStack(nn.Module):
+class GNNStack(nn.Module):
     def __init__(
         self,
+        gnn_module: nn.Module,
         node_dim: int,
         output_dim: int,
         num_block: int,
@@ -20,18 +20,14 @@ class TransformerConvStack(nn.Module):
     ) -> None:
         super().__init__()
         self.stack = nn.ModuleList(
-            [
-                TransformerConv(node_dim, output_dim, edge_dim=edge_dim, heads=heads)
-                if i == 0
-                else TransformerConv(
-                    node_dim + heads * output_dim,
-                    output_dim,
-                    edge_dim=edge_dim,
-                    heads=heads,
-                    dropout=dropout,
-                )
-                for i in range(num_block)
-            ]
+            gnn_module(
+                node_dim if i == 0 else node_dim + heads * output_dim,
+                output_dim,
+                edge_dim=edge_dim,
+                heads=heads,
+                dropout=dropout,
+            )
+            for i in range(num_block)
         )
         self.linear = nn.Linear(heads * output_dim, output_dim)
 
@@ -82,6 +78,7 @@ class ZeroPositionalEncoder(nn.Module):
 class DynamicGNN(nn.Module):
     def __init__(
         self,
+        gnn_module: nn.Module,
         timestamp_enc_dim: int,
         event_embedding_dim: int,
         output_dim: int,
@@ -102,8 +99,8 @@ class DynamicGNN(nn.Module):
         else:
             self.timestamp_encoder = PositionalEncoder(timestamp_enc_dim // 2, 128)
 
-        # TransformerConvStack for the final node embeddings
-        self.gnn = TransformerConvStack(
+        self.gnn = GNNStack(
+            gnn_module,
             event_embedding_dim + timestamp_enc_dim,
             output_dim,
             transformer_conv_num_block,
