@@ -1495,7 +1495,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             self.hparams.hidden_dim,  # type: ignore
             device=event_type_ids.device,
         )
-        # (batch, node_embedding_dim)
+        # (batch, label_embedding_dim)
         src_node_mask = node_delete_mask.logical_or(edge_event_mask)
         # (batch)
         node_id_offsets = calculate_node_id_offsets(batch_size, batch)
@@ -1510,12 +1510,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             event_dst_embs[edge_event_mask] = self.embed_label(
                 node_label_ids[(event_dst_ids + node_id_offsets)[edge_event_mask]]
             )
-            # (batch, node_embedding_dim)
+            # (batch, label_embedding_dim)
 
         return torch.cat(
             [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
         )
-        # (batch, event_type_embedding_dim + 3 * node_embedding_dim)
+        # (batch, event_type_embedding_dim + 3 * label_embedding_dim)
 
 
 class UncertaintyWeightedLoss(nn.Module):
