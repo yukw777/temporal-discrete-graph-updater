@@ -7,6 +7,7 @@ from torch_geometric.data import Batch
 from dgu.nn.utils import (
     masked_mean,
     masked_softmax,
+    masked_log_softmax,
     compute_masks_from_event_type_ids,
     load_fasttext,
     find_indices,
@@ -96,6 +97,43 @@ def test_masked_softmax(batched_input, batched_mask):
     )
     # multiplying the output by the mask shouldn't change the values now.
     assert (batched_output * batched_mask).equal(batched_output)
+
+
+@pytest.mark.parametrize(
+    "batched_input,batched_mask",
+    [
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float(),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor(
+                [[True, True, False], [False, True, True], [True, True, True]]
+            ),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3).bool(),
+        ),
+    ],
+)
+def test_masked_log_softmax(batched_input, batched_mask):
+    batched_output = masked_log_softmax(batched_input, batched_mask, dim=1)
+    # ensure that log softmax outputs add up to 0 if at least one item is not maksed out
+    # 0 if all the items are masked out.
+    assert (
+        batched_output.exp()
+        .sum(dim=1)
+        .isclose(torch.any(batched_mask.float() == 1, dim=1).float())
+        .all()
+    )
+    # multiplying the output by the mask shouldn't change the values now.
+    assert (batched_output.exp() * batched_mask).isclose(batched_output.exp()).all()
 
 
 @pytest.mark.parametrize(
