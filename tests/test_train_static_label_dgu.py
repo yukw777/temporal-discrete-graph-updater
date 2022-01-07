@@ -94,6 +94,7 @@ def test_main_test_only(tmp_path):
                 "model.hidden_dim=8",
                 "model.text_encoder_num_conv_layers=2",
                 "model.text_encoder_kernel_size=3",
+                "model.graph_event_decoder_hidden_dim=8",
                 "model.graph_event_decoder_key_query_dim=8",
                 f"+trainer.default_root_dir={tmp_path}",
                 "test_only=true",
