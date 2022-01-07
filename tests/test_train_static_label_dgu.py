@@ -97,7 +97,7 @@ def test_main_test_only(tmp_path):
                 "model.graph_event_decoder_key_query_dim=8",
                 f"+trainer.default_root_dir={tmp_path}",
                 "test_only=true",
-                "+trainer.resume_from_checkpoint=tests/data/test.ckpt",
+                "+ckpt_path=tests/data/test.ckpt",
             ],
         )
         main(cfg)
