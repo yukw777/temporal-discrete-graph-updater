@@ -5,14 +5,17 @@ import pytorch_lightning as pl
 import torchmetrics
 import wandb
 import dgu.metrics
+import tqdm
 
 from typing import Optional, Dict, List, Sequence, Tuple, Any
 from torch.optim import AdamW, Optimizer
 from hydra.utils import to_absolute_path
 from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.trainer.states import RunningStage
 from torch_geometric.nn import TransformerConv, GATv2Conv
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
+from torch.utils.data import DataLoader
 
 from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
@@ -36,11 +39,18 @@ from dgu.nn.dynamic_gnn import DynamicGNN
 from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from dgu.data import (
     TWCmdGenGraphEventBatch,
+    TWCmdGenGraphEventFreeRunDataset,
     TWCmdGenGraphEventGraphicalInput,
     TWCmdGenGraphEventStepInput,
     read_label_vocab_files,
 )
 from dgu.constants import EVENT_TYPE_ID_MAP
+from dgu.graph import (
+    batch_to_data_list,
+    data_to_networkx,
+    networkx_to_rdf,
+    update_rdf_graph,
+)
 
 
 class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
@@ -231,6 +241,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.token_gd_exact_match = dgu.metrics.ExactMatch()
         self.graph_gd_f1 = dgu.metrics.F1()
         self.token_gd_f1 = dgu.metrics.F1()
+
+        self.free_run_f1 = dgu.metrics.F1()
+        self.free_run_em = dgu.metrics.ExactMatch()
 
     def forward(  # type: ignore
         self,
@@ -841,7 +854,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
             ]
         ).mean()
-        self.log(log_prefix + "_loss", loss, prog_bar=True)
+        self.log(log_prefix + "_loss", loss)
 
         # log classification F1s from teacher forcing
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
@@ -994,6 +1007,111 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         return table_data
 
+    def eval_free_run(
+        self, dataset: TWCmdGenGraphEventFreeRunDataset, dataloader: DataLoader
+    ) -> None:
+        is_sanity_checking = (
+            self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
+        )
+        if is_sanity_checking:
+            total = self.trainer.num_sanity_val_steps  # type: ignore
+        elif self.trainer.state.stage == RunningStage.VALIDATING:  # type: ignore
+            if isinstance(self.trainer.limit_val_batches, float):  # type: ignore
+                total = int(
+                    self.trainer.limit_val_batches * len(dataset)  # type: ignore
+                )
+            elif isinstance(self.trainer.limit_val_batches, int):  # type: ignore
+                total = self.trainer.limit_val_batches  # type: ignore
+            else:
+                total = len(dataset)
+        elif self.trainer.state.stage == RunningStage.TESTING:  # type: ignore
+            if isinstance(self.trainer.limit_test_batches, float):  # type: ignore
+                total = int(
+                    self.trainer.limit_test_batches * len(dataset)  # type: ignore
+                )
+            elif isinstance(self.trainer.limit_test_batches, int):  # type: ignore
+                total = self.trainer.limit_test_batches  # type: ignore
+            else:
+                total = len(dataset)
+        else:
+            total = len(dataset)
+
+        collator = self.trainer.datamodule.collator  # type: ignore
+        game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
+        with tqdm.tqdm(desc="Free Run", total=total) as pbar:
+            for batch in dataloader:
+                # finished games are the ones that were in game_id_to_graph, but are not
+                # part of the new batch
+                for finished_game_id in game_id_to_step_data_graph.keys() - {
+                    game_id for game_id, _ in batch
+                }:
+                    step_data, graph = game_id_to_step_data_graph.pop(finished_game_id)
+                    generated_rdfs = networkx_to_rdf(
+                        data_to_networkx(graph, self.labels)
+                    )
+                    groundtruth_rdfs = update_rdf_graph(
+                        set(step_data["previous_graph_seen"]),
+                        step_data["target_commands"],
+                    )
+                    self.free_run_f1([generated_rdfs], [groundtruth_rdfs])
+                    self.free_run_em([generated_rdfs], [groundtruth_rdfs])
+                    pbar.update()
+                    if pbar.n > total:
+                        return
+
+                # new games are the ones that were not in game_id_to_graph, but are now
+                # part of the new batch.
+                # due to Python's dictionary ordering (insertion order), new games are
+                # added always to the end.
+                for game_id, step_data in batch:
+                    if game_id in game_id_to_step_data_graph:
+                        _, graph = game_id_to_step_data_graph[game_id]
+                        game_id_to_step_data_graph[game_id] = (step_data, graph)
+                    else:
+                        game_id_to_step_data_graph[game_id] = (
+                            step_data,
+                            Data(
+                                x=torch.empty(0, dtype=torch.long),
+                                node_last_update=torch.empty(0, 2, dtype=torch.long),
+                                edge_index=torch.empty(2, 0, dtype=torch.long),
+                                edge_attr=torch.empty(0, dtype=torch.long),
+                                edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                            ).to(self.device),
+                        )
+
+                # sanity check
+                assert [game_id for game_id, _ in batch] == [
+                    game_id for game_id in game_id_to_step_data_graph
+                ]
+
+                # construct a batch
+                batched_obs: List[str] = []
+                batched_prev_actions: List[str] = []
+                batched_timestamps: List[int] = []
+                graph_list: List[Data] = []
+                for game_id, (step_data, graph) in game_id_to_step_data_graph.items():
+                    batched_obs.append(step_data["observation"])
+                    batched_prev_actions.append(step_data["previous_action"])
+                    batched_timestamps.append(step_data["timestamp"])
+                    graph_list.append(graph)
+
+                # greedy decode
+                results_list = self.greedy_decode(
+                    collator.collate_step_inputs(  # type: ignore
+                        batched_obs, batched_prev_actions, batched_timestamps
+                    ).to(self.device),
+                    Batch.from_data_list(graph_list),
+                )
+
+                # update graphs in game_id_to_step_data_graph
+                for (game_id, (step_data, _)), updated_graph in zip(
+                    game_id_to_step_data_graph.items(),
+                    batch_to_data_list(
+                        results_list[-1]["updated_batched_graph"], len(batched_obs)
+                    ),
+                ):
+                    game_id_to_step_data_graph[game_id] = (step_data, updated_graph)
+
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> List[Tuple[str, ...]]:
@@ -1021,6 +1139,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
+        self.eval_free_run(
+            self.trainer.datamodule.valid_free_run,  # type: ignore
+            self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
+        )
+        self.log("val_free_run_f1", self.free_run_f1, prog_bar=True)
+        self.log("val_free_run_em", self.free_run_em)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
 
@@ -1028,6 +1152,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
+        self.eval_free_run(
+            self.trainer.datamodule.test_free_run,  # type: ignore
+            self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
+        )
+        self.log("test_free_run_f1", self.free_run_f1)
+        self.log("test_free_run_em", self.free_run_em)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
 

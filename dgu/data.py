@@ -759,6 +759,9 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         self.labels, self.label_id_map = read_label_vocab_files(
             to_absolute_path(node_vocab_path), to_absolute_path(relation_vocab_path)
         )
+        self.collator = TWCmdGenGraphEventDataCollator(
+            self.preprocessor, self.label_id_map
+        )
 
     def prepare_data(self) -> None:
         pass
@@ -767,17 +770,21 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         if stage == "fit" or stage is None:
             self.train = TWCmdGenGraphEventDataset(self.train_path)
             self.valid = TWCmdGenGraphEventDataset(self.val_path)
+            self.valid_free_run = TWCmdGenGraphEventFreeRunDataset(
+                self.val_path, self.val_batch_size
+            )
 
         if stage == "test" or stage is None:
             self.test = TWCmdGenGraphEventDataset(self.test_path)
+            self.test_free_run = TWCmdGenGraphEventFreeRunDataset(
+                self.test_path, self.test_batch_size
+            )
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train,
             batch_size=self.train_batch_size,
-            collate_fn=TWCmdGenGraphEventDataCollator(
-                self.preprocessor, self.label_id_map
-            ),
+            collate_fn=self.collator,
             shuffle=True,
             pin_memory=True,
             num_workers=self.train_num_worker,
@@ -787,9 +794,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         return DataLoader(
             self.valid,
             batch_size=self.val_batch_size,
-            collate_fn=TWCmdGenGraphEventDataCollator(
-                self.preprocessor, self.label_id_map
-            ),
+            collate_fn=self.collator,
             pin_memory=True,
             num_workers=self.val_num_worker,
         )
@@ -798,11 +803,19 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         return DataLoader(
             self.test,
             batch_size=self.test_batch_size,
-            collate_fn=TWCmdGenGraphEventDataCollator(
-                self.preprocessor, self.label_id_map
-            ),
+            collate_fn=self.collator,
             pin_memory=True,
             num_workers=self.test_num_worker,
+        )
+
+    def val_free_run_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.valid_free_run, batch_size=None, pin_memory=True, num_workers=1
+        )
+
+    def test_free_run_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.test_free_run, batch_size=None, pin_memory=True, num_workers=1
         )
 
 
