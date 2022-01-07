@@ -2,7 +2,7 @@ import hydra
 import pytorch_lightning as pl
 
 from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate, get_class, to_absolute_path
+from hydra.utils import instantiate, to_absolute_path
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 
@@ -26,17 +26,6 @@ def main(cfg: DictConfig) -> None:
     # data module
     dm = instantiate(cfg.data_module)
 
-    if cfg.test_only:
-        model_class = get_class(cfg.model._target_)
-        lm = model_class.load_from_checkpoint(  # type: ignore
-            to_absolute_path(cfg.trainer.resume_from_checkpoint),
-            word_vocab_path=cfg.data_module.word_vocab_path,
-            node_vocab_path=cfg.data_module.node_vocab_path,
-            relation_vocab_path=cfg.data_module.relation_vocab_path,
-        )
-        trainer.test(model=lm, datamodule=dm)
-        return
-
     # lightning module
     lm = instantiate(
         cfg.model,
@@ -46,11 +35,18 @@ def main(cfg: DictConfig) -> None:
         relation_vocab_path=cfg.data_module.relation_vocab_path,
     )
 
+    # checkpoint path
+    ckpt_path = to_absolute_path(cfg.ckpt_path) if "ckpt_path" in cfg else None
+
+    if cfg.test_only:
+        trainer.test(model=lm, datamodule=dm, ckpt_path=ckpt_path)
+        return
+
     # fit
-    trainer.fit(lm, datamodule=dm)
+    trainer.fit(lm, datamodule=dm, ckpt_path=ckpt_path)
 
     # test
-    trainer.test()
+    trainer.test(ckpt_path="best", datamodule=dm)
 
 
 if __name__ == "__main__":
