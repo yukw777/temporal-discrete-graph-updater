@@ -4,7 +4,7 @@ import torch
 from torch_geometric.data import Batch
 from torch_geometric.nn import TransformerConv, GATv2Conv
 
-from dgu.nn.dynamic_gnn import DynamicGNN, GNNStack, ZeroPositionalEncoder
+from dgu.nn.dynamic_gnn import DynamicGNN, GNNStack, ZeroPositionalEncoder, GNNLayer
 
 
 @pytest.mark.parametrize(
@@ -102,44 +102,57 @@ def test_dgnn_forward(
 
 
 @pytest.mark.parametrize(
-    "node_dim,output_dim,num_block,heads,edge_dim,num_node,num_edge",
-    [(16, 8, 1, 1, None, 1, 0), (16, 8, 4, 3, 12, 5, 4)],
+    "input_dim,output_dim,edge_dim,heads,num_node,num_edge",
+    [(8, 16, 8, 1, 1, 0), (8, 16, 8, 3, 5, 4), (8, 16, 4, 3, 6, 2)],
 )
-@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
+@pytest.mark.parametrize("gnn_module", [TransformerConv, GATv2Conv])
+def test_gnn_layer_forward(
+    gnn_module,
+    dropout,
+    input_dim,
+    output_dim,
+    edge_dim,
+    heads,
+    num_node,
+    num_edge,
+):
+    layer = GNNLayer(gnn_module, input_dim, output_dim, edge_dim, heads, dropout)
+    assert (
+        layer(
+            torch.rand(num_node, input_dim),
+            torch.randint(num_node, (2, num_edge)),
+            torch.rand(num_edge, edge_dim),
+        ).size()
+        == (num_node, heads * output_dim)
+    )
+
+
+@pytest.mark.parametrize(
+    "node_dim,edge_dim,output_dim,num_block,heads,num_node,num_edge",
+    [(16, 16, 8, 1, 1, 1, 0), (16, 12, 8, 4, 3, 5, 4)],
+)
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize("gnn_module", [TransformerConv, GATv2Conv])
 def test_gnn_stack_forward(
     gnn_module,
     dropout,
     node_dim,
+    edge_dim,
     output_dim,
     num_block,
     heads,
-    edge_dim,
     num_node,
     num_edge,
 ):
-    if dropout is None:
-        stack = GNNStack(
-            gnn_module, node_dim, output_dim, num_block, heads=heads, edge_dim=edge_dim
-        )
-    else:
-        stack = GNNStack(
-            gnn_module,
-            node_dim,
-            output_dim,
-            num_block,
-            heads=heads,
-            edge_dim=edge_dim,
-            dropout=dropout,
-        )
-    assert (
-        stack(
-            torch.rand(num_node, node_dim),
-            torch.randint(num_node, (2, num_edge)),
-            edge_attr=None if edge_dim is None else torch.rand(num_edge, edge_dim),
-        ).size()
-        == (num_node, output_dim)
+    stack = GNNStack(
+        gnn_module, node_dim, edge_dim, output_dim, num_block, heads, dropout
     )
+    assert stack(
+        torch.rand(num_node, node_dim),
+        torch.randint(num_node, (2, num_edge)),
+        torch.rand(num_edge, edge_dim),
+    ).size() == (num_node, output_dim)
 
 
 @pytest.mark.parametrize(

@@ -1,10 +1,37 @@
 import torch
 import torch.nn as nn
 
-from typing import Optional
 from torch_geometric.data import Batch
 
 from dgu.nn.utils import PositionalEncoder
+
+
+class GNNLayer(nn.Module):
+    def __init__(
+        self,
+        gnn_module: nn.Module,
+        input_dim: int,
+        output_dim: int,
+        edge_dim: int,
+        heads: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        self.gnn = gnn_module(input_dim, output_dim, edge_dim=edge_dim, heads=heads)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        x: (num_node, input_dim)
+        edge_index: (2, num_edge)
+        edge_attr: (num_edge, edge_dim)
+
+        output: (num_node, heads * output_dim)
+        """
+        return self.dropout(self.relu(self.gnn(x, edge_index, edge_attr=edge_attr)))
 
 
 class GNNStack(nn.Module):
@@ -12,30 +39,28 @@ class GNNStack(nn.Module):
         self,
         gnn_module: nn.Module,
         node_dim: int,
+        edge_dim: int,
         output_dim: int,
         num_block: int,
-        heads: int = 1,
-        edge_dim: Optional[int] = None,
-        dropout: float = 0.3,
+        heads: int,
+        dropout: float,
     ) -> None:
         super().__init__()
         self.stack = nn.ModuleList(
-            gnn_module(
-                node_dim if i == 0 else node_dim + heads * output_dim,
+            GNNLayer(
+                gnn_module,
+                node_dim if i == 0 else heads * output_dim,
                 output_dim,
-                edge_dim=edge_dim,
-                heads=heads,
-                dropout=dropout,
+                edge_dim,
+                heads,
+                dropout,
             )
             for i in range(num_block)
         )
         self.linear = nn.Linear(heads * output_dim, output_dim)
 
     def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_attr: Optional[torch.Tensor] = None,
+        self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor
     ) -> torch.Tensor:
         """
         x: (num_node, node_dim)
@@ -46,14 +71,10 @@ class GNNStack(nn.Module):
         """
         for i, gnn in enumerate(self.stack):
             if i == 0:
-                node_embeddings = gnn(x, edge_index, edge_attr=edge_attr)
+                node_embeddings = gnn(x, edge_index, edge_attr)
                 # (num_node, heads * output_dim)
             else:
-                node_embeddings = gnn(
-                    torch.cat([node_embeddings, x], dim=-1),
-                    edge_index,
-                    edge_attr=edge_attr,
-                )
+                node_embeddings = gnn(node_embeddings, edge_index, edge_attr)
                 # (num_node, heads * output_dim)
         return self.linear(node_embeddings)
         # (num_node, output_dim)
@@ -102,11 +123,11 @@ class DynamicGNN(nn.Module):
         self.gnn = GNNStack(
             gnn_module,
             event_embedding_dim + timestamp_enc_dim,
+            event_embedding_dim + timestamp_enc_dim,
             output_dim,
             transformer_conv_num_block,
-            heads=transformer_conv_num_heads,
-            edge_dim=event_embedding_dim + timestamp_enc_dim,
-            dropout=dropout,
+            transformer_conv_num_heads,
+            dropout,
         )
 
     def forward(self, batched_graph: Batch) -> torch.Tensor:
