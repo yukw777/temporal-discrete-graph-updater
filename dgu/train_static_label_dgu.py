@@ -18,7 +18,9 @@ def main(cfg: DictConfig) -> None:
         cfg.trainer,
         callbacks=[
             ModelCheckpoint(
-                monitor="val_loss", filename="static-label-dgu-{epoch}-{val_loss:.2f}"
+                monitor="val_free_run_f1",
+                mode="max",
+                filename="static-label-dgu-{epoch}-{val_free_run_f1:.2f}",
             )
         ],
     )
