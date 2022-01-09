@@ -44,6 +44,17 @@ def masked_softmax(
     )
 
 
+def masked_log_softmax(
+    input: torch.Tensor, mask: torch.Tensor, dim: Optional[int] = None
+) -> torch.Tensor:
+    """
+    input, mask and output all have the same dimensions
+    """
+    # replace the values to be ignored with the minimum value of the data type
+    log_mask = torch.log(mask + torch.finfo(input.dtype).tiny)
+    return F.log_softmax(input + log_mask, dim=dim) + log_mask
+
+
 def compute_masks_from_event_type_ids(
     event_type_ids: torch.Tensor,
 ) -> Dict[str, torch.Tensor]:

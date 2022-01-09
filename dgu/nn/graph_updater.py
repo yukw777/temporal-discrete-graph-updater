@@ -22,6 +22,7 @@ from dgu.nn.rep_aggregator import ReprAggregator
 from dgu.nn.utils import (
     compute_masks_from_event_type_ids,
     index_edge_attr,
+    masked_log_softmax,
     masked_mean,
     load_fasttext,
     batchify_node_features,
@@ -332,6 +333,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 edge_attr: (num_edge)
                 edge_last_update: (num_edge)
             )
+            batch_node_mask: (batch, max_sub_graph_num_node)
             self_attn_weights:
                 len([(batch, 1, input_seq_len), ...]) == num_decoder_block,
             obs_graph_attn_weights:
@@ -443,10 +445,6 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             prev_input_event_emb_seq=prev_input_event_emb_seq,
             prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
         )
-        # decoded_event_logits: (batch, hidden_dim)
-        # updated_prev_input_event_emb_seq:
-        #     (num_block, batch, input_seq_len, hidden_dim)
-        # updated_prev_input_event_emb_seq_mask: (batch, input_seq_len)
 
         event_type_logits = self.event_type_head(decoder_output["output"])
         # (batch, num_event_type)
@@ -482,9 +480,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         elif event_src_logits.size(1) > 0:
             autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
                 autoregressive_emb,
-                torch.argmax(
-                    masked_softmax(event_src_logits, batch_node_mask, dim=1), dim=1
-                ),
+                masked_softmax(event_src_logits, batch_node_mask, dim=1).argmax(dim=1),
                 batch_node_embeddings,
                 batch_node_mask,
                 masks["src_mask"],
@@ -508,9 +504,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         elif event_dst_logits.size(1) > 0:
             autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
                 autoregressive_emb,
-                torch.argmax(
-                    masked_softmax(event_dst_logits, batch_node_mask, dim=1), dim=1
-                ),
+                masked_softmax(event_dst_logits, batch_node_mask, dim=1).argmax(dim=1),
                 batch_node_embeddings,
                 batch_node_mask,
                 masks["dst_mask"],
@@ -535,6 +529,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "encoded_obs": encoded_obs,
             "encoded_prev_action": encoded_prev_action,
             "updated_batched_graph": updated_batched_graph,
+            "batch_node_mask": batch_node_mask,
             **decoder_attn_weights,
         }
 
@@ -579,6 +574,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             encoded_obs: (batch, obs_len, hidden_dim)
             encoded_prev_action: (batch, prev_action_len, hidden_dim)
             updated_batched_graph: diagonally stacked batch of updated graphs
+            batch_node_mask: (batch, max_sub_graph_num_node)
         }, ...]
         """
         prev_input_event_emb_seq: Optional[torch.Tensor] = None
@@ -645,6 +641,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_src_ids: torch.Tensor,
         event_dst_logits: torch.Tensor,
         groundtruth_event_dst_ids: torch.Tensor,
+        batch_node_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
@@ -661,6 +658,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_src_ids: (batch)
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
+        batch_node_mask: (batch, num_node)
         event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
         groundtruth_event_mask: (batch)
@@ -674,12 +672,20 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         if groundtruth_event_src_mask.any():
             self.src_node_f1(
-                event_src_logits[groundtruth_event_src_mask].softmax(dim=1),
+                masked_softmax(
+                    event_src_logits[groundtruth_event_src_mask],
+                    batch_node_mask[groundtruth_event_src_mask],
+                    dim=1,
+                ),
                 groundtruth_event_src_ids[groundtruth_event_src_mask],
             )
         if groundtruth_event_dst_mask.any():
             self.dst_node_f1(
-                event_dst_logits[groundtruth_event_dst_mask].softmax(dim=1),
+                masked_softmax(
+                    event_dst_logits[groundtruth_event_dst_mask],
+                    batch_node_mask[groundtruth_event_dst_mask],
+                    dim=1,
+                ),
                 groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
         if groundtruth_event_label_mask.any():
@@ -817,6 +823,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_src_ids,
                     results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
+                    results["batch_node_mask"],
                     results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_mask,
@@ -852,6 +859,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_src_ids,
                     results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
+                    results["batch_node_mask"],
                     results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_mask,
@@ -875,6 +883,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_src_ids,
                 results["event_dst_logits"],
                 graphical_input.groundtruth_event_dst_ids,
+                results["batch_node_mask"],
                 results["event_label_logits"],
                 graphical_input.groundtruth_event_label_ids,
                 graphical_input.groundtruth_event_mask,
@@ -900,7 +909,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             )
             # handle source/destination logits for empty graphs by setting them to zeros
             unfiltered_event_src_ids = (
-                results["event_src_logits"].argmax(dim=1)
+                masked_softmax(
+                    results["event_src_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
                 if results["event_src_logits"].size(1) > 0
                 else torch.zeros(
                     results["event_src_logits"].size(0),
@@ -909,7 +920,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
             )
             unfiltered_event_dst_ids = (
-                results["event_dst_logits"].argmax(dim=1)
+                masked_softmax(
+                    results["event_dst_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
                 if results["event_dst_logits"].size(1) > 0
                 else torch.zeros(
                     results["event_dst_logits"].size(0),
@@ -1250,7 +1263,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
             else:
                 decoded_src_ids = (
-                    results["event_src_logits"]
+                    masked_softmax(
+                        results["event_src_logits"], results["batch_node_mask"], dim=1
+                    )
                     .argmax(dim=1)
                     .masked_fill(end_event_mask, 0)
                 )
@@ -1261,7 +1276,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 )
             else:
                 decoded_dst_ids = (
-                    results["event_dst_logits"]
+                    masked_softmax(
+                        results["event_dst_logits"], results["batch_node_mask"], dim=1
+                    )
                     .argmax(dim=1)
                     .masked_fill(end_event_mask, 0)
                 )
@@ -1521,7 +1538,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 class UncertaintyWeightedLoss(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.criterion = nn.CrossEntropyLoss(reduction="none")
+        self.ce_criterion = nn.CrossEntropyLoss(reduction="none")
+        self.nll_criterion = nn.NLLLoss(reduction="none")
         # log variance for event type, source node, destination node and label
         # classification tasks
         self.log_var = nn.parameter.Parameter(torch.zeros(4))
@@ -1534,6 +1552,7 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_src_ids: torch.Tensor,
         event_dst_logits: torch.Tensor,
         groundtruth_event_dst_ids: torch.Tensor,
+        batch_node_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
@@ -1551,6 +1570,7 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_src_ids: (batch)
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
+        batch_node_mask: (batch, num_node)
         event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
         groundtruth_event_mask: (batch)
@@ -1562,7 +1582,7 @@ class UncertaintyWeightedLoss(nn.Module):
         """
         # event type loss
         event_type_loss = (
-            self.criterion(event_type_logits, groundtruth_event_type_ids)
+            self.ce_criterion(event_type_logits, groundtruth_event_type_ids)
             * groundtruth_event_mask
         )
         # (batch)
@@ -1571,7 +1591,10 @@ class UncertaintyWeightedLoss(nn.Module):
         if groundtruth_event_src_mask.any():
             # source node loss
             src_node_loss += (
-                self.criterion(event_src_logits, groundtruth_event_src_ids)
+                self.nll_criterion(
+                    masked_log_softmax(event_src_logits, batch_node_mask, dim=1),
+                    groundtruth_event_src_ids,
+                )
                 * groundtruth_event_src_mask
             )
         dst_node_loss = torch.zeros_like(event_type_loss)
@@ -1579,7 +1602,10 @@ class UncertaintyWeightedLoss(nn.Module):
         if groundtruth_event_dst_mask.any():
             # destination node loss
             dst_node_loss += (
-                self.criterion(event_dst_logits, groundtruth_event_dst_ids)
+                self.nll_criterion(
+                    masked_log_softmax(event_dst_logits, batch_node_mask, dim=1),
+                    groundtruth_event_dst_ids,
+                )
                 * groundtruth_event_dst_mask
             )
         label_loss = torch.zeros_like(event_type_loss)
@@ -1587,7 +1613,7 @@ class UncertaintyWeightedLoss(nn.Module):
         if groundtruth_event_label_mask.any():
             # label loss
             label_loss += (
-                self.criterion(event_label_logits, groundtruth_event_label_ids)
+                self.ce_criterion(event_label_logits, groundtruth_event_label_ids)
                 * groundtruth_event_label_mask
             )
 
