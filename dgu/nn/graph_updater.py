@@ -18,6 +18,7 @@ from dgu.nn.text import TextEncoder
 from dgu.nn.rep_aggregator import ReprAggregator
 from dgu.nn.utils import (
     compute_masks_from_event_type_ids,
+    index_edge_attr,
     masked_mean,
     load_fasttext,
     batchify_node_features,
@@ -686,37 +687,43 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             tokens: len([[token, ...], ...]) = batch
         )
         """
-        # we ignore last graphs without nodes, b/c they wouldn't produce valid
-        # graph triples anyway
-        batched_graph_node_label_ids = batched_graph.x.split(
-            batched_graph.batch.bincount().tolist()
+        node_id_offsets = calculate_node_id_offsets(
+            event_type_ids.size(0), batched_graph.batch
         )
-        # (batch - num_last_empty_graphs)
+        # (batch)
+        batch_src_ids = src_ids + node_id_offsets
+        # (batch)
+        batch_dst_ids = dst_ids + node_id_offsets
+        # (batch)
 
         cmds: List[str] = []
         tokens: List[List[str]] = []
-        for event_type_id, src_id, dst_id, label_id, node_label_ids in zip(
-            event_type_ids.tolist(),
-            src_ids,
-            dst_ids,
-            label_ids,
-            batched_graph_node_label_ids,
+        for event_type_id, batch_src_id, batch_dst_id, label_id in zip(
+            event_type_ids.tolist(), batch_src_ids, batch_dst_ids, label_ids
         ):
             if event_type_id in {
                 EVENT_TYPE_ID_MAP["edge-add"],
                 EVENT_TYPE_ID_MAP["edge-delete"],
             }:
-                cmd = (
-                    "add"
-                    if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]
-                    else "delete"
-                )
-                src_label = self.labels[node_label_ids[src_id]]
-                dst_label = self.labels[node_label_ids[dst_id]]
+                src_label = self.labels[batched_graph.x[batch_src_id]]
+                dst_label = self.labels[batched_graph.x[batch_dst_id]]
+                if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
+                    cmd = "add"
+                    edge_label = self.labels[label_id]
+                else:
+                    cmd = "delete"
+                    edge_label = self.labels[
+                        index_edge_attr(
+                            batched_graph.edge_index,
+                            batched_graph.edge_attr,
+                            torch.stack(
+                                [batch_src_id.unsqueeze(0), batch_dst_id.unsqueeze(0)]
+                            ),
+                        )
+                    ]
                 # in the original dataset, multi-word edge labels are joined by
                 # an underscore
-                edge_label = "_".join(self.labels[label_id].split())
-                cmd_tokens = [cmd, src_label, dst_label, edge_label]
+                cmd_tokens = [cmd, src_label, dst_label, "_".join(edge_label.split())]
                 cmds.append(" , ".join(cmd_tokens))
                 tokens.append(cmd_tokens)
             else:
