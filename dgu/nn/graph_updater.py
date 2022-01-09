@@ -148,11 +148,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             self.labels = ["", "node", "relation"]
             self.label_id_map = {label: i for i, label in enumerate(self.labels)}
 
-        # calculate node/edge label embeddings
+        # node/edge labels
         label_word_ids, label_mask = self.preprocessor.preprocess(self.labels)
-        self.label_embeddings = nn.Embedding.from_pretrained(
-            masked_mean(pretrained_word_embeddings(label_word_ids), label_mask)
-        )
+        self.register_buffer("label_word_ids", label_word_ids)
+        self.register_buffer("label_mask", label_mask)
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -175,7 +174,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.dgnn = DynamicGNN(
             gnn_module,
             dgnn_timestamp_enc_dim,
-            word_emb_dim,
+            hidden_dim,
             hidden_dim,
             dgnn_num_gnn_block,
             dgnn_num_gnn_head,
@@ -193,7 +192,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             padding_idx=EVENT_TYPE_ID_MAP["pad"],
         )
         self.decoder = TransformerGraphEventDecoder(
-            graph_event_decoder_event_type_emb_dim + 3 * word_emb_dim,
+            graph_event_decoder_event_type_emb_dim + 3 * hidden_dim,
             hidden_dim,
             graph_event_decoder_num_dec_blocks,
             graph_event_decoder_dec_block_num_heads,
@@ -219,7 +218,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         self.event_label_head = EventStaticLabelHead(
             graph_event_decoder_hidden_dim,
-            word_emb_dim,
+            hidden_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
             dropout=dropout,
@@ -390,10 +389,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             node_embeddings = self.dgnn(
                 Batch(
                     batch=updated_batched_graph.batch,
-                    x=self.label_embeddings(updated_batched_graph.x),
+                    x=self.embed_label(updated_batched_graph.x),
                     node_last_update=updated_batched_graph.node_last_update,
                     edge_index=updated_batched_graph.edge_index,
-                    edge_attr=self.label_embeddings(updated_batched_graph.edge_attr),
+                    edge_attr=self.embed_label(updated_batched_graph.edge_attr),
                     edge_last_update=updated_batched_graph.edge_last_update,
                 )
             )
@@ -518,7 +517,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 event_dst_key,
             )
         label_logits = self.event_label_head(
-            autoregressive_emb, self.label_embeddings.weight
+            autoregressive_emb,
+            self.embed_label(torch.arange(len(self.labels), device=self.device)),
         )
         # (batch, num_label)
         return {
@@ -537,6 +537,16 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "updated_batched_graph": updated_batched_graph,
             **decoder_attn_weights,
         }
+
+    def embed_label(self, label_ids: torch.Tensor) -> torch.Tensor:
+        """
+        label_word_ids: (batch)
+        output: (batch, hidden_dim)
+        """
+        return masked_mean(
+            self.word_embeddings(self.label_word_ids[label_ids]),  # type: ignore
+            self.label_mask[label_ids],  # type: ignore
+        )
 
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -1453,7 +1463,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         # event label embeddings
         event_label_embs = torch.zeros(
             batch_size,
-            self.label_embeddings.embedding_dim,
+            self.hparams.hidden_dim,  # type: ignore
             device=event_type_ids.device,
         )
         # (batch, label_embedding_dim)
@@ -1470,44 +1480,42 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             edge_event_mask
         )
         # (batch)
-        event_label_embs[label_mask] = self.label_embeddings(
-            event_label_ids[label_mask]
-        )
+        event_label_embs[label_mask] = self.embed_label(event_label_ids[label_mask])
         # (batch, label_embedding_dim)
 
         # event source/destination node embeddings
         event_src_embs = torch.zeros(
             batch_size,
-            self.label_embeddings.embedding_dim,
+            self.hparams.hidden_dim,  # type: ignore
             device=event_type_ids.device,
         )
         # (batch, label_embedding_dim)
         event_dst_embs = torch.zeros(
             batch_size,
-            self.label_embeddings.embedding_dim,
+            self.hparams.hidden_dim,  # type: ignore
             device=event_type_ids.device,
         )
-        # (batch, node_embedding_dim)
+        # (batch, label_embedding_dim)
         src_node_mask = node_delete_mask.logical_or(edge_event_mask)
         # (batch)
         node_id_offsets = calculate_node_id_offsets(batch_size, batch)
         # (batch)
         if src_node_mask.any():
-            event_src_embs[src_node_mask] = self.label_embeddings(
+            event_src_embs[src_node_mask] = self.embed_label(
                 node_label_ids[(event_src_ids + node_id_offsets)[src_node_mask]]
             )
             # (batch, label_embedding_dim)
 
         if edge_event_mask.any():
-            event_dst_embs[edge_event_mask] = self.label_embeddings(
+            event_dst_embs[edge_event_mask] = self.embed_label(
                 node_label_ids[(event_dst_ids + node_id_offsets)[edge_event_mask]]
             )
-            # (batch, node_embedding_dim)
+            # (batch, label_embedding_dim)
 
         return torch.cat(
             [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
         )
-        # (batch, event_type_embedding_dim + 3 * node_embedding_dim)
+        # (batch, event_type_embedding_dim + 3 * label_embedding_dim)
 
 
 class UncertaintyWeightedLoss(nn.Module):
