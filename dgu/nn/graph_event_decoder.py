@@ -173,47 +173,31 @@ class EventStaticLabelHead(nn.Module):
     def __init__(
         self,
         autoregressive_embedding_dim: int,
-        label_embedding_dim: int,
         hidden_dim: int,
-        key_query_dim: int,
+        num_label: int,
         dropout: float = 0.3,
     ) -> None:
         super().__init__()
-        self.label_embedding_dim = label_embedding_dim
-
-        self.key_linear = nn.Sequential(
-            nn.Linear(self.label_embedding_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=dropout),
-            nn.Linear(hidden_dim, key_query_dim),
-        )
-        self.query_linear = nn.Sequential(
+        self.linear = nn.Sequential(
             nn.Linear(autoregressive_embedding_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Dropout(p=dropout),
-            nn.Linear(hidden_dim, key_query_dim),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(hidden_dim, num_label),
         )
 
-    def forward(
-        self, autoregressive_embedding: torch.Tensor, label_embeddings: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, autoregressive_embedding: torch.Tensor) -> torch.Tensor:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
-        label_embeddings: (num_label, label_embedding_dim)
 
         output:
             label_logits: (batch, num_label), logits for nodes first, then edges
         """
-        # calculate the key from label_embeddings
-        key = self.key_linear(label_embeddings)
-        # (num_label, key_query_dim)
-
-        # calculate the query from event_type and autoregressive_embedding
-        query = self.query_linear(autoregressive_embedding)
-        # (batch, key_query_dim)
-
-        # multiply key and query to calculate the logits
-        return torch.matmul(query, key.transpose(0, 1))
+        return self.linear(autoregressive_embedding)
 
 
 class RNNGraphEventDecoder(nn.Module):

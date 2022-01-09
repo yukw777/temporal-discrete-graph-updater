@@ -220,8 +220,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.event_label_head = EventStaticLabelHead(
             graph_event_decoder_hidden_dim,
             hidden_dim,
-            hidden_dim,
-            graph_event_decoder_key_query_dim,
+            len(self.labels),
             dropout=dropout,
         )
 
@@ -510,11 +509,9 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 masks["dst_mask"],
                 event_dst_key,
             )
-        label_logits = self.event_label_head(
-            autoregressive_emb,
-            self.embed_label(torch.arange(len(self.labels), device=self.device)),
-        )
+        label_logits = self.event_label_head(autoregressive_emb)
         # (batch, num_label)
+
         return {
             "event_type_logits": event_type_logits,
             "event_src_logits": event_src_logits,
