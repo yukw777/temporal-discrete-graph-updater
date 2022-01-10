@@ -10,19 +10,31 @@ from dgu.constants import EVENT_TYPES
 
 class EventTypeHead(nn.Module):
     def __init__(
-        self, graph_event_embedding_dim: int, hidden_dim: int, dropout: float = 0.3
+        self,
+        graph_event_embedding_dim: int,
+        hidden_dim: int,
+        autoregressive_embedding_dim: int,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.linear = nn.Sequential(
             nn.Linear(graph_event_embedding_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, len(EVENT_TYPES)),
         )
+        self.graph_event_emb_linear = nn.Linear(
+            graph_event_embedding_dim, autoregressive_embedding_dim
+        )
         self.autoregressive_linear = nn.Sequential(
-            nn.Linear(len(EVENT_TYPES), graph_event_embedding_dim),
+            nn.Linear(len(EVENT_TYPES), autoregressive_embedding_dim),
             nn.ReLU(),
-            nn.Dropout(p=dropout),
+            nn.Linear(autoregressive_embedding_dim, autoregressive_embedding_dim),
         )
 
     def forward(self, graph_event_embeddings: torch.Tensor) -> torch.Tensor:
@@ -46,7 +58,7 @@ class EventTypeHead(nn.Module):
         event_type_ids: (batch)
         event_mask: (batch)
 
-        output: autoregressive_embedding, (batch, graph_event_embedding_dim)
+        output: autoregressive_embedding, (batch, autoregressive_embedding_dim)
         """
         # autoregressive embedding
         # get the one hot encoding of event
@@ -54,12 +66,14 @@ class EventTypeHead(nn.Module):
             event_type_ids, num_classes=len(EVENT_TYPES)
         ).float()
         # (batch, num_event_type)
-        # pass it through a linear layer
+        # pass it through the linear layers
         encoded_event_type = self.autoregressive_linear(one_hot_event_type)
-        # (batch, graph_event_embedding_dim)
+        # (batch, autoregressive_embedding_dim)
         # add it to graph_event_embeddings to calculate the autoregressive embedding
-        return graph_event_embeddings + encoded_event_type * event_mask.unsqueeze(-1)
-        # (batch, graph_event_embedding_dim)
+        return self.graph_event_emb_linear(
+            graph_event_embeddings
+        ) + encoded_event_type * event_mask.unsqueeze(-1)
+        # (batch, autoregressive_embedding_dim)
 
 
 class EventNodeHead(nn.Module):
