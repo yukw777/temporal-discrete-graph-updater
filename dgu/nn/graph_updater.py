@@ -213,14 +213,12 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
-            dropout=dropout,
         )
         self.event_dst_head = EventNodeHead(
             hidden_dim,
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
-            dropout=dropout,
         )
         self.event_label_head = EventStaticLabelHead(
             graph_event_decoder_autoregressive_emb_dim,
