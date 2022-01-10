@@ -83,20 +83,13 @@ class EventNodeHead(nn.Module):
         autoregressive_embedding_dim: int,
         hidden_dim: int,
         key_query_dim: int,
-        dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.key_query_dim = key_query_dim
-        self.key_linear = nn.Sequential(
-            nn.Linear(node_embedding_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=dropout),
-            nn.Linear(hidden_dim, key_query_dim),
-        )
+        self.key_conv1d = nn.Conv1d(node_embedding_dim, key_query_dim, 1)
         self.query_linear = nn.Sequential(
             nn.Linear(autoregressive_embedding_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(p=dropout),
             nn.Linear(hidden_dim, key_query_dim),
         )
         self.autoregressive_linear = nn.Linear(
@@ -122,7 +115,7 @@ class EventNodeHead(nn.Module):
             )
 
         # calculate the key from node_embeddings
-        key = self.key_linear(node_embeddings)
+        key = self.key_conv1d(node_embeddings.transpose(1, 2)).transpose(1, 2)
         # (batch, num_node, key_query_dim)
 
         # calculate the query from autoregressive_embedding
@@ -162,25 +155,22 @@ class EventNodeHead(nn.Module):
         )
         # (batch, num_node)
         # multiply by the key
-        selected_node_embeddings = torch.bmm(
-            one_hot_selected_node.unsqueeze(1), key
-        ).squeeze(1)
+        selected_keys = torch.bmm(one_hot_selected_node.unsqueeze(1), key).squeeze(1)
+        # (batch, key_query_dim)
+        # reduce it by the mean keys
+        reduced_selected_keys = selected_keys - masked_mean(key, node_mask)
         # (batch, key_query_dim)
         # pass it through a linear layer
-        selected_node_embeddings = self.autoregressive_linear(
-            selected_node_embeddings
-        ) * node_mask.any(dim=1).unsqueeze(
-            -1
-        )  # mask out pad nodes
-        # (batch, hidden_dim)
+        autoregressive_update = self.autoregressive_linear(reduced_selected_keys)
+        # (batch, autoregressive_embedding_dim)
         # add it to the autoregressive embedding
         # NOTE: make sure not to do an in-place += here as it messes with gradients
         return (
             autoregressive_embedding
-            + selected_node_embeddings
+            + autoregressive_update
             * event_node_mask.unsqueeze(-1)  # mask out nodes that shouldn't be selected
         )
-        # (batch, hidden_dim)
+        # (batch, autoregressive_embedding_dim)
 
 
 class EventStaticLabelHead(nn.Module):
