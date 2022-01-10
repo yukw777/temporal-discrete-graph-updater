@@ -76,6 +76,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         text_encoder_num_heads: int = 1,
         graph_event_decoder_event_type_emb_dim: int = 8,
         graph_event_decoder_hidden_dim: int = 8,
+        graph_event_decoder_autoregressive_emb_dim: int = 8,
         graph_event_decoder_key_query_dim: int = 8,
         graph_event_decoder_num_dec_blocks: int = 1,
         graph_event_decoder_dec_block_num_heads: int = 1,
@@ -102,6 +103,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "text_encoder_num_heads",
             "graph_event_decoder_event_type_emb_dim",
             "graph_event_decoder_hidden_dim",
+            "graph_event_decoder_autoregressive_emb_dim",
             "graph_event_decoder_key_query_dim",
             "graph_event_decoder_num_dec_blocks",
             "graph_event_decoder_dec_block_num_heads",
@@ -201,24 +203,27 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             dropout=dropout,
         )
         self.event_type_head = EventTypeHead(
-            graph_event_decoder_hidden_dim, hidden_dim, dropout=dropout
+            graph_event_decoder_hidden_dim,
+            hidden_dim,
+            graph_event_decoder_autoregressive_emb_dim,
+            dropout=dropout,
         )
         self.event_src_head = EventNodeHead(
             hidden_dim,
-            graph_event_decoder_hidden_dim,
+            graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
             dropout=dropout,
         )
         self.event_dst_head = EventNodeHead(
             hidden_dim,
-            graph_event_decoder_hidden_dim,
+            graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
             graph_event_decoder_key_query_dim,
             dropout=dropout,
         )
         self.event_label_head = EventStaticLabelHead(
-            graph_event_decoder_hidden_dim,
+            graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
             len(self.labels),
             dropout=dropout,

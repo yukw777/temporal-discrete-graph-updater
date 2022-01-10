@@ -14,34 +14,58 @@ from dgu.constants import EVENT_TYPES
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
-    "graph_event_embedding_dim,hidden_dim,batch", [(24, 12, 1), (128, 64, 8)]
+    "graph_event_embedding_dim,hidden_dim,autoregressive_embedding_dim,batch",
+    [
+        (24, 12, 12, 1),
+        (128, 64, 64, 8),
+    ],
 )
-def test_event_type_head(dropout, graph_event_embedding_dim, hidden_dim, batch):
+def test_event_type_head(
+    dropout, graph_event_embedding_dim, hidden_dim, autoregressive_embedding_dim, batch
+):
     if dropout == 0.0:
-        head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
+        head = EventTypeHead(
+            graph_event_embedding_dim, hidden_dim, autoregressive_embedding_dim
+        )
     else:
-        head = EventTypeHead(graph_event_embedding_dim, hidden_dim, dropout=dropout)
+        head = EventTypeHead(
+            graph_event_embedding_dim,
+            hidden_dim,
+            autoregressive_embedding_dim,
+            dropout=dropout,
+        )
     logits = head(torch.rand(batch, graph_event_embedding_dim))
     assert logits.size() == (batch, len(EVENT_TYPES))
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
-    "graph_event_embedding_dim,hidden_dim,batch", [(24, 12, 1), (128, 64, 8)]
+    "graph_event_embedding_dim,hidden_dim,autoregressive_embedding_dim,batch",
+    [
+        (24, 12, 12, 1),
+        (128, 64, 64, 8),
+    ],
 )
 def test_event_type_head_get_autoregressive_embedding(
-    graph_event_embedding_dim, hidden_dim, batch, dropout
+    graph_event_embedding_dim, hidden_dim, autoregressive_embedding_dim, batch, dropout
 ):
     if dropout == 0.0:
-        head = EventTypeHead(graph_event_embedding_dim, hidden_dim)
+        head = EventTypeHead(
+            graph_event_embedding_dim, hidden_dim, autoregressive_embedding_dim
+        )
     else:
-        head = EventTypeHead(graph_event_embedding_dim, hidden_dim, dropout=dropout)
+        head = EventTypeHead(
+            graph_event_embedding_dim,
+            hidden_dim,
+            autoregressive_embedding_dim,
+            dropout=dropout,
+        )
     autoregressive_embedding = head.get_autoregressive_embedding(
         torch.rand(batch, graph_event_embedding_dim),
         torch.randint(len(EVENT_TYPES), (batch,)),
         torch.randint(2, (batch,)).bool(),
     )
-    assert autoregressive_embedding.size() == (batch, graph_event_embedding_dim)
+    assert autoregressive_embedding.size() == (batch, autoregressive_embedding_dim)
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
