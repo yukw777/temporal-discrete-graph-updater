@@ -2,11 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import Optional, Tuple, List, Any, Dict
+from typing import Optional, List, Any, Dict
 from tqdm import tqdm
 from pathlib import Path
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Batch
+from torch_geometric.utils import to_dense_batch
 
 from dgu.constants import EVENT_TYPE_ID_MAP
 from dgu.preprocessor import SpacyPreprocessor
@@ -221,41 +222,6 @@ def index_edge_attr(
     out[co_occur.any(1)] = edge_attr[pos]
     return out
     # (num_indexed_edge, *)
-
-
-def batchify_node_features(
-    node_features: torch.Tensor, batch: torch.Tensor, batch_size: int
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Batchify node features from the batched global graph. It also calculates
-    the corresponding node mask. "batch" is assumed to be ascending order.
-
-    node_features: (num_node, *)
-    batch: (num_node)
-    batch_size: desired batch size
-
-    output:
-        batch_node_embeddings: (batch, max_sub_graph_num_node, *)
-        batch_node_mask: (batch, max_sub_graph_num_node)
-    """
-    # batchify node_embeddings based on batch
-    bincount = batch.bincount()
-    # we pad the bincount to the desired batch size in case the last graphs in
-    # the batch don't have nodes.
-    split_size = F.pad(bincount, (0, batch_size - bincount.size(0))).tolist()
-    batch_node_features = pad_sequence(
-        node_features.split(split_size), batch_first=True  # type: ignore
-    )
-    # (batch, max_sub_graph_num_node, hidden_dim)
-
-    # calculate node_mask
-    batch_node_mask = pad_sequence(
-        torch.ones(  # type: ignore
-            bincount.sum(), device=batch_node_features.device, dtype=torch.bool
-        ).split(split_size),
-        batch_first=True,
-    )
-    return batch_node_features, batch_node_mask
 
 
 def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
@@ -484,15 +450,15 @@ def update_node_features(
 
     output: (num_node-num_deleted_node+num_added_node, *)
     """
-    batchified_features, batchified_features_mask = batchify_node_features(
-        node_features[delete_mask], batch[delete_mask], batch_size
+    batchified_features, batchified_features_mask = to_dense_batch(
+        node_features[delete_mask], batch=batch[delete_mask], batch_size=batch_size
     )
     # batchified_features: (batch, max_subgraph_num_node, *)
     # batchified_features_mask: (batch, max_subgraph_num_node)
     (
         batchified_added_features,
         batchified_added_features_mask,
-    ) = batchify_node_features(added_features, added_batch, batch_size)
+    ) = to_dense_batch(added_features, batch=added_batch, batch_size=batch_size)
     # batchified_added_features: (batch, max_num_added_node, *)
     # batchified_added_features_mask: (batch, max_num_added_node)
     new_features = torch.cat(

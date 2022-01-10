@@ -15,6 +15,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.trainer.states import RunningStage
 from torch_geometric.nn import TransformerConv, GATv2Conv
 from torch_geometric.data import Batch, Data
+from torch_geometric.utils import to_dense_batch
 from torch.utils.data import DataLoader
 
 from dgu.nn.text import TextEncoder
@@ -25,7 +26,6 @@ from dgu.nn.utils import (
     masked_log_softmax,
     masked_mean,
     load_fasttext,
-    batchify_node_features,
     calculate_node_id_offsets,
     masked_softmax,
     update_batched_graph,
@@ -405,8 +405,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             # (num_node, hidden_dim)
 
         # batchify node_embeddings
-        batch_node_embeddings, batch_node_mask = batchify_node_features(
-            node_embeddings, updated_batched_graph.batch, obs_mask.size(0)
+        batch_node_embeddings, batch_node_mask = to_dense_batch(
+            node_embeddings,
+            batch=updated_batched_graph.batch,
+            batch_size=obs_mask.size(0),
         )
         # batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
         # batch_node_mask: (batch, max_sub_graph_num_node)
