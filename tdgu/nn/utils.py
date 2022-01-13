@@ -62,9 +62,10 @@ def compute_masks_from_event_type_ids(
     """
     Compute three boolean masks from the given event type ids tensor.
     1. event mask: masks out pad event
-    2. source mask: True if node-delete or edge event
-    3. destination mask: True if edge event
-    4. label mask: True if node-add or edge-add
+    2. source mask: True if node-delete or edge-add
+    3. destination mask: True if edge-add
+    4. edge mask: True if edge-delete
+    5. label mask: True if node-add or edge-add
 
     Dimensions of the masks are the same as that of event_type_ids.
 
@@ -72,6 +73,7 @@ def compute_masks_from_event_type_ids(
         "event_mask": event mask,
         "src_mask": source mask,
         "dst_mask": destination mask,
+        "edge_mask": edge mask,
         "label_mask": label mask,
     }
     """
@@ -86,14 +88,14 @@ def compute_masks_from_event_type_ids(
     # (batch, event_seq_len)
     is_edge_delete = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
     # (batch, event_seq_len)
-    is_edge_event = is_edge_add.logical_or(is_edge_delete)
-    # (batch, event_seq_len)
 
     event_mask = is_pad_event.logical_not()
     # (batch, event_seq_len)
-    src_mask = is_node_delete.logical_or(is_edge_event)
+    src_mask = is_node_delete.logical_or(is_edge_add)
     # (batch, event_seq_len)
-    dst_mask = is_edge_event
+    dst_mask = is_edge_add
+    # (batch, event_seq_len)
+    edge_mask = is_edge_delete
     # (batch, event_seq_len)
     label_mask = is_node_add.logical_or(is_edge_add)
     # (batch, event_seq_len)
@@ -102,6 +104,7 @@ def compute_masks_from_event_type_ids(
         "event_mask": event_mask,
         "src_mask": src_mask,
         "dst_mask": dst_mask,
+        "edge_mask": edge_mask,
         "label_mask": label_mask,
     }
 
