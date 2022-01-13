@@ -7,7 +7,7 @@ from tqdm import tqdm
 from pathlib import Path
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Batch
-from torch_geometric.utils import to_dense_batch
+from torch_geometric.utils import to_dense_batch, sort_edge_index
 
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.preprocessor import SpacyPreprocessor
@@ -421,13 +421,19 @@ def update_batched_graph(
     )
     # (num_edge-num_deleted_edge+num_added_edge)
 
+    # sort the new edge index and features
+    sorted_new_edge_index, [
+        sorted_new_edge_attr,
+        sorted_new_edge_last_update,
+    ] = sort_edge_index(new_edge_index, [new_edge_attr, new_edge_last_update])
+
     return Batch(
         batch=new_batch,
         x=new_x,
         node_last_update=new_node_last_update,
-        edge_index=new_edge_index,
-        edge_attr=new_edge_attr,
-        edge_last_update=new_edge_last_update,
+        edge_index=sorted_new_edge_index,
+        edge_attr=sorted_new_edge_attr,
+        edge_last_update=sorted_new_edge_last_update,
     )
 
 

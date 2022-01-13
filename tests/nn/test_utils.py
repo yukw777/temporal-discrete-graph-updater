@@ -847,9 +847,9 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                 node_last_update=torch.tensor(
                     [[1, 0], [2, 3], [3, 1], [4, 6], [5, 9], [6, 1]]
                 ),
-                edge_index=torch.tensor([[2, 0], [0, 1]]),
-                edge_attr=torch.tensor([[1] * 4, [7] * 4]).float(),
-                edge_last_update=torch.tensor([[3, 2], [5, 2]]),
+                edge_index=torch.tensor([[0, 2], [1, 0]]),
+                edge_attr=torch.tensor([[7] * 4, [1] * 4]).float(),
+                edge_last_update=torch.tensor([[5, 2], [3, 2]]),
             ),
         ),
         (
@@ -961,9 +961,9 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                 node_last_update=torch.tensor(
                     [[3, 2], [5, 1], [1, 2], [2, 0], [3, 7], [4, 1], [3, 8]]
                 ),
-                edge_index=torch.tensor([[5, 3], [4, 2]]),
-                edge_attr=torch.tensor([[1] * 4, [3] * 4]).float(),
-                edge_last_update=torch.tensor([[4, 2], [2, 4]]),
+                edge_index=torch.tensor([[3, 5], [2, 4]]),
+                edge_attr=torch.tensor([[3] * 4, [1] * 4]).float(),
+                edge_last_update=torch.tensor([[2, 4], [4, 2]]),
             ),
         ),
         (
@@ -1050,9 +1050,9 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                 node_last_update=torch.tensor(
                     [[3, 1], [5, 2], [1, 2], [2, 6], [3, 0], [4, 3], [3, 8]]
                 ),
-                edge_index=torch.tensor([[5, 3], [4, 2]]),
-                edge_attr=torch.tensor([1, 3]).float(),
-                edge_last_update=torch.tensor([[4, 5], [2, 9]]),
+                edge_index=torch.tensor([[3, 5], [2, 4]]),
+                edge_attr=torch.tensor([3, 1]).float(),
+                edge_last_update=torch.tensor([[2, 9], [4, 5]]),
             ),
         ),
     ],
