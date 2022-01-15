@@ -529,6 +529,77 @@ def test_networkx_to_rdf(node_attrs, edge_attrs, expected):
 
 
 @pytest.mark.parametrize(
+    "node_attrs,edge_attrs,expected",
+    [
+        (
+            [(0, {"label": "player"}), (1, {"label": "living room"})],
+            [(0, 1, {"label": "at"})],
+            {"player , living room , at"},
+        ),
+        (
+            [
+                (0, {"label": "player"}),
+                (1, {"label": "living room"}),
+                (2, {"label": "exit"}),
+            ],
+            [(0, 1, {"label": "at"}), (2, 1, {"label": "west of"})],
+            {"player , living room , at", "exit , living room , west_of"},
+        ),
+        (
+            [
+                (0, {"label": "potato"}),
+                (1, {"label": "red"}),
+                (2, {"label": "table"}),
+            ],
+            [(0, 1, {"label": "is"}), (0, 2, {"label": "on"})],
+            {"red potato , table , on"},
+        ),
+        (
+            [
+                (0, {"label": "potato"}),
+                (1, {"label": "red"}),
+                (2, {"label": "table"}),
+                (3, {"label": "potato"}),
+                (4, {"label": "yellow"}),
+                (5, {"label": "counter"}),
+            ],
+            [
+                (0, 1, {"label": "is"}),
+                (0, 2, {"label": "on"}),
+                (3, 4, {"label": "is"}),
+                (3, 5, {"label": "on"}),
+            ],
+            {"red potato , table , on", "yellow potato , counter , on"},
+        ),
+        (
+            [
+                (0, {"label": "potato"}),
+                (1, {"label": "red"}),
+                (2, {"label": "table"}),
+                (3, {"label": "potato"}),
+                (4, {"label": "yellow"}),
+                (5, {"label": "counter"}),
+                (6, {"label": "purple"}),
+            ],
+            [
+                (0, 1, {"label": "is"}),
+                (0, 2, {"label": "on"}),
+                (3, 4, {"label": "is"}),
+                (3, 5, {"label": "on"}),
+                (3, 6, {"label": "is"}),
+            ],
+            {"red potato , table , on", "potato , counter , on"},
+        ),
+    ],
+)
+def test_networkx_to_rdf_allow_obs_with_same_label(node_attrs, edge_attrs, expected):
+    graph = nx.DiGraph()
+    graph.add_nodes_from(node_attrs)
+    graph.add_edges_from(edge_attrs)
+    assert networkx_to_rdf(graph, allow_objs_with_same_label=True) == expected
+
+
+@pytest.mark.parametrize(
     "rdfs,graph_cmds,expected",
     [
         (

@@ -140,3 +140,12 @@ FOOD_KINDS = {
     "green bell pepper": "bell pepper",
     "orange bell pepper": "bell pepper",
 }
+
+FOOD_COLORS = {
+    "tuna": {"red", "white"},
+    "onion": {"red", "white", "yellow"},
+    "potato": {"red", "yellow", "purple"},
+    "apple": {"red", "yello", "green"},
+    "hot pepper": {"red", "green"},
+    "bell pepper": {"red", "yellow", "green", "orange"},
+}

@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Set
 
 from torch_geometric.data import Data, Batch
 
-from dgu.constants import IS, FOOD_KINDS
+from dgu.constants import FOOD_COLORS, IS, FOOD_KINDS
 from dgu.nn.utils import calculate_node_id_offsets
 
 
@@ -332,15 +332,32 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
     return data_list
 
 
-def networkx_to_rdf(graph: nx.DiGraph) -> Set[str]:
+def networkx_to_rdf(
+    graph: nx.DiGraph, allow_objs_with_same_label: bool = False
+) -> Set[str]:
     """
     Turn the given networkx graph into a set of RDF triples.
     """
     rdfs: Set[str] = set()
     for src, dst, edge_data in graph.edges.data():
+        src_label = graph.nodes[src]["label"]
+        dst_label = graph.nodes[dst]["label"]
+        if allow_objs_with_same_label:
+            if src_label in FOOD_COLORS and dst_label in FOOD_COLORS[src_label]:
+                continue
+            elif graph.nodes[src]["label"] in FOOD_COLORS:
+                colors: List[str] = []
+                for _, food_dst, food_edge_data in graph.out_edges(src, data=True):
+                    food_dst_label = graph.nodes[food_dst]["label"]
+                    if (
+                        food_edge_data["label"] == IS
+                        and food_dst_label in FOOD_COLORS[src_label]
+                    ):
+                        colors.append(food_dst_label)
+                if len(colors) == 1:
+                    src_label = colors[0] + " " + src_label
         rdfs.add(
-            f"{graph.nodes[src]['label']} , {graph.nodes[dst]['label']} ,"
-            f" {'_'.join(edge_data['label'].split())}"
+            f"{src_label} , {dst_label} ," f" {'_'.join(edge_data['label'].split())}"
         )
 
     return rdfs
