@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Dict, List, Any, Set
 
 from torch_geometric.data import Data, Batch
-from torch_geometric.utils import to_networkx
 
 from dgu.constants import IS
 from dgu.nn.utils import calculate_node_id_offsets
@@ -193,22 +192,45 @@ def process_triplet_cmd(
 
 def data_to_networkx(data: Data, labels: List[str]) -> nx.DiGraph:
     """
-    Turn torch_geometric.Data into a networkx graph. Note that there is a bug
-    in to_networkx() where it turns an attribute that is a list with one
-    element into a scalar, so you do need more than one node and edge for this
-    to work properly. This is OK, b/c we use this to compare and a render final
-    graph of a game step.
+    Turn torch_geometric.Data into a networkx graph.
     """
-    nx_graph = to_networkx(
-        data,
-        node_attrs=["x", "node_last_update"],
-        edge_attrs=["edge_attr", "edge_last_update"],
+    # There is a bug in to_networkx() where it turns an attribute that is a list
+    # with one element into a scalar, so we just manually construct a networkx graph.
+    graph = nx.DiGraph()
+    graph.add_nodes_from(
+        [
+            (
+                nid,
+                {
+                    "x": node_label_id,
+                    "node_last_update": node_last_update,
+                    "label": labels[node_label_id],
+                },
+            )
+            for nid, (node_label_id, node_last_update) in enumerate(
+                zip(data.x.tolist(), data.node_last_update.tolist())
+            )
+        ]
     )
-    for _, node_data in nx_graph.nodes.data():
-        node_data["label"] = labels[node_data["x"]]
-    for _, _, edge_data in nx_graph.edges.data():
-        edge_data["label"] = labels[edge_data["edge_attr"]]
-    return nx_graph
+    graph.add_edges_from(
+        [
+            (
+                src_id,
+                dst_id,
+                {
+                    "edge_attr": edge_label_id,
+                    "edge_last_update": edge_last_update,
+                    "label": labels[edge_label_id],
+                },
+            )
+            for (src_id, dst_id), edge_label_id, edge_last_update in zip(
+                data.edge_index.t().tolist(),
+                data.edge_attr.tolist(),
+                data.edge_last_update.tolist(),
+            )
+        ]
+    )
+    return graph
 
 
 def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:

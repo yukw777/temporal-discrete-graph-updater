@@ -204,6 +204,35 @@ def test_process_triplet_cmd(graph, timestamp, cmd, expected):
         ),
         (
             Data(
+                x=torch.tensor([1]),
+                node_last_update=torch.tensor([[1, 0]]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, dtype=torch.long),
+                edge_last_update=torch.empty(0, 2),
+            ),
+            ["", "player", "livingroom", "table", "at", "in"],
+            {0: {"x": 1, "node_last_update": [1, 0], "label": "player"}},
+            [],
+        ),
+        (
+            Data(
+                x=torch.tensor([1, 2]),
+                node_last_update=torch.tensor([[1, 0], [1, 1]]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([4]),
+                edge_last_update=torch.tensor([[1, 2]]),
+            ),
+            ["", "player", "livingroom", "table", "at", "in"],
+            {
+                0: {"x": 1, "node_last_update": [1, 0], "label": "player"},
+                1: {"x": 2, "node_last_update": [1, 1], "label": "livingroom"},
+            },
+            [
+                (0, 1, {"edge_attr": 4, "edge_last_update": [1, 2], "label": "at"}),
+            ],
+        ),
+        (
+            Data(
                 x=torch.tensor([1, 2]),
                 node_last_update=torch.tensor([[1, 0], [1, 1]]),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
