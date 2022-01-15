@@ -83,6 +83,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         max_decode_len: int = 100,
         learning_rate: float = 5e-4,
         dropout: float = 0.3,
+        allow_objs_with_same_label: bool = False,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
         node_vocab_path: Optional[str] = None,
@@ -110,6 +111,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
             "max_decode_len",
             "learning_rate",
             "dropout",
+            "allow_objs_with_same_label",
         )
         # preprocessor
         if word_vocab_path is None:
@@ -1072,7 +1074,10 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                 }:
                     step_data, graph = game_id_to_step_data_graph.pop(finished_game_id)
                     generated_rdfs = networkx_to_rdf(
-                        data_to_networkx(graph, self.labels)
+                        data_to_networkx(graph, self.labels),
+                        allow_objs_with_same_label=(
+                            self.hparams.allow_objs_with_same_label  # type: ignore
+                        ),
                     )
                     groundtruth_rdfs = update_rdf_graph(
                         set(step_data["previous_graph_seen"]),

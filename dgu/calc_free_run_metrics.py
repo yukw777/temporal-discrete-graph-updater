@@ -30,6 +30,7 @@ def main(
     relation_vocab_path: str,
     batch_size: int,
     device: str,
+    allow_objs_with_same_label: bool,
 ) -> None:
     dataset = TWCmdGenGraphEventFreeRunDataset(data_filename, batch_size)
     dataloader = DataLoader(dataset, batch_size=None, num_workers=1)
@@ -57,7 +58,10 @@ def main(
                 game_id for game_id, _ in batch
             }:
                 step_data, graph = game_id_to_step_data_graph.pop(finished_game_id)
-                generated_rdfs = networkx_to_rdf(data_to_networkx(graph, labels))
+                generated_rdfs = networkx_to_rdf(
+                    data_to_networkx(graph, labels),
+                    allow_objs_with_same_label=allow_objs_with_same_label,
+                )
                 groundtruth_rdfs = update_rdf_graph(
                     set(step_data["previous_graph_seen"]), step_data["target_commands"]
                 )
@@ -139,6 +143,9 @@ if __name__ == "__main__":
     parser.add_argument("--relation-vocab-path", default="vocabs/relation_vocab.txt")
     parser.add_argument("--batch-size", default=512, type=int)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--allow-objs-with-same-label", default=False, action="store_true"
+    )
     args = parser.parse_args()
     main(
         args.data_filename,
@@ -148,4 +155,5 @@ if __name__ == "__main__":
         args.relation_vocab_path,
         args.batch_size,
         args.device,
+        args.allow_objs_with_same_label,
     )
