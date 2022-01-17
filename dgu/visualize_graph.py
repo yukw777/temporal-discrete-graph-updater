@@ -199,7 +199,10 @@ def main(
         plt.show()
 
         # get the next action
-        avail_actions = [a for a in admissible_cmds if a not in COMMANDS_TO_IGNORE]
+        if env.game_file_type == ".z8":
+            avail_actions = [a for a in admissible_cmds if a not in COMMANDS_TO_IGNORE]
+        elif env.game_file_type == ".jsonl":
+            avail_actions = [a for a in admissible_cmds if a]
         print("Available actions:")
         for i, a in enumerate(avail_actions):
             print(f"{i}. {a}")
