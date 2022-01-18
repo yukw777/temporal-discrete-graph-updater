@@ -152,6 +152,11 @@ def process_delete_triplet_cmd(
 
     # delete the edge and add event
     node_id_map = {node: node_id for node_id, node in enumerate(graph.nodes)}
+    sorted_edges = sorted([(node_id_map[s], node_id_map[d]) for s, d in graph.edges])
+    edge_id_map = {
+        (src_node_id, dst_node_id): edge_id
+        for edge_id, (src_node_id, dst_node_id) in enumerate(sorted_edges)
+    }
     edge_label = graph.edges[src_node, dst_node]["label"]
     graph.remove_edge(src_node, dst_node)
     events.append(
@@ -159,6 +164,7 @@ def process_delete_triplet_cmd(
             "type": "edge-delete",
             "src_id": node_id_map[src_node],
             "dst_id": node_id_map[dst_node],
+            "edge_id": edge_id_map[(node_id_map[src_node], node_id_map[dst_node])],
             "label": edge_label,
         }
     )

@@ -106,7 +106,13 @@ from utils import EqualityDiGraph
             1,
             "delete , player , kitchen , in",
             [
-                {"type": "edge-delete", "src_id": 0, "dst_id": 1, "label": "in"},
+                {
+                    "type": "edge-delete",
+                    "src_id": 0,
+                    "dst_id": 1,
+                    "label": "in",
+                    "edge_id": 0,
+                },
                 {"type": "node-delete", "node_id": 1, "label": "kitchen"},
                 {"type": "node-delete", "node_id": 0, "label": "player"},
             ],
@@ -156,6 +162,7 @@ from utils import EqualityDiGraph
                     "src_id": 1,
                     "dst_id": 2,
                     "label": "west of",
+                    "edge_id": 1,
                 },
                 {"type": "node-delete", "node_id": 1, "label": "exit"},
             ],
@@ -176,7 +183,13 @@ from utils import EqualityDiGraph
             4,
             "delete , steak , delicious , is",
             [
-                {"type": "edge-delete", "src_id": 0, "dst_id": 2, "label": "is"},
+                {
+                    "type": "edge-delete",
+                    "src_id": 0,
+                    "dst_id": 2,
+                    "label": "is",
+                    "edge_id": 1,
+                },
                 {
                     "type": "node-delete",
                     "node_id": 2,
