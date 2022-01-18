@@ -48,6 +48,7 @@ jobs:
 
     - name: Install dependencies
       run: |
+        sudo apt-get install -y graphviz graphviz-dev
         pip install torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-1.10.0+cpu.html
         pip install .
         pip install --requirement requirements-dev.txt --upgrade --quiet

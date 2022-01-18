@@ -190,20 +190,18 @@ def main(
 
         # visualize the graph
         nx_graph = data_to_networkx(graph, lm.labels)
-        plt.figure(figsize=(30, 30))
-        pos = nx.planar_layout(nx_graph)
+        pos = nx.nx_agraph.graphviz_layout(nx_graph, prog="sfdp")
         nx.draw(
             nx_graph,
             pos=pos,
-            font_size=8,
-            node_size=1000,
+            font_size=10,
+            node_size=1200,
             labels=nx.get_node_attributes(nx_graph, "label"),
         )
         nx.draw_networkx_edge_labels(
             nx_graph,
             pos,
             edge_labels=nx.get_edge_attributes(nx_graph, "label"),
-            font_size=8,
         )
         plt.show()
 
