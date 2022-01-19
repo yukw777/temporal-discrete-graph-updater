@@ -1437,6 +1437,58 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         return results_list
 
     @staticmethod
+    def update_src_dst_ids_with_edge_ids(
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        dst_ids: torch.Tensor,
+        edge_ids: torch.Tensor,
+        batch: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Update source and destination node IDs based on the given edge IDs for
+        edge-delete events.
+
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        edge_ids: (batch)
+        batch: (num_node)
+        edge_index: (2, num_edge)
+
+        output: (updated_src_ids, updated_dst_ids)
+        """
+        is_edge_delete = event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
+        # (batch)
+        if not is_edge_delete.any():
+            # no edge delete events, just return
+            return src_ids, dst_ids
+        edge_id_offsets = calculate_node_id_offsets(
+            event_type_ids.size(0), batch[edge_index[0]]
+        )
+        # (batch)
+        batched_edge_delete_edge_ids = (
+            edge_ids[is_edge_delete] + edge_id_offsets[is_edge_delete]
+        )
+        # (num_edge_delete)
+        batched_edge_delete_edge_index = edge_index[:, batched_edge_delete_edge_ids]
+        # (2, num_edge_delet)
+        node_id_offsets = calculate_node_id_offsets(event_type_ids.size(0), batch)
+        # (batch)
+        edge_delete_edge_index = (
+            batched_edge_delete_edge_index
+            - node_id_offsets[batch[batched_edge_delete_edge_index[0]]]
+        )
+        # (2, num_edge_delete)
+        updated_src_ids = src_ids.clone()
+        # (batch)
+        updated_src_ids[is_edge_delete] = edge_delete_edge_index[0]
+        updated_dst_ids = dst_ids.clone()
+        # (batch)
+        updated_dst_ids[is_edge_delete] = edge_delete_edge_index[1]
+        return updated_src_ids, updated_dst_ids
+
+    @staticmethod
     def filter_invalid_events(
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,

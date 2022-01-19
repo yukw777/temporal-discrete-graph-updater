@@ -1497,6 +1497,124 @@ def test_tdgu_filter_invalid_events(
 
 
 @pytest.mark.parametrize(
+    "event_type_ids,src_ids,dst_ids,edge_ids,batch,edge_index,"
+    "expected_src_ids,expected_dst_ids",
+    [
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["pad"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+        ),
+        (
+            torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
+            torch.tensor([5]),
+            torch.tensor([2]),
+            torch.tensor([3]),
+            torch.tensor([0] * 6),
+            torch.tensor([[2, 3, 3, 3, 4], [1, 1, 2, 4, 2]]),
+            torch.tensor([3]),
+            torch.tensor([4]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.tensor([0, 2, 1, 0, 2, 0]),
+            torch.tensor([0, 1, 3, 0, 1, 0]),
+            torch.tensor([0, 0, 2, 0, 1, 0]),
+            torch.tensor([0, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 5]),
+            torch.tensor(
+                [
+                    [1, 4, 5, 5, 8, 8],
+                    [2, 5, 4, 6, 9, 10],
+                ]
+            ),
+            torch.tensor([0, 2, 1, 0, 0, 0]),
+            torch.tensor([0, 1, 2, 0, 2, 0]),
+        ),
+    ],
+)
+def test_sldgu_update_src_dst_ids_with_edge_ids(
+    sldgu,
+    event_type_ids,
+    src_ids,
+    dst_ids,
+    edge_ids,
+    batch,
+    edge_index,
+    expected_src_ids,
+    expected_dst_ids,
+):
+    updated_src_ids, updated_dst_ids = sldgu.update_src_dst_ids_with_edge_ids(
+        event_type_ids, src_ids, dst_ids, edge_ids, batch, edge_index
+    )
+    assert updated_src_ids.equal(expected_src_ids)
+    assert updated_dst_ids.equal(expected_dst_ids)
+
+
+@pytest.mark.parametrize(
     "max_decode_len,batch,obs_len,prev_action_len,forward_results,prev_batched_graph,"
     "expected_decoded_list",
     [
