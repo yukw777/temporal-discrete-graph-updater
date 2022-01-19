@@ -1688,12 +1688,16 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_src_ids: torch.Tensor,
         event_dst_logits: torch.Tensor,
         groundtruth_event_dst_ids: torch.Tensor,
+        event_edge_logits: torch.Tensor,
+        groundtruth_event_edge_ids: torch.Tensor,
         batch_node_mask: torch.Tensor,
+        batch_edge_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
+        groundtruth_event_edge_mask: torch.Tensor,
         groundtruth_event_label_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -1706,12 +1710,16 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_src_ids: (batch)
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
+        event_edge_logits: (batch, num_edge)
+        groundtruth_event_edge_ids: (batch)
         batch_node_mask: (batch, num_node)
+        batch_edge_mask: (batch, num_edge)
         event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
+        groundtruth_event_edge_mask: (batch)
         groundtruth_event_label_mask: (batch)
 
         output: (batch)
@@ -1743,6 +1751,16 @@ class UncertaintyWeightedLoss(nn.Module):
                     groundtruth_event_dst_ids,
                 )
                 * groundtruth_event_dst_mask
+            )
+        edge_loss = torch.zeros_like(event_type_loss)
+        if groundtruth_event_edge_mask.any():
+            # edge loss
+            edge_loss += (
+                self.nll_criterion(
+                    masked_log_softmax(event_edge_logits, batch_edge_mask, dim=1),
+                    groundtruth_event_edge_ids,
+                )
+                * groundtruth_event_edge_mask
             )
         label_loss = torch.zeros_like(event_type_loss)
         # (batch)

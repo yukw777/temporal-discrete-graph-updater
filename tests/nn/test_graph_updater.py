@@ -481,11 +481,14 @@ def test_tdgu_forward(
         )
 
 
-@pytest.mark.parametrize("batch,num_node", [(1, 5), (8, 12)])
+@pytest.mark.parametrize("batch,num_node,num_edge", [(1, 5, 3), (8, 12, 20)])
 @pytest.mark.parametrize("label", [True, False])
+@pytest.mark.parametrize("edge", [True, False])
 @pytest.mark.parametrize("dst", [True, False])
 @pytest.mark.parametrize("src", [True, False])
-def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
+def test_uncertainty_weighted_loss(
+    tdgu, src, dst, edge, label, batch, num_node, num_edge
+):
     groundtruth_event_src_mask = torch.zeros(batch).bool()
     if src:
         groundtruth_event_src_mask[
@@ -494,6 +497,11 @@ def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
     groundtruth_event_dst_mask = torch.zeros(batch).bool()
     if dst:
         groundtruth_event_dst_mask[
+            random.sample(range(batch), k=random.choice(range(1, batch + 1)))
+        ] = True
+    groundtruth_event_edge_mask = torch.zeros(batch).bool()
+    if edge:
+        groundtruth_event_edge_mask[
             random.sample(range(batch), k=random.choice(range(1, batch + 1)))
         ] = True
     groundtruth_event_label_mask = torch.zeros(batch).bool()
@@ -508,12 +516,16 @@ def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
         torch.randint(num_node, (batch,)),
         torch.rand(batch, num_node),
         torch.randint(num_node, (batch,)),
+        torch.rand(batch, num_edge),
+        torch.randint(num_edge, (batch,)),
         torch.randint(2, (batch, num_node)).bool(),
+        torch.randint(2, (batch, num_edge)).bool(),
         torch.rand(batch, len(tdgu.labels)),
         torch.randint(len(tdgu.labels), (batch,)),
         torch.randint(2, (batch,)).bool(),
         groundtruth_event_src_mask,
         groundtruth_event_dst_mask,
+        groundtruth_event_edge_mask,
         groundtruth_event_label_mask,
     ).size() == (batch,)
 
@@ -1596,8 +1608,8 @@ def test_tdgu_filter_invalid_events(
         ),
     ],
 )
-def test_sldgu_update_src_dst_ids_with_edge_ids(
-    sldgu,
+def test_tdgu_update_src_dst_ids_with_edge_ids(
+    tdgu,
     event_type_ids,
     src_ids,
     dst_ids,
@@ -1607,7 +1619,7 @@ def test_sldgu_update_src_dst_ids_with_edge_ids(
     expected_src_ids,
     expected_dst_ids,
 ):
-    updated_src_ids, updated_dst_ids = sldgu.update_src_dst_ids_with_edge_ids(
+    updated_src_ids, updated_dst_ids = tdgu.update_src_dst_ids_with_edge_ids(
         event_type_ids, src_ids, dst_ids, edge_ids, batch, edge_index
     )
     assert updated_src_ids.equal(expected_src_ids)
