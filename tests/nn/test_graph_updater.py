@@ -263,26 +263,27 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             4,
         ),
         (
-            4,
+            5,
             torch.tensor(
                 [
                     EVENT_TYPE_ID_MAP["edge-delete"],
                     EVENT_TYPE_ID_MAP["node-add"],
                     EVENT_TYPE_ID_MAP["edge-add"],
                     EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
                 ]
             ),
-            torch.tensor([0, 0, 3, 1]),
-            torch.tensor([2, 0, 0, 0]),
+            torch.tensor([0, 0, 3, 1, 0]),
+            torch.tensor([2, 0, 0, 0, 0]),
             12,
             8,
             Batch(
-                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
-                x=torch.randint(6, (12,)),
-                node_last_update=torch.randint(10, (12, 2)),
-                edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
-                edge_attr=torch.randint(6, (4,)),
-                edge_last_update=torch.randint(10, (4, 2)),
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3, 4, 4]),
+                x=torch.randint(6, (14,)),
+                node_last_update=torch.randint(10, (14, 2)),
+                edge_index=torch.tensor([[0, 3, 7, 8, 12], [2, 4, 6, 6, 13]]),
+                edge_attr=torch.randint(6, (5,)),
+                edge_last_update=torch.randint(10, (5, 2)),
             ),
             {
                 "groundtruth_event_type_ids": torch.tensor(
@@ -291,16 +292,25 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
                         EVENT_TYPE_ID_MAP["node-delete"],
                         EVENT_TYPE_ID_MAP["node-add"],
                         EVENT_TYPE_ID_MAP["pad"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
                     ]
                 ),
-                "groundtruth_event_mask": torch.tensor([True, True, True, False]),
-                "groundtruth_event_src_ids": torch.tensor([0, 2, 0, 1]),
-                "groundtruth_event_src_mask": torch.tensor([True, True, False, False]),
-                "groundtruth_event_dst_ids": torch.tensor([1, 0, 0, 0]),
-                "groundtruth_event_dst_mask": torch.tensor([True, False, False, False]),
+                "groundtruth_event_mask": torch.tensor([True, True, True, False, True]),
+                "groundtruth_event_src_ids": torch.tensor([0, 2, 0, 1, 0]),
+                "groundtruth_event_src_mask": torch.tensor(
+                    [True, True, False, False, False]
+                ),
+                "groundtruth_event_dst_ids": torch.tensor([1, 0, 0, 0, 1]),
+                "groundtruth_event_dst_mask": torch.tensor(
+                    [True, False, False, False, False]
+                ),
+                "groundtruth_event_edge_ids": torch.tensor([1, 0, 0, 0, 0]),
+                "groundtruth_event_edge_mask": torch.tensor(
+                    [False, False, False, False, True]
+                ),
             },
-            12,
-            4,
+            15,
+            5,
         ),
     ],
 )
@@ -395,10 +405,19 @@ def test_tdgu_forward(
         max_sub_graph_num_node = (
             results["updated_batched_graph"].batch.bincount().max().item()
         )
+        max_sub_graph_num_edge = (
+            results["updated_batched_graph"]
+            .batch[results["updated_batched_graph"].edge_index[0]]
+            .bincount()
+            .max()
+            .item()
+        )
     else:
         max_sub_graph_num_node = 0
+        max_sub_graph_num_edge = 0
     assert results["event_src_logits"].size() == (batch_size, max_sub_graph_num_node)
     assert results["event_dst_logits"].size() == (batch_size, max_sub_graph_num_node)
+    assert results["event_edge_logits"].size() == (batch_size, max_sub_graph_num_edge)
     assert results["event_label_logits"].size() == (batch_size, len(tdgu.labels))
     assert results["updated_prev_input_event_emb_seq"].size() == (
         tdgu.hparams.graph_event_decoder_num_dec_blocks,

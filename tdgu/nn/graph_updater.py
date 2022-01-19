@@ -222,6 +222,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             hidden_dim,
             graph_event_decoder_key_query_dim,
         )
+        self.event_edge_head = EventNodeHead(
+            2 * hidden_dim,
+            graph_event_decoder_autoregressive_emb_dim,
+            hidden_dim,
+            graph_event_decoder_key_query_dim,
+        )
         self.event_label_head = EventStaticLabelHead(
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
@@ -314,6 +320,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             groundtruth_event_src_mask: (batch)
             groundtruth_event_dst_ids: (batch)
             groundtruth_event_dst_mask: (batch)
+            groundtruth_event_edge_ids: (batch)
+            groundtruth_event_edge_mask: (batch)
         }
         Ground-truth graph events used for teacher forcing of the decoder
 
@@ -516,6 +524,45 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 masks["dst_mask"],
                 event_dst_key,
             )
+        # concatenate source and destination node embeddings to get edge embeddings
+        batch_edge_embeddings, batch_edge_mask = to_dense_batch(
+            torch.cat(
+                [
+                    node_embeddings[updated_batched_graph.edge_index[0]],
+                    node_embeddings[updated_batched_graph.edge_index[1]],
+                ],
+                dim=-1,
+            ),
+            # edge_index must be sorted
+            batch=updated_batched_graph.batch[updated_batched_graph.edge_index[0]],
+            batch_size=obs_mask.size(0),
+        )
+        # batch_edge_embeddings: (batch, max_sub_graph_num_edge, 2 * hidden_dim)
+        # batch_edge_mask: (batch, max_sub_graph_num_edge)
+        event_edge_logits, event_edge_key = self.event_edge_head(
+            autoregressive_emb, batch_edge_embeddings
+        )
+        # event_edge_logits: (batch, max_sub_graph_num_edge)
+        # event_edge_key:
+        #   (batch, max_sub_graph_num_edge, graph_event_decoder_key_query_dim)
+        if groundtruth_event is not None:
+            autoregressive_emb = self.event_edge_head.update_autoregressive_embedding(
+                autoregressive_emb,
+                groundtruth_event["groundtruth_event_edge_ids"],
+                batch_edge_embeddings,
+                batch_edge_mask,
+                groundtruth_event["groundtruth_event_edge_mask"],
+                event_edge_key,
+            )
+        elif event_edge_logits.size(1) > 0:
+            autoregressive_emb = self.event_edge_head.update_autoregressive_embedding(
+                autoregressive_emb,
+                masked_softmax(event_edge_logits, batch_edge_mask, dim=1).argmax(dim=1),
+                batch_edge_embeddings,
+                batch_edge_mask,
+                masks["edge_mask"],
+                event_edge_key,
+            )
         label_logits = self.event_label_head(autoregressive_emb)
         # (batch, num_label)
 
@@ -523,6 +570,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             "event_type_logits": event_type_logits,
             "event_src_logits": event_src_logits,
             "event_dst_logits": event_dst_logits,
+            "event_edge_logits": event_edge_logits,
             "event_label_logits": label_logits,
             "updated_prev_input_event_emb_seq": decoder_output[
                 "updated_prev_input_event_emb_seq"
@@ -534,6 +582,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             "encoded_prev_action": encoded_prev_action,
             "updated_batched_graph": updated_batched_graph,
             "batch_node_mask": batch_node_mask,
+            "batch_edge_mask": batch_edge_mask,
             **decoder_attn_weights,
         }
 
