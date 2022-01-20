@@ -2,6 +2,7 @@ import json
 import pytorch_lightning as pl
 import torch
 import networkx as nx
+import matplotlib.pyplot as plt
 
 from typing import List, Dict, Any, Optional, Tuple, Iterator
 from collections import defaultdict
@@ -73,7 +74,7 @@ class TWCmdGenGraphEventDataset(Dataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
+    def __getitem__(self, idx: int, visualize: bool = False) -> Dict[str, Any]:
         game, walkthrough_step, random_step = self.idx_map[idx]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
@@ -100,6 +101,21 @@ class TWCmdGenGraphEventDataset(Dataset):
                 for i, event in enumerate(graph_events):
                     event["timestamp"] = [timestamp, i]
                 prev_graph_events.extend(graph_events)
+        if visualize:
+            pos = nx.nx_agraph.graphviz_layout(graph, prog="sfdp")
+            nx.draw(
+                graph,
+                pos=pos,
+                font_size=10,
+                node_size=1200,
+                labels={n: n.label for n in graph.nodes},
+            )
+            nx.draw_networkx_edge_labels(
+                graph,
+                pos,
+                edge_labels=nx.get_edge_attributes(graph, "label"),
+            )
+            plt.show()
         return {
             "game": game,
             "walkthrough_step": walkthrough_step,
