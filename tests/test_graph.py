@@ -3,11 +3,14 @@ import torch
 import networkx as nx
 
 from torch_geometric.data import Data, Batch
+from copy import deepcopy
 
 from dgu.graph import (
     Node,
-    IsDstNode,
+    DstNode,
     ExitNode,
+    FoodNameNode,
+    FoodAdjNode,
     process_triplet_cmd,
     data_to_networkx,
     batch_to_data_list,
@@ -84,7 +87,7 @@ from utils import EqualityDiGraph
             EqualityDiGraph(
                 {
                     Node("steak"): {
-                        IsDstNode("cooked", "steak"): {"label": "is", "last_update": 1}
+                        DstNode("cooked", "steak"): {"label": "is", "last_update": 1}
                     }
                 }
             ),
@@ -162,8 +165,8 @@ from utils import EqualityDiGraph
             EqualityDiGraph(
                 {
                     Node("steak"): {
-                        IsDstNode("cooked", "steak"): {"label": "is", "last_update": 3},
-                        IsDstNode("delicious", "steak"): {
+                        DstNode("cooked", "steak"): {"label": "is", "last_update": 3},
+                        DstNode("delicious", "steak"): {
                             "label": "is",
                             "last_update": 3,
                         },
@@ -183,8 +186,87 @@ from utils import EqualityDiGraph
         ),
     ],
 )
-def test_process_triplet_cmd(graph, timestamp, cmd, expected):
-    assert process_triplet_cmd(graph, timestamp, cmd) == expected
+@pytest.mark.parametrize("allow_objs_with_same_label", [False, True])
+def test_process_triplet_cmd(
+    allow_objs_with_same_label, graph, timestamp, cmd, expected
+):
+    assert (
+        process_triplet_cmd(
+            # need to deep copy the graph to avoid side effects from previous tests
+            deepcopy(graph),
+            timestamp,
+            cmd,
+            allow_objs_with_same_label=allow_objs_with_same_label,
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "graph,timestamp,cmd,expected",
+    [
+        (
+            EqualityDiGraph(),
+            0,
+            "add , red onion , counter , on",
+            [
+                {"type": "node-add", "label": "onion"},
+                {"type": "node-add", "label": "red"},
+                {"type": "edge-add", "src_id": 0, "dst_id": 1, "label": "is"},
+                {"type": "node-add", "label": "counter"},
+                {"type": "edge-add", "src_id": 0, "dst_id": 2, "label": "on"},
+            ],
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    FoodNameNode("onion", "red onion"): {
+                        FoodAdjNode("red", FoodNameNode("onion", "red onion")): {
+                            "label": "is",
+                            "last_update": 0,
+                        },
+                        Node("counter"): {"label": "on", "last_update": 0},
+                    }
+                }
+            ),
+            1,
+            "add , red onion , player , in",
+            [
+                {"type": "node-add", "label": "player"},
+                {"type": "edge-add", "src_id": 0, "dst_id": 3, "label": "in"},
+            ],
+        ),
+        (
+            EqualityDiGraph(
+                {
+                    FoodNameNode("onion", "red onion"): {
+                        FoodAdjNode("red", FoodNameNode("onion", "red onion")): {
+                            "label": "is",
+                            "last_update": 0,
+                        },
+                        Node("counter"): {"label": "on", "last_update": 0},
+                    }
+                }
+            ),
+            1,
+            "delete , red onion , counter , on",
+            [
+                {"type": "edge-delete", "src_id": 0, "dst_id": 2, "label": "on"},
+                {"type": "node-delete", "node_id": 2, "label": "counter"},
+                {"type": "edge-delete", "src_id": 0, "dst_id": 1, "label": "is"},
+                {"type": "node-delete", "node_id": 1, "label": "red"},
+                {"type": "node-delete", "node_id": 0, "label": "onion"},
+            ],
+        ),
+    ],
+)
+def test_process_triplet_cmd_allow_objs_with_same_label(
+    graph, timestamp, cmd, expected
+):
+    assert (
+        process_triplet_cmd(graph, timestamp, cmd, allow_objs_with_same_label=True)
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -444,6 +526,77 @@ def test_networkx_to_rdf(node_attrs, edge_attrs, expected):
     graph.add_nodes_from(node_attrs)
     graph.add_edges_from(edge_attrs)
     assert networkx_to_rdf(graph) == expected
+
+
+@pytest.mark.parametrize(
+    "node_attrs,edge_attrs,expected",
+    [
+        (
+            [(0, {"label": "player"}), (1, {"label": "living room"})],
+            [(0, 1, {"label": "at"})],
+            {"player , living room , at"},
+        ),
+        (
+            [
+                (0, {"label": "player"}),
+                (1, {"label": "living room"}),
+                (2, {"label": "exit"}),
+            ],
+            [(0, 1, {"label": "at"}), (2, 1, {"label": "west of"})],
+            {"player , living room , at", "exit , living room , west_of"},
+        ),
+        (
+            [
+                (0, {"label": "potato"}),
+                (1, {"label": "red"}),
+                (2, {"label": "table"}),
+            ],
+            [(0, 1, {"label": "is"}), (0, 2, {"label": "on"})],
+            {"red potato , table , on"},
+        ),
+        (
+            [
+                (0, {"label": "potato"}),
+                (1, {"label": "red"}),
+                (2, {"label": "table"}),
+                (3, {"label": "potato"}),
+                (4, {"label": "yellow"}),
+                (5, {"label": "counter"}),
+            ],
+            [
+                (0, 1, {"label": "is"}),
+                (0, 2, {"label": "on"}),
+                (3, 4, {"label": "is"}),
+                (3, 5, {"label": "on"}),
+            ],
+            {"red potato , table , on", "yellow potato , counter , on"},
+        ),
+        (
+            [
+                (0, {"label": "potato"}),
+                (1, {"label": "red"}),
+                (2, {"label": "table"}),
+                (3, {"label": "potato"}),
+                (4, {"label": "yellow"}),
+                (5, {"label": "counter"}),
+                (6, {"label": "purple"}),
+            ],
+            [
+                (0, 1, {"label": "is"}),
+                (0, 2, {"label": "on"}),
+                (3, 4, {"label": "is"}),
+                (3, 5, {"label": "on"}),
+                (3, 6, {"label": "is"}),
+            ],
+            {"red potato , table , on", "potato , counter , on"},
+        ),
+    ],
+)
+def test_networkx_to_rdf_allow_obs_with_same_label(node_attrs, edge_attrs, expected):
+    graph = nx.DiGraph()
+    graph.add_nodes_from(node_attrs)
+    graph.add_edges_from(edge_attrs)
+    assert networkx_to_rdf(graph, allow_objs_with_same_label=True) == expected
 
 
 @pytest.mark.parametrize(
