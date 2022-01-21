@@ -1,6 +1,5 @@
 import textworld
 import torch
-import matplotlib.pyplot as plt
 import networkx as nx
 import json
 
@@ -17,6 +16,7 @@ from pathlib import Path
 from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
 from dgu.data import TWCmdGenGraphEventStepInput
 from dgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
+from dgu.utils import draw_graph
 
 
 class Env:
@@ -71,6 +71,7 @@ class Env:
 def main(
     game_file: str,
     ckpt_filename: str,
+    graph_filename: str,
     word_vocab_path: str,
     node_vocab_path: str,
     relation_vocab_path: str,
@@ -98,9 +99,6 @@ def main(
         edge_last_update=torch.empty(0, 2, dtype=torch.long),
     ).to(device)
     rdf_graph: Set[str] = set()
-
-    # turn on interactive mode
-    plt.ion()
 
     done = False
     while not done:
@@ -190,20 +188,8 @@ def main(
 
         # visualize the graph
         nx_graph = data_to_networkx(graph, lm.labels)
-        pos = nx.nx_agraph.graphviz_layout(nx_graph, prog="sfdp")
-        nx.draw(
-            nx_graph,
-            pos=pos,
-            font_size=10,
-            node_size=1200,
-            labels=nx.get_node_attributes(nx_graph, "label"),
-        )
-        nx.draw_networkx_edge_labels(
-            nx_graph,
-            pos,
-            edge_labels=nx.get_edge_attributes(nx_graph, "label"),
-        )
-        plt.show()
+        draw_graph(nx_graph, graph_filename)
+        input(">> ")
 
         # get the next action
         if env.game_file_type == ".z8":
@@ -223,6 +209,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("game_filename")
     parser.add_argument("ckpt_filename")
+    parser.add_argument("graph_filename")
     parser.add_argument("--word-vocab-path", default="vocabs/word_vocab.txt")
     parser.add_argument("--node-vocab-path", default="vocabs/node_vocab.txt")
     parser.add_argument("--relation-vocab-path", default="vocabs/relation_vocab.txt")
@@ -232,6 +219,7 @@ if __name__ == "__main__":
     main(
         args.game_filename,
         args.ckpt_filename,
+        args.graph_filename,
         args.word_vocab_path,
         args.node_vocab_path,
         args.relation_vocab_path,
