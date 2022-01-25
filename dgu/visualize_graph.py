@@ -1,6 +1,5 @@
 import textworld
 import torch
-import networkx as nx
 import json
 
 from torch_geometric.data import Data, Batch
