@@ -1188,8 +1188,24 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         )
         self.log("test_free_run_f1", self.free_run_f1)
         self.log("test_free_run_em", self.free_run_em)
+        fr_f1_scores_path = (
+            "test-fr-f1-scores-epoch="  # type: ignore
+            f"{self.trainer.current_epoch}.ckpt"
+        )
+        torch.save(self.free_run_f1.scores.cpu(), fr_f1_scores_path)
+        fr_em_scores_path = (
+            "test-fr-em-scores-epoch="  # type: ignore
+            f"{self.trainer.current_epoch}.ckpt"
+        )
+        torch.save(self.free_run_em.scores.cpu(), fr_em_scores_path)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
+            fr_metrics_artifact = wandb.Artifact(
+                f"fr_metrics_{self.logger.experiment.id}", "metrics"
+            )
+            fr_metrics_artifact.add_file(fr_f1_scores_path)
+            fr_metrics_artifact.add_file(fr_em_scores_path)
+            self.logger.experiment.log_artifact(fr_metrics_artifact)
 
     def configure_optimizers(self) -> Optimizer:
         return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore

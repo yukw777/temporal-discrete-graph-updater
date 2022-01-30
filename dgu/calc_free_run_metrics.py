@@ -25,6 +25,8 @@ from dgu.graph import (
 def main(
     data_filename: str,
     ckpt_filename: str,
+    f1_scores_filename: str,
+    em_scores_filename: str,
     word_vocab_path: str,
     node_vocab_path: str,
     relation_vocab_path: str,
@@ -130,6 +132,10 @@ def main(
                 game_id_to_step_data_graph[game_id] = (step_data, updated_graph)
     print(f"Free Run Graph F1: {graph_f1.compute()}")
     print(f"Free Run Graph EM: {graph_em.compute()}")
+    if f1_scores_filename:
+        torch.save(graph_f1.scores.cpu(), f1_scores_filename)
+    if em_scores_filename:
+        torch.save(graph_em.scores.cpu(), em_scores_filename)
 
 
 if __name__ == "__main__":
@@ -138,6 +144,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_filename")
     parser.add_argument("ckpt_filename")
+    parser.add_argument("--f1-scores-filename", default="")
+    parser.add_argument("--em-scores-filename", default="")
     parser.add_argument("--word-vocab-path", default="vocabs/word_vocab.txt")
     parser.add_argument("--node-vocab-path", default="vocabs/node_vocab.txt")
     parser.add_argument("--relation-vocab-path", default="vocabs/relation_vocab.txt")
@@ -150,6 +158,8 @@ if __name__ == "__main__":
     main(
         args.data_filename,
         args.ckpt_filename,
+        args.f1_scores_filename,
+        args.em_scores_filename,
         args.word_vocab_path,
         args.node_vocab_path,
         args.relation_vocab_path,

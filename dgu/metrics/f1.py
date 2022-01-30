@@ -12,7 +12,7 @@ class F1(Metric):
     def __init__(self) -> None:
         super().__init__()
 
-        self.add_state("score", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("scores", default=torch.empty(0), dist_reduce_fx="cat")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def update(  # type: ignore
@@ -23,7 +23,12 @@ class F1(Metric):
             preds_set = set(preds)
             targets_set = set(targets)
             if preds_set == targets_set:
-                self.score += 1  # type: ignore
+                self.scores = torch.cat(
+                    [
+                        self.scores,  # type: ignore
+                        torch.tensor(1, device=self.device).unsqueeze(-1),
+                    ]
+                )
             else:
                 matches = 0
                 for pred in preds_set:
@@ -33,12 +38,18 @@ class F1(Metric):
                     # calculate the f1 score
                     precision = matches / len(preds_set)
                     recall = matches / len(targets_set)
-                    self.score += (2 * precision * recall) / (  # type: ignore
-                        precision + recall
+                    self.scores = torch.cat(
+                        [
+                            self.scores,
+                            torch.tensor(
+                                (2 * precision * recall) / (precision + recall),
+                                device=self.device,
+                            ).unsqueeze(-1),
+                        ]
                     )
             self.total += 1  # type: ignore
 
     def compute(self) -> torch.Tensor:
         if self.total == 0:
             return torch.zeros_like(self.total, dtype=torch.float)  # type: ignore
-        return self.score / self.total  # type: ignore
+        return self.scores.sum() / self.total  # type: ignore
