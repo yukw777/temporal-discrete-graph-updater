@@ -107,4 +107,5 @@ from dgu.metrics import ExactMatch
 def test_exact_match(batch_preds, batch_targets, expected):
     em = ExactMatch()
     em.update(batch_preds, batch_targets)
+    assert em.scores.numel() == em.total
     assert em.compute().equal(expected)

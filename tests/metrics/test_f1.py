@@ -119,4 +119,5 @@ from dgu.metrics import F1
 def test_f1(batch_preds, batch_targets, expected):
     f1 = F1()
     f1.update(batch_preds, batch_targets)
+    assert f1.scores.numel() == f1.total
     assert f1.compute().equal(expected)
