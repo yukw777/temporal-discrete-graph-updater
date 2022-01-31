@@ -29,6 +29,13 @@ class ExactMatch(Metric):
                             torch.tensor(1, device=self.device).unsqueeze(-1),
                         ]
                     )
+                else:
+                    self.scores = torch.cat(
+                        [
+                            self.scores,  # type: ignore
+                            torch.tensor(0, device=self.device).unsqueeze(-1),
+                        ]
+                    )
             else:
                 matches = 0
                 pred_set = set(preds)

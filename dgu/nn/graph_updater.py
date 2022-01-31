@@ -1036,7 +1036,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
     def eval_free_run(
         self, dataset: TWCmdGenGraphEventFreeRunDataset, dataloader: DataLoader
-    ) -> None:
+    ) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float]]:
         is_sanity_checking = (
             self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
         )
@@ -1065,6 +1065,8 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
 
         collator = self.trainer.datamodule.collator  # type: ignore
         game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
+        f1_scores_per_game: Dict[Tuple[str, int], float] = {}
+        em_scores_per_game: Dict[Tuple[str, int], float] = {}
         with tqdm.tqdm(desc="Free Run", total=total) as pbar:
             for batch in dataloader:
                 # finished games are the ones that were in game_id_to_graph, but are not
@@ -1085,9 +1087,18 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     )
                     self.free_run_f1([generated_rdfs], [groundtruth_rdfs])
                     self.free_run_em([generated_rdfs], [groundtruth_rdfs])
+                    game, walkthrough_step = dataset.walkthrough_example_ids[
+                        finished_game_id
+                    ]
+                    f1_scores_per_game[
+                        (game, walkthrough_step)
+                    ] = self.free_run_f1.scores[-1].item()
+                    em_scores_per_game[
+                        (game, walkthrough_step)
+                    ] = self.free_run_em.scores[-1].item()
                     pbar.update()
                     if pbar.n > total:
-                        return
+                        return (f1_scores_per_game, em_scores_per_game)
 
                 # new games are the ones that were not in game_id_to_graph, but are now
                 # part of the new batch.
@@ -1141,6 +1152,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 ):
                     game_id_to_step_data_graph[game_id] = (step_data, updated_graph)
+        return (f1_scores_per_game, em_scores_per_game)
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
@@ -1182,7 +1194,7 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
-        self.eval_free_run(
+        fr_f1_scores_per_game, fr_em_scores_per_game = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
         )
@@ -1190,14 +1202,14 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.log("test_free_run_em", self.free_run_em)
         fr_f1_scores_path = (
             "test-fr-f1-scores-epoch="  # type: ignore
-            f"{self.trainer.current_epoch}.ckpt"
+            f"{self.trainer.current_epoch}.pt"
         )
-        torch.save(self.free_run_f1.scores.cpu(), fr_f1_scores_path)
+        torch.save(fr_f1_scores_per_game, fr_f1_scores_path)
         fr_em_scores_path = (
             "test-fr-em-scores-epoch="  # type: ignore
-            f"{self.trainer.current_epoch}.ckpt"
+            f"{self.trainer.current_epoch}.pt"
         )
-        torch.save(self.free_run_em.scores.cpu(), fr_em_scores_path)
+        torch.save(fr_em_scores_per_game, fr_em_scores_path)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
             fr_metrics_artifact = wandb.Artifact(

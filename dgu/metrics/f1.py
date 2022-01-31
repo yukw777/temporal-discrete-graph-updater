@@ -47,6 +47,13 @@ class F1(Metric):
                             ).unsqueeze(-1),
                         ]
                     )
+                else:
+                    self.scores = torch.cat(
+                        [
+                            self.scores,  # type: ignore
+                            torch.tensor(0, device=self.device).unsqueeze(-1),
+                        ]
+                    )
             self.total += 1  # type: ignore
 
     def compute(self) -> torch.Tensor:
