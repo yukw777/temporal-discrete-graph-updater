@@ -18,7 +18,7 @@ data_module:
   relation_vocab_path: vocabs/relation_vocab.txt
 
 model:
-  _target_: tdgu.nn.graph_updater.StaticLabelDiscreteGraphUpdater
+  _target_: tdgu.nn.graph_updater.TemporalDiscreteGraphUpdater
   hidden_dim: 64
   word_emb_dim: 300
   dgnn_gnn: TransformerConv

@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from typing import List, Dict, Tuple, Any
 from torch_geometric.data import Data, Batch
 
-from tdgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.data import (
     TWCmdGenGraphEventFreeRunDataset,
     TWCmdGenGraphEventDataCollator,
@@ -40,7 +40,7 @@ def main(
     labels, label_id_map = read_label_vocab_files(node_vocab_path, relation_vocab_path)
     collator = TWCmdGenGraphEventDataCollator(preprocessor, label_id_map)
 
-    lm = StaticLabelDiscreteGraphUpdater.load_from_checkpoint(
+    lm = TemporalDiscreteGraphUpdater.load_from_checkpoint(
         ckpt_filename,
         word_vocab_path=word_vocab_path,
         node_vocab_path=node_vocab_path,

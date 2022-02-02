@@ -6,7 +6,7 @@ import random
 from typing import List
 from torch.utils.data import DataLoader
 
-from tdgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.data import (
     TWCmdGenGraphEventDataset,
     TWCmdGenGraphEventDataCollator,
@@ -39,7 +39,7 @@ def main(
         num_workers=num_dataloader_worker,
     )
 
-    lm = StaticLabelDiscreteGraphUpdater.load_from_checkpoint(
+    lm = TemporalDiscreteGraphUpdater.load_from_checkpoint(
         ckpt_filename,
         word_vocab_path=word_vocab_path,
         node_vocab_path=node_vocab_path,

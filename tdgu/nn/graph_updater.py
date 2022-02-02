@@ -54,9 +54,9 @@ from tdgu.graph import (
 )
 
 
-class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
+class TemporalDiscreteGraphUpdater(pl.LightningModule):
     """
-    StaticLabelDiscreteGraphUpdater is essentially a Seq2Seq model which encodes
+    TemporalDiscreteGraphUpdater is essentially a Seq2Seq model which encodes
     a sequence of game steps, each with an observation and a previous action, and
     decodes a sequence of graph events.
     """
