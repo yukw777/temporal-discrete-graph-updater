@@ -43,13 +43,13 @@ pip install -e .
 
 Next, run the training script.
 ```bash
-python -m tdgu.train_static_label_dgu \
+python -m tdgu.train_tdgu \
 +trainer.gpus=1 # use one gpu
 ```
 
 If you want to log to [Weights & Biases](https://wandb.ai/), simply set the logger.
 ```bash
-python -m tdgu.train_static_label_dgu \
+python -m tdgu.train_tdgu \
 trainer/logger=wandb \
 +trainer.gpus=1
 ```
