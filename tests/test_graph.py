@@ -264,9 +264,21 @@ def test_process_triplet_cmd(
             1,
             "delete , red onion , counter , on",
             [
-                {"type": "edge-delete", "src_id": 0, "dst_id": 2, "label": "on"},
+                {
+                    "type": "edge-delete",
+                    "src_id": 0,
+                    "dst_id": 2,
+                    "label": "on",
+                    "edge_id": 1,
+                },
                 {"type": "node-delete", "node_id": 2, "label": "counter"},
-                {"type": "edge-delete", "src_id": 0, "dst_id": 1, "label": "is"},
+                {
+                    "type": "edge-delete",
+                    "src_id": 0,
+                    "dst_id": 1,
+                    "label": "is",
+                    "edge_id": 0,
+                },
                 {"type": "node-delete", "node_id": 1, "label": "red"},
                 {"type": "node-delete", "node_id": 0, "label": "onion"},
             ],
@@ -276,10 +288,10 @@ def test_process_triplet_cmd(
 def test_process_triplet_cmd_allow_objs_with_same_label(
     graph, timestamp, cmd, expected
 ):
-    assert (
-        process_triplet_cmd(graph, timestamp, cmd, allow_objs_with_same_label=True)
-        == expected
+    processed = process_triplet_cmd(
+        graph, timestamp, cmd, allow_objs_with_same_label=True
     )
+    assert processed == expected
 
 
 @pytest.mark.parametrize(
