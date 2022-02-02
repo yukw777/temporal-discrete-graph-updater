@@ -64,11 +64,11 @@ jobs:
     - name: Lint with mypy
       run: |
         # --install-types --non-interactive is only really necessary for Python 3.6
-        mypy dgu --ignore-missing-imports --follow-imports=silent --show-column-numbers --install-types --non-interactive
+        mypy tdgu --ignore-missing-imports --follow-imports=silent --show-column-numbers --install-types --non-interactive
 
     - name: Tests
       run: |
-        coverage run --source dgu -m py.test dgu tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
+        coverage run --source tdgu -m py.test tdgu tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
 
     - name: Statistics
       if: success()

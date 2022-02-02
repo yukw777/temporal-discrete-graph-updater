@@ -6,15 +6,15 @@ import random
 from typing import List
 from torch.utils.data import DataLoader
 
-from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
-from dgu.data import (
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
+from tdgu.data import (
     TWCmdGenGraphEventDataset,
     TWCmdGenGraphEventDataCollator,
     read_label_vocab_files,
 )
-from dgu.preprocessor import SpacyPreprocessor
-from dgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
-from dgu.nn.utils import calculate_node_id_offsets
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
+from tdgu.nn.utils import calculate_node_id_offsets
 
 
 def main(
@@ -39,7 +39,7 @@ def main(
         num_workers=num_dataloader_worker,
     )
 
-    lm = StaticLabelDiscreteGraphUpdater.load_from_checkpoint(
+    lm = TemporalDiscreteGraphUpdater.load_from_checkpoint(
         ckpt_filename,
         word_vocab_path=word_vocab_path,
         node_vocab_path=node_vocab_path,

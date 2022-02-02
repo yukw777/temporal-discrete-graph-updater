@@ -4,8 +4,8 @@ import torch.nn.functional as F
 
 from typing import Tuple, Optional, List, Dict
 
-from dgu.nn.utils import masked_mean, PositionalEncoder
-from dgu.constants import EVENT_TYPES
+from tdgu.nn.utils import masked_mean, PositionalEncoder
+from tdgu.constants import EVENT_TYPES
 
 
 class EventTypeHead(nn.Module):

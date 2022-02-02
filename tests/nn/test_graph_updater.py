@@ -6,18 +6,18 @@ import random
 
 from torch_geometric.data.batch import Batch
 
-from dgu.nn.graph_updater import (
-    StaticLabelDiscreteGraphUpdater,
+from tdgu.nn.graph_updater import (
+    TemporalDiscreteGraphUpdater,
     UncertaintyWeightedLoss,
 )
-from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
-from dgu.data import TWCmdGenGraphEventStepInput
+from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from tdgu.data import TWCmdGenGraphEventStepInput
 
 
 @pytest.fixture()
-def sldgu(tmp_path):
+def tdgu(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
-    return StaticLabelDiscreteGraphUpdater(
+    return TemporalDiscreteGraphUpdater(
         pretrained_word_embedding_path=f"{tmp_path}/test-fasttext.vec",
         word_vocab_path="tests/data/test_word_vocab.txt",
         node_vocab_path="tests/data/test_node_vocab.txt",
@@ -26,18 +26,18 @@ def sldgu(tmp_path):
 
 
 @pytest.mark.parametrize("batch", [1, 8])
-def test_sldgu_embed_label(sldgu, batch):
-    assert sldgu.embed_label(torch.randint(6, (batch,))).size() == (
+def test_tdgu_embed_label(tdgu, batch):
+    assert tdgu.embed_label(torch.randint(6, (batch,))).size() == (
         batch,
-        sldgu.hparams.hidden_dim,
+        tdgu.hparams.hidden_dim,
     )
 
 
 @pytest.mark.parametrize("batch,seq_len", [(1, 10), (8, 24)])
-def test_sldgu_encode_text(sldgu, batch, seq_len):
-    assert sldgu.encode_text(
+def test_tdgu_encode_text(tdgu, batch, seq_len):
+    assert tdgu.encode_text(
         torch.randint(13, (batch, seq_len)), torch.randint(2, (batch, seq_len)).float()
-    ).size() == (batch, seq_len, sldgu.hparams.hidden_dim)
+    ).size() == (batch, seq_len, tdgu.hparams.hidden_dim)
 
 
 @pytest.mark.parametrize(
@@ -306,8 +306,8 @@ def test_sldgu_encode_text(sldgu, batch, seq_len):
 )
 @pytest.mark.parametrize("encoded_textual_input", [True, False])
 @pytest.mark.parametrize("prev_input_seq_len", [0, 6, 8])
-def test_sldgu_forward(
-    sldgu,
+def test_tdgu_forward(
+    tdgu,
     prev_input_seq_len,
     encoded_textual_input,
     batch_size,
@@ -322,12 +322,12 @@ def test_sldgu_forward(
     expected_num_edge,
 ):
     encoded_obs = (
-        torch.rand(batch_size, obs_len, sldgu.hparams.hidden_dim)
+        torch.rand(batch_size, obs_len, tdgu.hparams.hidden_dim)
         if encoded_textual_input
         else None
     )
     encoded_prev_action = (
-        torch.rand(batch_size, prev_action_len, sldgu.hparams.hidden_dim)
+        torch.rand(batch_size, prev_action_len, tdgu.hparams.hidden_dim)
         if encoded_textual_input
         else None
     )
@@ -358,11 +358,11 @@ def test_sldgu_forward(
             dim=1,
         )
     )
-    results = sldgu(
+    results = tdgu(
         event_type_ids,
         event_src_ids,
         event_dst_ids,
-        torch.randint(len(sldgu.labels), (batch_size,)),
+        torch.randint(len(tdgu.labels), (batch_size,)),
         batched_graph,
         obs_mask,
         prev_action_mask,
@@ -370,22 +370,22 @@ def test_sldgu_forward(
         obs_word_ids=None
         if encoded_textual_input
         else torch.randint(
-            len(sldgu.preprocessor.word_to_id_dict), (batch_size, obs_len)
+            len(tdgu.preprocessor.word_to_id_dict), (batch_size, obs_len)
         ),
         prev_action_word_ids=None
         if encoded_textual_input
         else torch.randint(
-            len(sldgu.preprocessor.word_to_id_dict), (batch_size, prev_action_len)
+            len(tdgu.preprocessor.word_to_id_dict), (batch_size, prev_action_len)
         ),
         encoded_obs=encoded_obs,
         encoded_prev_action=encoded_prev_action,
         prev_input_event_emb_seq=None
         if prev_input_seq_len == 0
         else torch.rand(
-            sldgu.hparams.graph_event_decoder_num_dec_blocks,
+            tdgu.hparams.graph_event_decoder_num_dec_blocks,
             batch_size,
             prev_input_seq_len,
-            sldgu.hparams.graph_event_decoder_hidden_dim,
+            tdgu.hparams.graph_event_decoder_hidden_dim,
         ),
         prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
         groundtruth_event=groundtruth_event,
@@ -399,12 +399,12 @@ def test_sldgu_forward(
         max_sub_graph_num_node = 0
     assert results["event_src_logits"].size() == (batch_size, max_sub_graph_num_node)
     assert results["event_dst_logits"].size() == (batch_size, max_sub_graph_num_node)
-    assert results["event_label_logits"].size() == (batch_size, len(sldgu.labels))
+    assert results["event_label_logits"].size() == (batch_size, len(tdgu.labels))
     assert results["updated_prev_input_event_emb_seq"].size() == (
-        sldgu.hparams.graph_event_decoder_num_dec_blocks,
+        tdgu.hparams.graph_event_decoder_num_dec_blocks,
         batch_size,
         prev_input_seq_len + 1,
-        sldgu.hparams.graph_event_decoder_hidden_dim,
+        tdgu.hparams.graph_event_decoder_hidden_dim,
     )
     assert results["updated_prev_input_event_emb_seq_mask"].size() == (
         batch_size,
@@ -417,12 +417,12 @@ def test_sldgu_forward(
         assert results["encoded_obs"].size() == (
             batch_size,
             obs_len,
-            sldgu.hparams.hidden_dim,
+            tdgu.hparams.hidden_dim,
         )
         assert results["encoded_prev_action"].size() == (
             batch_size,
             prev_action_len,
-            sldgu.hparams.hidden_dim,
+            tdgu.hparams.hidden_dim,
         )
     assert results["updated_batched_graph"].batch.size() == (expected_num_node,)
     assert results["updated_batched_graph"].x.size() == (expected_num_node,)
@@ -437,22 +437,22 @@ def test_sldgu_forward(
         2,
     )
     assert results["batch_node_mask"].size() == (batch_size, max_sub_graph_num_node)
-    assert len(results["self_attn_weights"]) == len(sldgu.decoder.dec_blocks)
+    assert len(results["self_attn_weights"]) == len(tdgu.decoder.dec_blocks)
     for self_attn_weights in results["self_attn_weights"]:
         assert self_attn_weights.size() == (batch_size, 1, prev_input_seq_len + 1)
-    assert len(results["obs_graph_attn_weights"]) == len(sldgu.decoder.dec_blocks)
+    assert len(results["obs_graph_attn_weights"]) == len(tdgu.decoder.dec_blocks)
     for obs_graph_attn_weights in results["obs_graph_attn_weights"]:
         assert obs_graph_attn_weights.size() == (batch_size, 1, obs_len)
     assert len(results["prev_action_graph_attn_weights"]) == len(
-        sldgu.decoder.dec_blocks
+        tdgu.decoder.dec_blocks
     )
     for prev_action_graph_attn_weights in results["prev_action_graph_attn_weights"]:
         assert prev_action_graph_attn_weights.size() == (batch_size, 1, prev_action_len)
-    assert len(results["graph_obs_attn_weights"]) == len(sldgu.decoder.dec_blocks)
+    assert len(results["graph_obs_attn_weights"]) == len(tdgu.decoder.dec_blocks)
     for graph_obs_attn_weights in results["graph_obs_attn_weights"]:
         assert graph_obs_attn_weights.size() == (batch_size, 1, max_sub_graph_num_node)
     assert len(results["graph_prev_action_attn_weights"]) == len(
-        sldgu.decoder.dec_blocks
+        tdgu.decoder.dec_blocks
     )
     for graph_prev_action_attn_weights in results["graph_prev_action_attn_weights"]:
         assert graph_prev_action_attn_weights.size() == (
@@ -466,7 +466,7 @@ def test_sldgu_forward(
 @pytest.mark.parametrize("label", [True, False])
 @pytest.mark.parametrize("dst", [True, False])
 @pytest.mark.parametrize("src", [True, False])
-def test_uncertainty_weighted_loss(sldgu, src, dst, label, batch, num_node):
+def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
     groundtruth_event_src_mask = torch.zeros(batch).bool()
     if src:
         groundtruth_event_src_mask[
@@ -482,24 +482,21 @@ def test_uncertainty_weighted_loss(sldgu, src, dst, label, batch, num_node):
         groundtruth_event_label_mask[
             random.sample(range(batch), k=random.choice(range(1, batch + 1)))
         ] = True
-    assert (
-        UncertaintyWeightedLoss()(
-            torch.rand(batch, len(EVENT_TYPES)),
-            torch.randint(len(EVENT_TYPES), (batch,)),
-            torch.rand(batch, num_node),
-            torch.randint(num_node, (batch,)),
-            torch.rand(batch, num_node),
-            torch.randint(num_node, (batch,)),
-            torch.randint(2, (batch, num_node)).bool(),
-            torch.rand(batch, len(sldgu.labels)),
-            torch.randint(len(sldgu.labels), (batch,)),
-            torch.randint(2, (batch,)).bool(),
-            groundtruth_event_src_mask,
-            groundtruth_event_dst_mask,
-            groundtruth_event_label_mask,
-        ).size()
-        == (batch,)
-    )
+    assert UncertaintyWeightedLoss()(
+        torch.rand(batch, len(EVENT_TYPES)),
+        torch.randint(len(EVENT_TYPES), (batch,)),
+        torch.rand(batch, num_node),
+        torch.randint(num_node, (batch,)),
+        torch.rand(batch, num_node),
+        torch.randint(num_node, (batch,)),
+        torch.randint(2, (batch, num_node)).bool(),
+        torch.rand(batch, len(tdgu.labels)),
+        torch.randint(len(tdgu.labels), (batch,)),
+        torch.randint(2, (batch,)).bool(),
+        groundtruth_event_src_mask,
+        groundtruth_event_dst_mask,
+        groundtruth_event_label_mask,
+    ).size() == (batch,)
 
 
 @pytest.mark.parametrize(
@@ -871,8 +868,8 @@ def test_uncertainty_weighted_loss(sldgu, src, dst, label, batch, num_node):
         ),
     ],
 )
-def test_sldgu_calculate_f1s(
-    sldgu,
+def test_tdgu_calculate_f1s(
+    tdgu,
     event_type_logits,
     groundtruth_event_type_ids,
     event_src_logits,
@@ -891,7 +888,7 @@ def test_sldgu_calculate_f1s(
     expected_dst_node_f1,
     expected_label_f1,
 ):
-    sldgu.calculate_f1s(
+    tdgu.calculate_f1s(
         event_type_logits,
         groundtruth_event_type_ids,
         event_src_logits,
@@ -906,13 +903,13 @@ def test_sldgu_calculate_f1s(
         groundtruth_event_dst_mask,
         groundtruth_event_label_mask,
     )
-    assert sldgu.event_type_f1.compute() == expected_event_type_f1
+    assert tdgu.event_type_f1.compute() == expected_event_type_f1
     if groundtruth_event_src_mask.any():
-        assert sldgu.src_node_f1.compute() == expected_src_node_f1
+        assert tdgu.src_node_f1.compute() == expected_src_node_f1
     if groundtruth_event_dst_mask.any():
-        assert sldgu.dst_node_f1.compute() == expected_dst_node_f1
+        assert tdgu.dst_node_f1.compute() == expected_dst_node_f1
     if groundtruth_event_label_mask.any():
-        assert sldgu.label_f1.compute() == expected_label_f1
+        assert tdgu.label_f1.compute() == expected_label_f1
 
 
 @pytest.mark.parametrize(
@@ -1058,8 +1055,8 @@ def test_sldgu_calculate_f1s(
         ),
     ],
 )
-def test_sldgu_generate_graph_triples(
-    sldgu,
+def test_tdgu_generate_graph_triples(
+    tdgu,
     event_type_ids,
     src_ids,
     dst_ids,
@@ -1068,7 +1065,7 @@ def test_sldgu_generate_graph_triples(
     expected,
 ):
     assert (
-        sldgu.generate_graph_triples(
+        tdgu.generate_graph_triples(
             event_type_ids, src_ids, dst_ids, label_ids, batched_graph
         )
         == expected
@@ -1264,8 +1261,8 @@ def test_sldgu_generate_graph_triples(
         ),
     ],
 )
-def test_sldgu_generate_batch_graph_triples_seq(
-    sldgu,
+def test_tdgu_generate_batch_graph_triples_seq(
+    tdgu,
     event_type_id_seq,
     src_id_seq,
     dst_id_seq,
@@ -1274,7 +1271,7 @@ def test_sldgu_generate_batch_graph_triples_seq(
     expected,
 ):
     assert (
-        sldgu.generate_batch_graph_triples_seq(
+        tdgu.generate_batch_graph_triples_seq(
             event_type_id_seq, src_id_seq, dst_id_seq, label_id_seq, batched_graph_seq
         )
         == expected
@@ -1345,11 +1342,11 @@ def test_sldgu_generate_batch_graph_triples_seq(
         ),
     ],
 )
-def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
+def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
     groundtruth_cmd_seq, expected
 ):
     assert (
-        StaticLabelDiscreteGraphUpdater.generate_batch_groundtruth_graph_triple_tokens(
+        TemporalDiscreteGraphUpdater.generate_batch_groundtruth_graph_triple_tokens(
             groundtruth_cmd_seq
         )
         == expected
@@ -1472,10 +1469,10 @@ def test_sldgu_generate_batch_groundtruth_graph_triple_tokens(
         ),
     ],
 )
-def test_sldgu_filter_invalid_events(
-    sldgu, event_type_ids, src_ids, dst_ids, batch, edge_index, expected
+def test_tdgu_filter_invalid_events(
+    tdgu, event_type_ids, src_ids, dst_ids, batch, edge_index, expected
 ):
-    assert sldgu.filter_invalid_events(
+    assert tdgu.filter_invalid_events(
         event_type_ids, src_ids, dst_ids, batch, edge_index
     ).equal(expected)
 
@@ -2800,9 +2797,9 @@ def test_sldgu_filter_invalid_events(
         ),
     ],
 )
-def test_sldgu_greedy_decode(
+def test_tdgu_greedy_decode(
     monkeypatch,
-    sldgu,
+    tdgu,
     max_decode_len,
     batch,
     obs_len,
@@ -2817,25 +2814,23 @@ def test_sldgu_greedy_decode(
 
         def __call__(self, *args, **kwargs):
             decoded = forward_results[self.num_calls]
-            decoded["encoded_obs"] = torch.rand(
-                batch, obs_len, sldgu.hparams.hidden_dim
-            )
+            decoded["encoded_obs"] = torch.rand(batch, obs_len, tdgu.hparams.hidden_dim)
             decoded["encoded_prev_action"] = torch.rand(
-                batch, prev_action_len, sldgu.hparams.hidden_dim
+                batch, prev_action_len, tdgu.hparams.hidden_dim
             )
             self.num_calls += 1
             return decoded
 
-    monkeypatch.setattr(sldgu, "forward", MockForward())
-    monkeypatch.setattr(sldgu.hparams, "max_decode_len", max_decode_len)
-    decoded_list = sldgu.greedy_decode(
+    monkeypatch.setattr(tdgu, "forward", MockForward())
+    monkeypatch.setattr(tdgu.hparams, "max_decode_len", max_decode_len)
+    decoded_list = tdgu.greedy_decode(
         TWCmdGenGraphEventStepInput(
             obs_word_ids=torch.randint(
-                len(sldgu.preprocessor.word_vocab), (batch, obs_len)
+                len(tdgu.preprocessor.word_vocab), (batch, obs_len)
             ),
             obs_mask=torch.randint(2, (batch, obs_len)).float(),
             prev_action_word_ids=torch.randint(
-                len(sldgu.preprocessor.word_vocab), (batch, prev_action_len)
+                len(tdgu.preprocessor.word_vocab), (batch, prev_action_len)
             ),
             prev_action_mask=torch.randint(2, (batch, prev_action_len)).float(),
             timestamps=torch.tensor([4.0] * batch),
@@ -2922,9 +2917,9 @@ def test_sldgu_greedy_decode(
         ),
     ],
 )
-def test_sldgu_generate_predict_table_rows(ids, batch_cmds, expected):
+def test_tdgu_generate_predict_table_rows(ids, batch_cmds, expected):
     assert (
-        StaticLabelDiscreteGraphUpdater.generate_predict_table_rows(ids, *batch_cmds)
+        TemporalDiscreteGraphUpdater.generate_predict_table_rows(ids, *batch_cmds)
         == expected
     )
 
@@ -3109,7 +3104,7 @@ def test_sldgu_generate_predict_table_rows(ids, batch_cmds, expected):
 )
 def test_rnn_graph_event_decoder_get_decoder_input(
     monkeypatch,
-    sldgu,
+    tdgu,
     event_type_embeddings,
     label_embeddings,
     event_type_ids,
@@ -3120,9 +3115,9 @@ def test_rnn_graph_event_decoder_get_decoder_input(
     node_label_ids,
     expected,
 ):
-    sldgu.event_type_embeddings = nn.Embedding.from_pretrained(event_type_embeddings)
-    monkeypatch.setattr(sldgu, "embed_label", lambda x: label_embeddings[x])
-    assert sldgu.get_decoder_input(
+    tdgu.event_type_embeddings = nn.Embedding.from_pretrained(event_type_embeddings)
+    monkeypatch.setattr(tdgu, "embed_label", lambda x: label_embeddings[x])
+    assert tdgu.get_decoder_input(
         event_type_ids,
         event_src_ids,
         event_dst_ids,

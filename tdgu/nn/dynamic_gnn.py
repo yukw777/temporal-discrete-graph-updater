@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from torch_geometric.data import Batch
 
-from dgu.nn.utils import PositionalEncoder
+from tdgu.nn.utils import PositionalEncoder
 
 
 class GNNLayer(nn.Module):

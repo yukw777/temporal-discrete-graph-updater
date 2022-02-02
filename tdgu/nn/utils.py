@@ -9,8 +9,8 @@ from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
 
-from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.preprocessor import SpacyPreprocessor
+from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.preprocessor import SpacyPreprocessor
 
 
 def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

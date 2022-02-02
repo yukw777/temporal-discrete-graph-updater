@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from typing import Tuple
 
-from dgu.nn.utils import masked_softmax
+from tdgu.nn.utils import masked_softmax
 
 
 class ContextQueryAttention(nn.Module):

@@ -1,7 +1,7 @@
 import torch
 import pytest
 
-from dgu.nn.text import (
+from tdgu.nn.text import (
     DepthwiseSeparableConv1d,
     TextEncoderConvBlock,
     TextEncoderBlock,
