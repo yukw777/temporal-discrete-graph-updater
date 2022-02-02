@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from dgu.nn.utils import PositionalEncoder
+from tdgu.nn.utils import PositionalEncoder
 
 
 class DepthwiseSeparableConv1d(nn.Module):

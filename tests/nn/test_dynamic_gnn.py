@@ -4,7 +4,7 @@ import torch
 from torch_geometric.data import Batch
 from torch_geometric.nn import TransformerConv, GATv2Conv
 
-from dgu.nn.dynamic_gnn import DynamicGNN, GNNStack, ZeroPositionalEncoder, GNNLayer
+from tdgu.nn.dynamic_gnn import DynamicGNN, GNNStack, ZeroPositionalEncoder, GNNLayer
 
 
 @pytest.mark.parametrize(
@@ -118,14 +118,11 @@ def test_gnn_layer_forward(
     num_edge,
 ):
     layer = GNNLayer(gnn_module, input_dim, output_dim, edge_dim, heads, dropout)
-    assert (
-        layer(
-            torch.rand(num_node, input_dim),
-            torch.randint(num_node, (2, num_edge)),
-            torch.rand(num_edge, edge_dim),
-        ).size()
-        == (num_node, heads * output_dim)
-    )
+    assert layer(
+        torch.rand(num_node, input_dim),
+        torch.randint(num_node, (2, num_edge)),
+        torch.rand(num_edge, edge_dim),
+    ).size() == (num_node, heads * output_dim)
 
 
 @pytest.mark.parametrize(

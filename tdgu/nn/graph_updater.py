@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import torchmetrics
 import wandb
-import dgu.metrics
 import tqdm
 
 from typing import Optional, Dict, List, Sequence, Tuple, Any
@@ -18,9 +17,10 @@ from torch_geometric.data import Batch, Data
 from torch_geometric.utils import to_dense_batch
 from torch.utils.data import DataLoader
 
-from dgu.nn.text import TextEncoder
-from dgu.nn.rep_aggregator import ReprAggregator
-from dgu.nn.utils import (
+from tdgu.nn.text import TextEncoder
+from tdgu.nn.rep_aggregator import ReprAggregator
+from tdgu.metrics import F1, ExactMatch
+from tdgu.nn.utils import (
     compute_masks_from_event_type_ids,
     index_edge_attr,
     masked_log_softmax,
@@ -30,23 +30,23 @@ from dgu.nn.utils import (
     masked_softmax,
     update_batched_graph,
 )
-from dgu.nn.graph_event_decoder import (
+from tdgu.nn.graph_event_decoder import (
     TransformerGraphEventDecoder,
     EventTypeHead,
     EventNodeHead,
     EventStaticLabelHead,
 )
-from dgu.nn.dynamic_gnn import DynamicGNN
-from dgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
-from dgu.data import (
+from tdgu.nn.dynamic_gnn import DynamicGNN
+from tdgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
+from tdgu.data import (
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventFreeRunDataset,
     TWCmdGenGraphEventGraphicalInput,
     TWCmdGenGraphEventStepInput,
     read_label_vocab_files,
 )
-from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.graph import (
+from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.graph import (
     batch_to_data_list,
     data_to_networkx,
     networkx_to_rdf,
@@ -236,18 +236,18 @@ class StaticLabelDiscreteGraphUpdater(pl.LightningModule):
         self.dst_node_f1 = torchmetrics.F1()
         self.label_f1 = torchmetrics.F1()
 
-        self.graph_tf_exact_match = dgu.metrics.ExactMatch()
-        self.token_tf_exact_match = dgu.metrics.ExactMatch()
-        self.graph_tf_f1 = dgu.metrics.F1()
-        self.token_tf_f1 = dgu.metrics.F1()
+        self.graph_tf_exact_match = ExactMatch()
+        self.token_tf_exact_match = ExactMatch()
+        self.graph_tf_f1 = F1()
+        self.token_tf_f1 = F1()
 
-        self.graph_gd_exact_match = dgu.metrics.ExactMatch()
-        self.token_gd_exact_match = dgu.metrics.ExactMatch()
-        self.graph_gd_f1 = dgu.metrics.F1()
-        self.token_gd_f1 = dgu.metrics.F1()
+        self.graph_gd_exact_match = ExactMatch()
+        self.token_gd_exact_match = ExactMatch()
+        self.graph_gd_f1 = F1()
+        self.token_gd_f1 = F1()
 
-        self.free_run_f1 = dgu.metrics.F1()
-        self.free_run_em = dgu.metrics.ExactMatch()
+        self.free_run_f1 = F1()
+        self.free_run_em = ExactMatch()
 
     def forward(  # type: ignore
         self,

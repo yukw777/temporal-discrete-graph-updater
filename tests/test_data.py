@@ -5,7 +5,7 @@ import shutil
 
 from torch_geometric.data import Batch
 
-from dgu.data import (
+from tdgu.data import (
     TWCmdGenGraphEventDataset,
     TWCmdGenGraphEventDataModule,
     TWCmdGenGraphEventDataCollator,
@@ -16,8 +16,8 @@ from dgu.data import (
     sort_target_commands,
     TWCmdGenGraphEventFreeRunDataset,
 )
-from dgu.preprocessor import SpacyPreprocessor
-from dgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.fixture

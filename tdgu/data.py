@@ -10,10 +10,10 @@ from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
 
-from dgu.preprocessor import SpacyPreprocessor
-from dgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
-from dgu.utils import draw_graph
-from dgu.constants import (
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
+from tdgu.utils import draw_graph
+from tdgu.constants import (
     EVENT_TYPE_ID_MAP,
     TWO_ARGS_RELATIONS,
     NORTH_OF,
@@ -24,7 +24,7 @@ from dgu.constants import (
     IS,
     NEEDS,
 )
-from dgu.graph import process_triplet_cmd
+from tdgu.graph import process_triplet_cmd
 
 
 class TWCmdGenGraphEventDataset(Dataset):

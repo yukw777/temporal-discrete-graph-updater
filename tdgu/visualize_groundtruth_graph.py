@@ -1,4 +1,4 @@
-from dgu.data import TWCmdGenGraphEventDataset
+from tdgu.data import TWCmdGenGraphEventDataset
 
 
 def main(

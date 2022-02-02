@@ -6,12 +6,12 @@ import random
 
 from torch_geometric.data.batch import Batch
 
-from dgu.nn.graph_updater import (
+from tdgu.nn.graph_updater import (
     StaticLabelDiscreteGraphUpdater,
     UncertaintyWeightedLoss,
 )
-from dgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
-from dgu.data import TWCmdGenGraphEventStepInput
+from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from tdgu.data import TWCmdGenGraphEventStepInput
 
 
 @pytest.fixture()
@@ -482,24 +482,21 @@ def test_uncertainty_weighted_loss(sldgu, src, dst, label, batch, num_node):
         groundtruth_event_label_mask[
             random.sample(range(batch), k=random.choice(range(1, batch + 1)))
         ] = True
-    assert (
-        UncertaintyWeightedLoss()(
-            torch.rand(batch, len(EVENT_TYPES)),
-            torch.randint(len(EVENT_TYPES), (batch,)),
-            torch.rand(batch, num_node),
-            torch.randint(num_node, (batch,)),
-            torch.rand(batch, num_node),
-            torch.randint(num_node, (batch,)),
-            torch.randint(2, (batch, num_node)).bool(),
-            torch.rand(batch, len(sldgu.labels)),
-            torch.randint(len(sldgu.labels), (batch,)),
-            torch.randint(2, (batch,)).bool(),
-            groundtruth_event_src_mask,
-            groundtruth_event_dst_mask,
-            groundtruth_event_label_mask,
-        ).size()
-        == (batch,)
-    )
+    assert UncertaintyWeightedLoss()(
+        torch.rand(batch, len(EVENT_TYPES)),
+        torch.randint(len(EVENT_TYPES), (batch,)),
+        torch.rand(batch, num_node),
+        torch.randint(num_node, (batch,)),
+        torch.rand(batch, num_node),
+        torch.randint(num_node, (batch,)),
+        torch.randint(2, (batch, num_node)).bool(),
+        torch.rand(batch, len(sldgu.labels)),
+        torch.randint(len(sldgu.labels), (batch,)),
+        torch.randint(2, (batch,)).bool(),
+        groundtruth_event_src_mask,
+        groundtruth_event_dst_mask,
+        groundtruth_event_label_mask,
+    ).size() == (batch,)
 
 
 @pytest.mark.parametrize(

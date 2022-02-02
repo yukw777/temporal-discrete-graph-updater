@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from dgu.preprocessor import SpacyPreprocessor
+from tdgu.preprocessor import SpacyPreprocessor
 
 
 @pytest.mark.parametrize(

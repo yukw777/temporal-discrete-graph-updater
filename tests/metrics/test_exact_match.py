@@ -1,7 +1,7 @@
 import torch
 import pytest
 
-from dgu.metrics import ExactMatch
+from tdgu.metrics import ExactMatch
 
 
 @pytest.mark.parametrize(

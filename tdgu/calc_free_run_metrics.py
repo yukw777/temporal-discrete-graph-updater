@@ -5,16 +5,16 @@ from torch.utils.data import DataLoader
 from typing import List, Dict, Tuple, Any
 from torch_geometric.data import Data, Batch
 
-from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
-from dgu.data import (
+from tdgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
+from tdgu.data import (
     TWCmdGenGraphEventFreeRunDataset,
     TWCmdGenGraphEventDataCollator,
     read_label_vocab_files,
 )
-from dgu.preprocessor import SpacyPreprocessor
-from dgu.metrics.f1 import F1
-from dgu.metrics.exact_match import ExactMatch
-from dgu.graph import (
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.metrics.f1 import F1
+from tdgu.metrics.exact_match import ExactMatch
+from tdgu.graph import (
     batch_to_data_list,
     data_to_networkx,
     networkx_to_rdf,

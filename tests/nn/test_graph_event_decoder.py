@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from dgu.nn.graph_event_decoder import (
+from tdgu.nn.graph_event_decoder import (
     EventTypeHead,
     EventNodeHead,
     EventStaticLabelHead,
@@ -9,7 +9,7 @@ from dgu.nn.graph_event_decoder import (
     TransformerGraphEventDecoderBlock,
     TransformerGraphEventDecoder,
 )
-from dgu.constants import EVENT_TYPES
+from tdgu.constants import EVENT_TYPES
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
@@ -153,20 +153,17 @@ def test_rnn_graph_event_decoder(
         dim=1,
     )
 
-    assert (
-        decoder(
-            torch.rand(batch, input_dim),
-            torch.rand(batch, obs_len, aggr_dim),
-            obs_mask,
-            torch.rand(batch, prev_action_len, aggr_dim),
-            prev_action_mask,
-            torch.rand(batch, num_node, aggr_dim),
-            torch.rand(batch, num_node, aggr_dim),
-            torch.randint(2, (batch, num_node)).bool(),
-            hidden=torch.rand(batch, hidden_dim) if hidden else None,
-        ).size()
-        == (batch, hidden_dim)
-    )
+    assert decoder(
+        torch.rand(batch, input_dim),
+        torch.rand(batch, obs_len, aggr_dim),
+        obs_mask,
+        torch.rand(batch, prev_action_len, aggr_dim),
+        prev_action_mask,
+        torch.rand(batch, num_node, aggr_dim),
+        torch.rand(batch, num_node, aggr_dim),
+        torch.randint(2, (batch, num_node)).bool(),
+        hidden=torch.rand(batch, hidden_dim) if hidden else None,
+    ).size() == (batch, hidden_dim)
 
 
 @pytest.mark.parametrize("prev_input_seq_len", [0, 6, 8])

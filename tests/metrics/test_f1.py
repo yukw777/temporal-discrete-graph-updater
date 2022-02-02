@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from dgu.metrics import F1
+from tdgu.metrics import F1
 
 
 @pytest.mark.parametrize(

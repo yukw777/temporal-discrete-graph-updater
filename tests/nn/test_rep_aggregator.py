@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from dgu.nn.rep_aggregator import ContextQueryAttention, ReprAggregator
+from tdgu.nn.rep_aggregator import ContextQueryAttention, ReprAggregator
 
 
 @pytest.mark.parametrize(

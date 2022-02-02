@@ -4,7 +4,7 @@ import torch
 from pathlib import Path
 from torch_geometric.data import Batch
 
-from dgu.nn.utils import (
+from tdgu.nn.utils import (
     masked_mean,
     masked_softmax,
     masked_log_softmax,
@@ -20,8 +20,8 @@ from dgu.nn.utils import (
     update_edge_index,
     PositionalEncoder,
 )
-from dgu.constants import EVENT_TYPE_ID_MAP
-from dgu.preprocessor import PAD, UNK, SpacyPreprocessor
+from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.preprocessor import PAD, UNK, SpacyPreprocessor
 
 
 @pytest.mark.parametrize(

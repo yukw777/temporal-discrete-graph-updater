@@ -5,7 +5,7 @@ import networkx as nx
 from torch_geometric.data import Data, Batch
 from copy import deepcopy
 
-from dgu.graph import (
+from tdgu.graph import (
     Node,
     DstNode,
     ExitNode,

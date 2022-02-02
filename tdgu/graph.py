@@ -5,8 +5,8 @@ from typing import Dict, List, Any, Set
 
 from torch_geometric.data import Data, Batch
 
-from dgu.constants import FOOD_COLORS, IS, FOOD_KINDS
-from dgu.nn.utils import calculate_node_id_offsets
+from tdgu.constants import FOOD_COLORS, IS, FOOD_KINDS
+from tdgu.nn.utils import calculate_node_id_offsets
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@ import torch
 import json
 
 from torch_geometric.data import Data, Batch
-from dgu.graph import (
+from tdgu.graph import (
     batch_to_data_list,
     data_to_networkx,
     networkx_to_rdf,
@@ -12,10 +12,10 @@ from dgu.graph import (
 from typing import Set, Tuple, List
 from pathlib import Path
 
-from dgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
-from dgu.data import TWCmdGenGraphEventStepInput
-from dgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
-from dgu.utils import draw_graph
+from tdgu.nn.graph_updater import StaticLabelDiscreteGraphUpdater
+from tdgu.data import TWCmdGenGraphEventStepInput
+from tdgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
+from tdgu.utils import draw_graph
 
 
 class Env:
