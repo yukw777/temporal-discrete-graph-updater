@@ -1,13 +1,13 @@
 import shutil
 
-from tdgu.train_static_label_dgu import main
+from tdgu.train_tdgu import main
 from hydra import initialize, compose
 
 
 def test_main(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
 
-    with initialize(config_path="../tdgu/train_static_label_dgu_conf"):
+    with initialize(config_path="../tdgu/train_tdgu_conf"):
         cfg = compose(
             config_name="config",
             overrides=[
@@ -35,7 +35,7 @@ def test_main(tmp_path):
 def test_main_dgnn_zero_timestamp_encoder(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
 
-    with initialize(config_path="../tdgu/train_static_label_dgu_conf"):
+    with initialize(config_path="../tdgu/train_tdgu_conf"):
         cfg = compose(
             config_name="config",
             overrides=[
@@ -64,7 +64,7 @@ def test_main_dgnn_zero_timestamp_encoder(tmp_path):
 def test_main_allow_objs_with_same_label(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
 
-    with initialize(config_path="../tdgu/train_static_label_dgu_conf"):
+    with initialize(config_path="../tdgu/train_tdgu_conf"):
         cfg = compose(
             config_name="config",
             overrides=[
@@ -91,7 +91,7 @@ def test_main_allow_objs_with_same_label(tmp_path):
 
 
 def test_main_test_only(tmp_path):
-    with initialize(config_path="../tdgu/train_static_label_dgu_conf"):
+    with initialize(config_path="../tdgu/train_tdgu_conf"):
         cfg = compose(
             config_name="config",
             overrides=[

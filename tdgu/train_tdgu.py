@@ -6,7 +6,7 @@ from hydra.utils import instantiate, to_absolute_path
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 
-@hydra.main(config_path="train_static_label_dgu_conf", config_name="config")
+@hydra.main(config_path="train_tdgu_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     print(f"Training with the following config:\n{OmegaConf.to_yaml(cfg)}")
 
@@ -20,7 +20,7 @@ def main(cfg: DictConfig) -> None:
             ModelCheckpoint(
                 monitor="val_free_run_f1",
                 mode="max",
-                filename="static-label-dgu-{epoch}-{val_free_run_f1:.2f}",
+                filename="tdgu-{epoch}-{val_free_run_f1:.2f}",
             )
         ],
     )

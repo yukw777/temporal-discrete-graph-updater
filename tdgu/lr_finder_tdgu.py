@@ -5,7 +5,7 @@ from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 
 
-@hydra.main(config_path="train_static_label_dgu_conf", config_name="config")
+@hydra.main(config_path="train_tdgu_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     print(
         "Finding the optimal learning rate with the following config:\n"
