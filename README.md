@@ -23,7 +23,7 @@ Conference
 The Temporal Discrete Graph Updater (TDGU) is a text-to-graph model that incrementally constructs temporal dynamic knowledge graphs from interactive text-based games.
 
 ## Quickstart
-Install dependencies
+Install dependencies.
 ```bash
 # Clone the repository
 git clone https://github.com/yukw777/temporal-discrete-graph-updater
@@ -39,6 +39,24 @@ pip install torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/w
 
 # Install the tdgu module in the editable mode
 pip install -e .
+```
+
+Download the dataset.
+```bash
+cd temporal-discrete-graph-updater
+mkdir data
+cd data
+wget https://aka.ms/twkg/cmd_gen.0.2.zip
+unzip cmd_gen.0.2.zip -d cmd_gen.0.2
+```
+
+Download the pretrained embeddings.
+```bash
+cd temporal-discrete-graph-updater
+mkdir embedding
+cd embedding
+wget https://dl.fbaipublicfiles.com/fasttext/vectors-english/crawl-300d-2M.vec.zip
+unzip crawl-300d-2M.vec.zip
 ```
 
 Next, run the training script.
