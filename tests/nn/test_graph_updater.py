@@ -1754,6 +1754,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add]
                     "event_src_logits": torch.empty(1, 0),
                     "event_dst_logits": torch.empty(1, 0),
+                    "event_edge_logits": torch.empty(1, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player]
@@ -1770,6 +1771,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.empty(1, 0).bool(),
+                    "batch_edge_mask": torch.empty(1, 0).bool(),
                     "self_attn_weights": [torch.rand(1, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
@@ -1782,6 +1784,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end]
                     "event_src_logits": torch.rand(1, 1),
                     "event_dst_logits": torch.rand(1, 1),
+                    "event_edge_logits": torch.empty(1, 0),
                     "event_label_logits": torch.tensor([[1, 0, 0, 0, 0, 0]]).float(),
                     "updated_prev_input_event_emb_seq": torch.rand(1, 1, 2, 8),
                     "updated_prev_input_event_emb_seq_mask": torch.tensor(
@@ -1798,6 +1801,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True]]),
+                    "batch_edge_mask": torch.empty(1, 0).bool(),
                     "self_attn_weights": [torch.rand(1, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
@@ -1856,6 +1860,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add]
                     "event_src_logits": torch.empty(1, 0),
                     "event_dst_logits": torch.empty(1, 0),
+                    "event_edge_logits": torch.empty(1, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player]
@@ -1872,6 +1877,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.empty(1, 0).bool(),
+                    "batch_edge_mask": torch.empty(1, 0).bool(),
                     "self_attn_weights": [torch.rand(1, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
@@ -1884,6 +1890,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add]
                     "event_src_logits": torch.rand(1, 1),
                     "event_dst_logits": torch.rand(1, 1),
+                    "event_edge_logits": torch.empty(1, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 1, 0, 0, 0]]
                     ).float(),  # [inventory]
@@ -1902,6 +1909,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True]]),
+                    "batch_edge_mask": torch.empty(1, 0).bool(),
                     "self_attn_weights": [torch.rand(1, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
@@ -1914,6 +1922,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [edge-add]
                     "event_src_logits": torch.tensor([[0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[1, 0]]).float(),
+                    "event_edge_logits": torch.empty(1, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0]]
                     ).float(),  # [in]
@@ -1932,6 +1941,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True, True]]),
+                    "batch_edge_mask": torch.empty(1, 0).bool(),
                     "self_attn_weights": [torch.rand(1, 1, 3)],
                     "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
@@ -1944,6 +1954,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end]
                     "event_src_logits": torch.rand(1, 2),
                     "event_dst_logits": torch.rand(1, 2),
+                    "event_edge_logits": torch.rand(1, 1),
                     "event_label_logits": torch.tensor([[1, 0, 0, 0, 0, 0]]).float(),
                     "updated_prev_input_event_emb_seq": torch.rand(1, 1, 4, 8),
                     "updated_prev_input_event_emb_seq_mask": torch.tensor(
@@ -1960,6 +1971,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, True]]),
+                    "batch_edge_mask": torch.tensor([[True]]),
                     "self_attn_weights": [torch.rand(1, 1, 4)],
                     "obs_graph_attn_weights": [torch.rand(1, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(1, 1, 5)],
@@ -2018,6 +2030,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, node-add]
                     "event_src_logits": torch.empty(2, 0),
                     "event_dst_logits": torch.empty(2, 0),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
@@ -2036,6 +2049,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.empty(2, 0).bool(),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2048,6 +2062,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end, node-add]
                     "event_src_logits": torch.rand(2, 1),
                     "event_dst_logits": torch.rand(2, 1),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2066,6 +2081,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True], [True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2078,6 +2094,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [edge-add, edge-add]
                     "event_src_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1], [0, 1]]).float(),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
@@ -2096,6 +2113,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 3)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2108,6 +2126,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, end]
                     "event_src_logits": torch.tensor([[0, 1], [0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1], [1, 0]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2126,6 +2145,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 4)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2214,6 +2234,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, node-add]
                     "event_src_logits": torch.empty(2, 0),
                     "event_dst_logits": torch.empty(2, 0),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
@@ -2232,6 +2253,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.empty(2, 0).bool(),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2244,6 +2266,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end, node-add]
                     "event_src_logits": torch.rand(2, 1),
                     "event_dst_logits": torch.rand(2, 1),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2262,6 +2285,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True], [True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2274,6 +2298,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [edge-add, edge-add]
                     "event_src_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1], [0, 1]]).float(),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
@@ -2292,6 +2317,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 3)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2304,6 +2330,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, end]
                     "event_src_logits": torch.tensor([[0, 1], [0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1], [1, 0]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2321,6 +2348,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 4)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2381,6 +2409,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, node-add]
                     "event_src_logits": torch.empty(2, 0),
                     "event_dst_logits": torch.empty(2, 0),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
@@ -2399,6 +2428,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.empty(2, 0).bool(),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2411,6 +2441,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end, node-add]
                     "event_src_logits": torch.rand(2, 1),
                     "event_dst_logits": torch.rand(2, 1),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2429,6 +2460,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True], [True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2441,6 +2473,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [edge-delete, edge-add]
                     "event_src_logits": torch.tensor([[0, 1], [0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[1, 0], [1, 0]]).float(),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 1, 0]]
                     ).float(),  # [is, in]
@@ -2459,6 +2492,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.empty(0),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 3)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2471,6 +2505,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [edge-delete, edge-delete]
                     "event_src_logits": torch.tensor([[1, 0], [0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[0, 0], [1, 0]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 1, 0]]
                     ).float(),  # [is, in]
@@ -2489,6 +2524,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 4)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2501,6 +2537,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [edge-delete, node-delete]
                     "event_src_logits": torch.tensor([[0, 1], [0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[1, 0], [0, 1]]).float(),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
@@ -2522,6 +2559,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 5)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2534,6 +2572,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, end]
                     "event_src_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "event_dst_logits": torch.tensor([[1, 0], [0, 1]]).float(),
+                    "event_edge_logits": torch.empty(2, 0),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2555,6 +2594,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.empty(2, 0).bool(),
                     "self_attn_weights": [torch.rand(2, 1, 6)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2677,6 +2717,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, node-add]
                     "event_src_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1], [0, 1]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
@@ -2695,6 +2736,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2707,6 +2749,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end, node-add]
                     "event_src_logits": torch.tensor([[0, 1, 0], [0, 0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1, 0], [0, 0, 1]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2727,6 +2770,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "batch_node_mask": torch.tensor(
                         [[True, True, False], [True, True, True]]
                     ),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2743,6 +2787,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "event_dst_logits": torch.tensor(
                         [[0, 1, 0, 0], [0, 0, 0, 1]]
                     ).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
@@ -2763,6 +2808,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "batch_node_mask": torch.tensor(
                         [[True, True, False, False], [True, True, True, True]]
                     ),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 3)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2779,6 +2825,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "event_dst_logits": torch.tensor(
                         [[0, 1, 0, 0], [0, 0, 0, 1]]
                     ).float(),
+                    "event_edge_logits": torch.tensor([[0, 0], [1, 2]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2792,13 +2839,14 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([0, 0, 0, 1, 0, 1]),
                         node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0, 2.0]),
-                        edge_index=torch.tensor([[2, 5], [3, 6]]),
+                        edge_index=torch.tensor([[2, 4], [3, 5]]),
                         edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
                     "batch_node_mask": torch.tensor(
                         [[True, True, False, False], [True, True, True, True]]
                     ),
+                    "batch_edge_mask": torch.tensor([[False, False], [True, True]]),
                     "self_attn_weights": [torch.rand(2, 1, 4)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2868,7 +2916,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([0, 0, 0, 1, 0, 1]),
                         node_last_update=torch.tensor([1.0, 2.0, 3.0, 2.0, 1.0, 2.0]),
-                        edge_index=torch.tensor([[2, 5], [3, 6]]),
+                        edge_index=torch.tensor([[2, 4], [3, 5]]),
                         edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
@@ -2887,6 +2935,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [node-add, node-add]
                     "event_src_logits": torch.tensor([[0, 1], [1, 0]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1], [0, 1]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0]]
                     ).float(),  # [player, player]
@@ -2905,6 +2954,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         edge_last_update=torch.tensor([4.0]),
                     ),
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 1)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2917,6 +2967,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     ).float(),  # [end, node-add]
                     "event_src_logits": torch.tensor([[0, 1, 0], [0, 0, 1]]).float(),
                     "event_dst_logits": torch.tensor([[0, 1, 0], [0, 0, 1]]).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -2937,6 +2988,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "batch_node_mask": torch.tensor(
                         [[True, True, False], [True, True, True]]
                     ),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 2)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2953,6 +3005,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "event_dst_logits": torch.tensor(
                         [[0, 1, 0, 0], [0, 0, 0, 1]]
                     ).float(),
+                    "event_edge_logits": torch.tensor([[0], [1]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
                     ).float(),  # [in, is]
@@ -2973,6 +3026,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "batch_node_mask": torch.tensor(
                         [[True, True, False, False], [True, True, True, True]]
                     ),
+                    "batch_edge_mask": torch.tensor([[False], [True]]),
                     "self_attn_weights": [torch.rand(2, 1, 3)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
@@ -2989,6 +3043,7 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                     "event_dst_logits": torch.tensor(
                         [[0, 1, 0, 0], [0, 0, 0, 1]]
                     ).float(),
+                    "event_edge_logits": torch.tensor([[0, 0], [1, 2]]).float(),
                     "event_label_logits": torch.tensor(
                         [[0, 1, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]
                     ).float(),  # [player, inventory]
@@ -3002,13 +3057,14 @@ def test_tdgu_update_src_dst_ids_with_edge_ids(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                         x=torch.tensor([0, 0, 0, 1, 0, 1]),
                         node_last_update=torch.tensor([1.0, 2.0, 3.0, 3.0, 2.0, 1.0]),
-                        edge_index=torch.tensor([[2, 5], [3, 6]]),
+                        edge_index=torch.tensor([[2, 4], [3, 5]]),
                         edge_attr=torch.tensor([4, 4]),
                         edge_last_update=torch.tensor([4.0, 5.0]),
                     ),
                     "batch_node_mask": torch.tensor(
                         [[True, True, False, False], [True, True, True, True]]
                     ),
+                    "batch_edge_mask": torch.tensor([[False, False], [True, True]]),
                     "self_attn_weights": [torch.rand(2, 1, 4)],
                     "obs_graph_attn_weights": [torch.rand(2, 1, 3)],
                     "prev_action_graph_attn_weights": [torch.rand(2, 1, 5)],
