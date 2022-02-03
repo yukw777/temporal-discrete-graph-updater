@@ -1386,23 +1386,19 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 )
             # (batch)
 
-            # update decoded_src_ids and decoded_dst_ids with decoded edge IDs
-            if results["event_edge_logits"].size(1) > 0:
-                (
-                    decoded_src_ids,
-                    decoded_dst_ids,
-                ) = self.update_src_dst_ids_with_edge_ids(
-                    decoded_event_type_ids,
-                    decoded_src_ids,
-                    decoded_dst_ids,
+            if results["event_edge_logits"].size(1) == 0:
+                decoded_edge_ids = torch.zeros(
+                    batch_size, dtype=torch.long, device=self.device
+                )
+            else:
+                decoded_edge_ids = (
                     masked_softmax(
                         results["event_edge_logits"], results["batch_edge_mask"], dim=1
                     )
                     .argmax(dim=1)
-                    .masked_fill(end_event_mask, 0),
-                    results["updated_batched_graph"].batch,
-                    results["updated_batched_graph"].edge_index,
+                    .masked_fill(end_event_mask, 0)
                 )
+            # (batch)
 
             decoded_label_ids = (
                 results["event_label_logits"]
@@ -1416,6 +1412,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 decoded_event_type_ids,
                 decoded_src_ids,
                 decoded_dst_ids,
+                decoded_edge_ids,
                 results["updated_batched_graph"].batch,
                 results["updated_batched_graph"].edge_index,
             )
@@ -1425,8 +1422,19 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             )
             decoded_src_ids = decoded_src_ids.masked_fill(invalid_event_mask, 0)
             decoded_dst_ids = decoded_dst_ids.masked_fill(invalid_event_mask, 0)
+            decoded_edge_ids = decoded_edge_ids.masked_fill(invalid_event_mask, 0)
             decoded_label_ids = decoded_label_ids.masked_fill(
                 invalid_event_mask, self.label_id_map[""]
+            )
+
+            # update decoded_src_ids and decoded_dst_ids with decoded edge IDs
+            decoded_src_ids, decoded_dst_ids = self.update_src_dst_ids_with_edge_ids(
+                decoded_event_type_ids,
+                decoded_src_ids,
+                decoded_dst_ids,
+                decoded_edge_ids,
+                results["updated_batched_graph"].batch,
+                results["updated_batched_graph"].edge_index,
             )
 
             # collect the results
