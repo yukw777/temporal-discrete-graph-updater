@@ -240,6 +240,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self.event_type_f1 = torchmetrics.F1()
         self.src_node_f1 = torchmetrics.F1()
         self.dst_node_f1 = torchmetrics.F1()
+        self.edge_f1 = torchmetrics.F1()
         self.label_f1 = torchmetrics.F1()
 
         self.graph_tf_exact_match = ExactMatch()
@@ -694,12 +695,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_src_ids: torch.Tensor,
         event_dst_logits: torch.Tensor,
         groundtruth_event_dst_ids: torch.Tensor,
+        event_edge_logits: torch.Tensor,
+        groundtruth_event_edge_ids: torch.Tensor,
         batch_node_mask: torch.Tensor,
+        batch_edge_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
         groundtruth_event_label_ids: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
+        groundtruth_event_edge_mask: torch.Tensor,
         groundtruth_event_label_mask: torch.Tensor,
     ) -> None:
         """
@@ -711,12 +716,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_src_ids: (batch)
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
+        event_edge_logits: (batch, num_edge)
+        groundtruth_event_edge_ids: (batch)
         batch_node_mask: (batch, num_node)
+        batch_edge_mask: (batch, num_edge)
         event_label_logits: (batch, num_label)
         groundtruth_event_label_ids: (batch)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
+        groundtruth_event_edge_mask: (batch)
         groundtruth_event_label_mask: (batch)
         """
         self.event_type_f1(
@@ -740,6 +749,15 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     dim=1,
                 ),
                 groundtruth_event_dst_ids[groundtruth_event_dst_mask],
+            )
+        if groundtruth_event_edge_mask.any():
+            self.edge_f1(
+                masked_softmax(
+                    event_edge_logits[groundtruth_event_edge_mask],
+                    batch_edge_mask[groundtruth_event_edge_mask],
+                    dim=1,
+                ),
+                groundtruth_event_edge_ids[groundtruth_event_edge_mask],
             )
         if groundtruth_event_label_mask.any():
             self.label_f1(
