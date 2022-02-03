@@ -1497,7 +1497,7 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,src_ids,dst_ids,batch,edge_index,expected",
+    "event_type_ids,src_ids,dst_ids,edge_ids,batch,edge_index,expected",
     [
         (
             torch.tensor(
@@ -1507,6 +1507,7 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
                     EVENT_TYPE_ID_MAP["end"],
                 ]
             ),
+            torch.tensor([0, 0, 0]),
             torch.tensor([0, 0, 0]),
             torch.tensor([0, 0, 0]),
             torch.empty(0).long(),
@@ -1522,6 +1523,7 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([0, 1]),
             torch.tensor([0, 0]),
+            torch.tensor([0, 0]),
             torch.tensor([0, 0, 1, 1]),
             torch.empty(2, 0).long(),
             torch.tensor([False, False]),
@@ -1535,8 +1537,9 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([2, 0]),
             torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
             torch.tensor([0, 0, 0, 1, 1]),
-            torch.empty(2, 0).long(),
+            torch.tensor([[3], [4]]),
             torch.tensor([False, False]),
         ),
         (
@@ -1548,8 +1551,9 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([2, 0]),
             torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
             torch.tensor([0, 0, 0, 1, 1]),
-            torch.tensor([[1], [2]]),
+            torch.tensor([[1, 3], [2, 4]]),
             torch.tensor([True, False]),
         ),
         (
@@ -1561,8 +1565,9 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([2, 0]),
             torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
             torch.tensor([0, 0, 0, 1, 1]),
-            torch.tensor([[2], [1]]),
+            torch.tensor([[2, 3], [1, 4]]),
             torch.tensor([True, False]),
         ),
         (
@@ -1576,6 +1581,7 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([3, 5, 2, 0]),
             torch.tensor([0, 0, 4, 1]),
+            torch.tensor([0, 1, 2, 3]),
             torch.empty(0).long(),
             torch.empty(2, 0).long(),
             torch.tensor([True, True, True, True]),
@@ -1591,8 +1597,9 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([3, 5, 2, 0]),
             torch.tensor([0, 0, 4, 1]),
+            torch.tensor([0, 0, 0, 0]),
             torch.tensor([3, 3]),
-            torch.empty(2, 0).long(),
+            torch.tensor([[1], [0]]),
             torch.tensor([True, True, True, False]),
         ),
         (
@@ -1606,17 +1613,34 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
             ),
             torch.tensor([0, 1, 0, 0]),
             torch.tensor([0, 0, 1, 1]),
+            torch.tensor([0, 0, 0, 0]),
             torch.tensor([0, 1, 1, 2, 3, 3, 3]),
             torch.tensor([[1], [2]]),
+            torch.tensor([False, True, False, True]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([0, 1, 0, 0]),
+            torch.tensor([0, 0, 1, 1]),
+            torch.tensor([0, 0, 0, 0]),
+            torch.tensor([0, 1, 1, 2, 3, 3, 3]),
+            torch.tensor([[1, 5], [2, 4]]),
             torch.tensor([False, True, False, False]),
         ),
     ],
 )
 def test_tdgu_filter_invalid_events(
-    tdgu, event_type_ids, src_ids, dst_ids, batch, edge_index, expected
+    tdgu, event_type_ids, src_ids, dst_ids, edge_ids, batch, edge_index, expected
 ):
     assert tdgu.filter_invalid_events(
-        event_type_ids, src_ids, dst_ids, batch, edge_index
+        event_type_ids, src_ids, dst_ids, edge_ids, batch, edge_index
     ).equal(expected)
 
 

@@ -1530,6 +1530,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
+        edge_ids: torch.Tensor,
         batch: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
@@ -1580,15 +1581,20 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         ).logical_and(event_type_ids == EVENT_TYPE_ID_MAP["node-delete"])
         # (batch)
 
-        invalid_edge_mask = invalid_src_mask.logical_or(invalid_dst_mask)
+        invalid_added_edge_mask = invalid_src_mask.logical_or(invalid_dst_mask)
         # (batch)
-        invalid_edge_add_event_mask = invalid_edge_mask.logical_and(
+        invalid_edge_add_event_mask = invalid_added_edge_mask.logical_and(
             event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
         )
         # (batch)
 
-        # if the edge doesn't exist, we still output it as was done
-        # in the original GATA paper
+        edge_batch_bincount = batch[edge_index[0]].bincount()
+        subgraph_num_edge = F.pad(
+            edge_batch_bincount, (0, batch_size - edge_batch_bincount.size(0))
+        )
+        # (batch)
+        invalid_edge_mask = edge_ids >= subgraph_num_edge
+        # (batch)
         invalid_edge_delete_event_mask = invalid_edge_mask.logical_and(
             event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
         )
