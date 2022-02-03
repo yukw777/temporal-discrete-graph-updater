@@ -669,6 +669,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     "groundtruth_event_dst_mask": (
                         graphical_input.groundtruth_event_dst_mask
                     ),
+                    "groundtruth_event_edge_ids": (
+                        graphical_input.groundtruth_event_edge_ids
+                    ),
+                    "groundtruth_event_edge_mask": (
+                        graphical_input.groundtruth_event_edge_mask
+                    ),
                 },
             )
 
@@ -894,12 +900,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_src_ids,
                     results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
+                    results["event_edge_logits"],
+                    graphical_input.groundtruth_event_edge_ids,
                     results["batch_node_mask"],
+                    results["batch_edge_mask"],
                     results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
+                    graphical_input.groundtruth_event_edge_mask,
                     graphical_input.groundtruth_event_label_mask,
                 )
                 for results, graphical_input in zip(
@@ -930,12 +940,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_src_ids,
                     results["event_dst_logits"],
                     graphical_input.groundtruth_event_dst_ids,
+                    results["event_edge_logits"],
+                    graphical_input.groundtruth_event_edge_ids,
                     results["batch_node_mask"],
+                    results["batch_edge_mask"],
                     results["event_label_logits"],
                     graphical_input.groundtruth_event_label_ids,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
+                    graphical_input.groundtruth_event_edge_mask,
                     graphical_input.groundtruth_event_label_mask,
                 )
                 for results, graphical_input in zip(
@@ -954,17 +968,22 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_src_ids,
                 results["event_dst_logits"],
                 graphical_input.groundtruth_event_dst_ids,
+                results["event_edge_logits"],
+                graphical_input.groundtruth_event_edge_ids,
                 results["batch_node_mask"],
+                results["batch_edge_mask"],
                 results["event_label_logits"],
                 graphical_input.groundtruth_event_label_ids,
                 graphical_input.groundtruth_event_mask,
                 graphical_input.groundtruth_event_src_mask,
                 graphical_input.groundtruth_event_dst_mask,
+                graphical_input.groundtruth_event_edge_mask,
                 graphical_input.groundtruth_event_label_mask,
             )
         self.log(log_prefix + "_event_type_f1", self.event_type_f1)
         self.log(log_prefix + "_src_node_f1", self.src_node_f1)
         self.log(log_prefix + "_dst_node_f1", self.dst_node_f1)
+        self.log(log_prefix + "_edge_f1", self.edge_f1)
         self.log(log_prefix + "_label_f1", self.label_f1)
 
         # calculate graph tuples from teacher forcing graph events
@@ -1001,29 +1020,50 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     device=self.device,
                 )
             )
+            unfiltered_event_edge_ids = (
+                masked_softmax(
+                    results["event_edge_logits"], results["batch_edge_mask"], dim=1
+                ).argmax(dim=1)
+                if results["event_edge_logits"].size(1) > 0
+                else torch.zeros(
+                    results["event_edge_logits"].size(0),
+                    dtype=torch.long,
+                    device=self.device,
+                )
+            )
+            unfiltered_event_label_ids = (
+                results["event_label_logits"].argmax(dim=1)
+                * graphical_input.groundtruth_event_mask
+            )
             invalid_event_mask = self.filter_invalid_events(
                 unfiltered_event_type_ids,
                 unfiltered_event_src_ids,
                 unfiltered_event_dst_ids,
+                unfiltered_event_edge_ids,
                 results["updated_batched_graph"].batch,
                 results["updated_batched_graph"].edge_index,
             )
-            tf_event_type_id_seq.append(
-                unfiltered_event_type_ids.masked_fill(
-                    invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
-                )
+            tf_event_type_ids = unfiltered_event_type_ids.masked_fill(
+                invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
             )
-            tf_src_id_seq.append(
-                unfiltered_event_src_ids.masked_fill(invalid_event_mask, 0)
+            tf_src_ids = unfiltered_event_src_ids.masked_fill(invalid_event_mask, 0)
+            tf_dst_ids = unfiltered_event_dst_ids.masked_fill(invalid_event_mask, 0)
+            tf_edge_ids = unfiltered_event_edge_ids.masked_fill(invalid_event_mask, 0)
+            tf_label_ids = unfiltered_event_label_ids.masked_fill(
+                invalid_event_mask, self.label_id_map[""]
             )
-            tf_dst_id_seq.append(
-                unfiltered_event_dst_ids.masked_fill(invalid_event_mask, 0)
+            tf_src_ids, tf_dst_ids = self.update_src_dst_ids_with_edge_ids(
+                tf_event_type_ids,
+                tf_src_ids,
+                tf_dst_ids,
+                tf_edge_ids,
+                results["updated_batched_graph"].batch,
+                results["updated_batched_graph"].edge_index,
             )
-            tf_label_id_seq.append(
-                results["event_label_logits"]
-                .argmax(dim=1)
-                .masked_fill(invalid_event_mask, self.label_id_map[""])
-            )
+            tf_event_type_id_seq.append(tf_event_type_ids)
+            tf_src_id_seq.append(tf_src_ids)
+            tf_dst_id_seq.append(tf_dst_ids)
+            tf_label_id_seq.append(tf_label_ids)
 
         batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
             tf_event_type_id_seq,
