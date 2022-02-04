@@ -774,6 +774,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         node_vocab_path: str,
         relation_vocab_path: str,
         allow_objs_with_same_label: bool = False,
+        sort_commands: bool = False,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
@@ -786,6 +787,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         self.test_batch_size = test_batch_size
         self.test_num_worker = test_num_worker
         self.allow_objs_with_same_label = allow_objs_with_same_label
+        self.sort_commands = sort_commands
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_path)
@@ -805,26 +807,31 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
             self.train = TWCmdGenGraphEventDataset(
                 self.train_path,
                 allow_objs_with_same_label=self.allow_objs_with_same_label,
+                sort_commands=self.sort_commands,
             )
             self.valid = TWCmdGenGraphEventDataset(
                 self.val_path,
                 allow_objs_with_same_label=self.allow_objs_with_same_label,
+                sort_commands=self.sort_commands,
             )
             self.valid_free_run = TWCmdGenGraphEventFreeRunDataset(
                 self.val_path,
                 self.val_batch_size,
                 allow_objs_with_same_label=self.allow_objs_with_same_label,
+                sort_commands=self.sort_commands,
             )
 
         if stage == "test" or stage is None:
             self.test = TWCmdGenGraphEventDataset(
                 self.test_path,
                 allow_objs_with_same_label=self.allow_objs_with_same_label,
+                sort_commands=self.sort_commands,
             )
             self.test_free_run = TWCmdGenGraphEventFreeRunDataset(
                 self.test_path,
                 self.test_batch_size,
                 allow_objs_with_same_label=self.allow_objs_with_same_label,
+                sort_commands=self.sort_commands,
             )
 
     def train_dataloader(self) -> DataLoader:
