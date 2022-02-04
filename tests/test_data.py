@@ -49,10 +49,18 @@ def tw_cmd_gen_collator():
     )
 
 
-def test_tw_cmd_gen_dataset_init():
-    dataset = TWCmdGenGraphEventDataset("tests/data/test_data.json")
+@pytest.mark.parametrize("sort_cmds", [True, False])
+def test_tw_cmd_gen_dataset_init(sort_cmds):
+    dataset = TWCmdGenGraphEventDataset(
+        "tests/data/test_data.json", sort_commands=sort_cmds
+    )
     expected_dataset = []
-    with open("tests/data/preprocessed_test_data.jsonl") as f:
+    expected_dataset_filename = (
+        "tests/data/preprocessed_sorted_test_data.jsonl"
+        if sort_cmds
+        else "tests/data/preprocessed_test_data.jsonl"
+    )
+    with open(expected_dataset_filename) as f:
         for line in f:
             expected_dataset.append(json.loads(line))
 
@@ -76,12 +84,18 @@ def test_tw_cmd_gen_dataset_init_allow_objs_with_same_label():
 
 
 @pytest.mark.parametrize("batch_size", [1, 3])
-def test_tw_cmd_gen_free_run_dataset_init(batch_size):
-    dataset = TWCmdGenGraphEventFreeRunDataset("tests/data/test_data.json", batch_size)
+@pytest.mark.parametrize("sort_cmds", [True, False])
+def test_tw_cmd_gen_free_run_dataset_init(batch_size, sort_cmds):
+    dataset = TWCmdGenGraphEventFreeRunDataset(
+        "tests/data/test_data.json", batch_size, sort_commands=sort_cmds
+    )
     expected_dataset = []
-    with open(
-        f"tests/data/preprocessed_test_free_run_data_batch_{batch_size}.jsonl"
-    ) as f:
+    expected_dataset_filename = (
+        f"tests/data/preprocessed_sorted_test_free_run_data_batch_{batch_size}.jsonl"
+        if sort_cmds
+        else f"tests/data/preprocessed_test_free_run_data_batch_{batch_size}.jsonl"
+    )
+    with open(expected_dataset_filename) as f:
         for line in f:
             expected_dataset.append(json.loads(line))
 

@@ -48,7 +48,12 @@ class TWCmdGenGraphEventDataset(Dataset):
     under prev_graph_events contain timestamp information too.
     """
 
-    def __init__(self, path: str, allow_objs_with_same_label: bool = False) -> None:
+    def __init__(
+        self,
+        path: str,
+        allow_objs_with_same_label: bool = False,
+        sort_commands: bool = False,
+    ) -> None:
         self.allow_objs_with_same_label = allow_objs_with_same_label
         with open(path, "r") as f:
             raw_data = json.load(f)
@@ -60,9 +65,10 @@ class TWCmdGenGraphEventDataset(Dataset):
         self.idx_map: List[Tuple[str, int, int]] = []
 
         for example in raw_data["examples"]:
-            example["target_commands"] = sort_target_commands(
-                example["target_commands"]
-            )
+            if sort_commands:
+                example["target_commands"] = sort_target_commands(
+                    example["target_commands"]
+                )
             game = example["game"]
             walkthrough_step, random_step = example["step"]
             self.idx_map.append((game, walkthrough_step, random_step))
@@ -156,7 +162,11 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
     """
 
     def __init__(
-        self, path: str, batch_size: int, allow_objs_with_same_label: bool = False
+        self,
+        path: str,
+        batch_size: int,
+        allow_objs_with_same_label: bool = False,
+        sort_commands: bool = False,
     ) -> None:
         self.allow_objs_with_same_label = allow_objs_with_same_label
         self.batch_size = batch_size
@@ -170,9 +180,10 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
         self.graph_index = json.loads(raw_data["graph_index"])
 
         for example in raw_data["examples"]:
-            example["target_commands"] = sort_target_commands(
-                example["target_commands"]
-            )
+            if sort_commands:
+                example["target_commands"] = sort_target_commands(
+                    example["target_commands"]
+                )
             game = example["game"]
             walkthrough_step, random_step = example["step"]
             if random_step == 0:
