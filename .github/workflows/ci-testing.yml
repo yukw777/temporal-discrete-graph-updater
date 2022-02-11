@@ -46,15 +46,29 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
 
+    - name: Install Python 3.6 CUDA dependencies
+      if: ${{ matrix.python-version == '3.6' }}
+      run: |
+        python --version
+        python -m pip --version
+        python -m pip install torch==1.10.2+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
+        python -m pip install torch-geometric~=2.0.3 torch-scatter~=2.0.9 torch-sparse~=0.6.12 -f https://data.pyg.org/whl/torch-1.10.0+cpu.html
+
+    - name: Install CUDA dependencies
+      if: ${{ matrix.python-version != '3.6' }}
+      run: |
+        python --version
+        python -m pip --version
+        python -m pip install packaging
+        python install_cuda_deps.py
+
     - name: Install dependencies
       run: |
         sudo apt-get install -y graphviz graphviz-dev
-        pip install torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-1.10.0+cpu.html
-        pip install .
-        pip install --requirement requirements-dev.txt --upgrade --quiet
         python --version
-        pip --version
-        pip list
+        python -m pip --version
+        python -m pip install .
+        python -m pip install --requirement requirements-dev.txt --upgrade --quiet
       shell: bash
 
     - name: Lint with flake8
