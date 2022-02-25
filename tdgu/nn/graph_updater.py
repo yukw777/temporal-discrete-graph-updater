@@ -91,27 +91,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
     ) -> None:
         super().__init__()
         self.save_hyperparameters(
-            "hidden_dim",
-            "word_emb_dim",
-            "dgnn_gnn",
-            "dgnn_timestamp_enc_dim",
-            "dgnn_num_gnn_block",
-            "dgnn_num_gnn_head",
-            "dgnn_zero_timestamp_encoder",
-            "text_encoder_num_blocks",
-            "text_encoder_num_conv_layers",
-            "text_encoder_kernel_size",
-            "text_encoder_num_heads",
-            "graph_event_decoder_event_type_emb_dim",
-            "graph_event_decoder_hidden_dim",
-            "graph_event_decoder_autoregressive_emb_dim",
-            "graph_event_decoder_key_query_dim",
-            "graph_event_decoder_num_dec_blocks",
-            "graph_event_decoder_dec_block_num_heads",
-            "max_decode_len",
-            "learning_rate",
-            "dropout",
-            "allow_objs_with_same_label",
+            ignore=[
+                "pretrained_word_embedding_path",
+                "word_vocab_path",
+                "node_vocab_path",
+                "relation_vocab_path",
+            ]
         )
         # preprocessor
         if word_vocab_path is None:
