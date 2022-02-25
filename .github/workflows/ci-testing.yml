@@ -82,7 +82,7 @@ jobs:
 
     - name: Tests
       run: |
-        coverage run --source tdgu -m py.test tdgu tests -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
+        coverage run --source tdgu -m py.test tdgu tests -m "" -v --junitxml=junit/test-results-${{ runner.os }}-${{ matrix.python-version }}.xml
 
     - name: Statistics
       if: success()

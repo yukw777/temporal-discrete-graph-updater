@@ -5,6 +5,7 @@ from tdgu.train_tdgu import main
 from hydra import initialize, compose
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("sort_commands", [True, False])
 @pytest.mark.parametrize("allow_objs_with_same_label", [True, False])
 @pytest.mark.parametrize("zero_timestamp_encoder", [True, False])
@@ -46,6 +47,7 @@ def test_main(
         main(cfg)
 
 
+@pytest.mark.slow
 def test_main_test_only(tmp_path):
     with initialize(config_path="../tdgu/train_tdgu_conf"):
         cfg = compose(
