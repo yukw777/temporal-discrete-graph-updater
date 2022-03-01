@@ -494,16 +494,18 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
 
 
 @pytest.mark.parametrize(
-    "batched_graphs,event_type_ids,event_src_ids,event_dst_ids,event_embeddings,"
-    "event_timestamps,expected_updated_batched_graph",
+    "batched_graphs,event_type_ids,event_src_ids,event_dst_ids,event_label_word_ids,"
+    "event_label_mask,event_timestamps,expected_updated_batched_graph",
     [
         (
             Batch(
                 batch=torch.empty(0).long(),
-                x=torch.empty(0, 4),
+                x=torch.empty(0, 0).long(),
+                node_label_mask=torch.empty(0, 0).bool(),
                 node_last_update=torch.empty(0, 2).long(),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 4),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0, 2).long(),
             ),
             torch.tensor(
@@ -515,28 +517,42 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.zeros(3).long(),
             torch.zeros(3).long(),
-            torch.zeros(3, 4),
+            torch.empty(3, 0).long(),
+            torch.empty(3, 0).bool(),
             torch.zeros(3, 2).long(),
             Batch(
                 batch=torch.empty(0).long(),
-                x=torch.empty(0, 4),
+                x=torch.empty(0, 0).long(),
+                node_label_mask=torch.empty(0, 0).bool(),
                 node_last_update=torch.empty(0, 2).long(),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 4),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0, 2).long(),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1]),
-                x=torch.tensor(
-                    [[6] * 4, [5] * 4, [4] * 4, [3] * 4, [2] * 4, [1] * 4]
-                ).float(),
+                x=torch.tensor([[6] * 4, [5] * 4, [4] * 4, [3] * 4, [2] * 4, [1] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [2, 0], [3, 1], [4, 3], [5, 2], [6, 4]]
                 ),
                 edge_index=torch.tensor([[2, 5], [0, 4]]),
-                edge_attr=torch.tensor([[4] * 4, [5] * 4]).float(),
+                edge_attr=torch.tensor([[4] * 4, [5] * 4]),
+                edge_label_mask=torch.tensor(
+                    [[True, True, False, False], [True, True, True, True]]
+                ),
                 edge_last_update=torch.tensor([[2, 0], [3, 1]]),
             ),
             torch.tensor(
@@ -544,24 +560,92 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([1, 0]),
             torch.tensor([0, 0]),
-            torch.tensor([[5] * 4, [3] * 4]).float(),
+            torch.tensor([[3], [3]]),  # eos
+            torch.tensor([[True], [True]]),
             torch.tensor([[4, 2], [5, 1]]),
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
-                x=torch.tensor([[6] * 4, [4] * 4, [2] * 4, [1] * 4]).float(),
+                x=torch.tensor([[6] * 3, [4] * 3, [2] * 3, [1] * 3]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, True],
+                        [True, False, False],
+                        [True, True, True],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 0], [3, 1], [5, 2], [6, 4]]),
                 edge_index=torch.tensor([[1, 3], [0, 2]]),
-                edge_attr=torch.tensor([[4] * 4, [5] * 4]).float(),
+                edge_attr=torch.tensor([[4] * 4, [5] * 4]),
+                edge_label_mask=torch.tensor(
+                    [[True, True, False, False], [True, True, True, True]]
+                ),
                 edge_last_update=torch.tensor([[2, 0], [3, 1]]),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
-                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
+                x=torch.tensor([[4] * 3, [3] * 3, [2] * 3, [1] * 3]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, False, False],
+                        [True, False, False],
+                        [True, True, True],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 0], [3, 1], [5, 2], [6, 4]]),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 4),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2).long(),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
+            torch.tensor([[5] * 4, [6] * 4]),
+            torch.tensor([[True, True, True, False], [True, True, True, True]]),
+            torch.tensor([[3, 2], [5, 4]]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1]),
+                x=torch.tensor([[4] * 3, [3] * 3, [5] * 3, [2] * 3]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, False, False],
+                        [True, True, True],
+                        [True, False, False],
+                    ]
+                ),
+                node_last_update=torch.tensor([[1, 0], [3, 1], [3, 2], [5, 2]]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2).long(),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=torch.tensor([[4] * 3, [3] * 3, [2] * 3, [1] * 3]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, True],
+                        [True, False, False],
+                        [True, True, True],
+                    ]
+                ),
+                node_last_update=torch.tensor([[1, 0], [3, 1], [5, 2], [6, 4]]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0, 2).long(),
             ),
             torch.tensor(
@@ -572,24 +656,61 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([0, 1]),
             torch.tensor([0, 0]),
-            torch.tensor([[5] * 4, [6] * 4]).float(),
+            torch.tensor([[5] * 4, [6] * 4]),
+            torch.ones(2, 4).bool(),
             torch.tensor([[3, 2], [5, 4]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1]),
-                x=torch.tensor([[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4]).float(),
+                x=torch.tensor(
+                    [
+                        [4] * 3 + [0],
+                        [3] * 3 + [0],
+                        [5] * 4,
+                        [2] * 3 + [0],
+                        [1] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 0], [3, 1], [3, 2], [5, 2], [6, 4]]),
                 edge_index=torch.tensor([[4], [3]]),
-                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_attr=torch.tensor([[6] * 4]),
+                edge_label_mask=torch.ones(1, 4).bool(),
                 edge_last_update=torch.tensor([[5, 4]]),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1]),
-                x=torch.tensor([[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4]).float(),
+                x=torch.tensor(
+                    [
+                        [4] * 3 + [0],
+                        [3] * 3 + [0],
+                        [5] * 4,
+                        [2] * 3 + [0],
+                        [1] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 0], [3, 1], [3, 2], [5, 2], [6, 4]]),
                 edge_index=torch.tensor([[4], [3]]),
-                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_attr=torch.tensor([[6] * 4]),
+                edge_label_mask=torch.ones(1, 4).bool(),
                 edge_last_update=torch.tensor([[5, 4]]),
             ),
             torch.tensor(
@@ -600,24 +721,43 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([2, 1]),
             torch.tensor([0, 0]),
-            torch.tensor([[5] * 4, [6] * 4]),
+            torch.tensor([[3], [3]]),  # eos
+            torch.tensor([[True], [True]]),
             torch.tensor([[2, 2], [3, 4]]),
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
-                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
+                x=torch.tensor([[4] * 3, [3] * 3, [2] * 3, [1] * 3]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, True],
+                        [True, False, False],
+                        [True, True, True],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 0], [3, 1], [5, 2], [6, 4]]),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 4),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0, 2).long(),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
-                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]).float(),
+                x=torch.tensor([[4] * 4, [3] * 4, [2] * 4, [1] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 0], [3, 1], [5, 2], [6, 4]]),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 4),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0, 2).long(),
             ),
             torch.tensor(
@@ -629,32 +769,51 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([0, 1, 0]),
             torch.tensor([0, 0, 0]),
-            torch.tensor([[5] * 4, [6] * 4, [7] * 4]).float(),
+            torch.tensor([[5] * 4, [6] * 4, [7] * 4]),
+            torch.ones(3, 4).bool(),
             torch.tensor([[3, 2], [5, 1], [4, 7]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 2]),
-                x=torch.tensor(
-                    [[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4, [7] * 4]
-                ).float(),
+                x=torch.tensor([[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4, [7] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 1], [3, 2], [5, 2], [6, 4], [4, 7]]
                 ),
                 edge_index=torch.tensor([[4], [3]]),
-                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_attr=torch.tensor([[6] * 4]),
+                edge_label_mask=torch.ones(1, 4).bool(),
                 edge_last_update=torch.tensor([[5, 1]]),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 2]),
-                x=torch.tensor(
-                    [[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4, [7] * 4]
-                ).float(),
+                x=torch.tensor([[4] * 4, [3] * 4, [5] * 4, [2] * 4, [1] * 4, [7] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 1], [3, 2], [5, 2], [6, 4], [4, 7]]
                 ),
                 edge_index=torch.tensor([[4], [3]]),
-                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_attr=torch.tensor([[6] * 4]),
+                edge_label_mask=torch.ones(1, 4).bool(),
                 edge_last_update=torch.tensor([[5, 1]]),
             ),
             torch.tensor(
@@ -666,18 +825,41 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([1, 0, 0]),
             torch.tensor([0, 0, 0]),
-            torch.tensor([[3] * 4, [8] * 4, [9] * 4]).float(),
+            torch.tensor([[3] * 3, [8] * 3, [9] * 3]),
+            torch.tensor(
+                [[True, False, False], [True, True, False], [True, True, True]]
+            ),
             torch.tensor([[2, 2], [3, 1], [4, 9]]),
             Batch(
                 batch=torch.tensor([0, 0, 1, 1, 1, 2, 2]),
                 x=torch.tensor(
-                    [[4] * 4, [5] * 4, [2] * 4, [1] * 4, [8] * 4, [7] * 4, [9] * 4]
-                ).float(),
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [2] * 4,
+                        [1] * 4,
+                        [8] * 3 + [0],
+                        [7] * 4,
+                        [9] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 2], [6, 4], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[3], [2]]),
-                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_attr=torch.tensor([[6] * 4]),
+                edge_label_mask=torch.ones(1, 4).bool(),
                 edge_last_update=torch.tensor([[5, 1]]),
             ),
         ),
@@ -685,13 +867,33 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             Batch(
                 batch=torch.tensor([0, 0, 1, 1, 1, 2, 2]),
                 x=torch.tensor(
-                    [[4] * 4, [5] * 4, [2] * 4, [1] * 4, [8] * 4, [7] * 4, [9] * 4]
-                ).float(),
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [2] * 4,
+                        [1] * 4,
+                        [8] * 3 + [0],
+                        [7] * 4,
+                        [9] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 2], [6, 4], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[3], [2]]),
-                edge_attr=torch.tensor([[6] * 4]).float(),
+                edge_attr=torch.tensor([[6] * 2]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[5, 1]]),
             ),
             torch.tensor(
@@ -703,7 +905,10 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([0, 1, 0]),
             torch.tensor([0, 0, 1]),
-            torch.tensor([[10] * 4, [6] * 4, [11] * 4]).float(),
+            torch.tensor([[10] * 3, [6] * 3, [11] * 3]),
+            torch.tensor(
+                [[True, False, False], [True, True, False], [True, True, True]]
+            ),
             torch.tensor([[5, 9], [3, 1], [2, 4]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2]),
@@ -711,19 +916,32 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                     [
                         [4] * 4,
                         [5] * 4,
-                        [10] * 4,
+                        [10] * 3 + [0],
                         [2] * 4,
                         [1] * 4,
-                        [8] * 4,
+                        [8] * 3 + [0],
                         [7] * 4,
-                        [9] * 4,
+                        [9] * 3 + [0],
                     ]
-                ).float(),
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 9], [5, 2], [6, 4], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[6], [7]]),
-                edge_attr=torch.tensor([[11] * 4]).float(),
+                edge_attr=torch.tensor([[11] * 3]),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.tensor([[2, 4]]),
             ),
         ),
@@ -734,19 +952,32 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                     [
                         [4] * 4,
                         [5] * 4,
-                        [10] * 4,
+                        [10] * 3 + [0],
                         [2] * 4,
                         [1] * 4,
-                        [8] * 4,
+                        [8] * 3 + [0],
                         [7] * 4,
-                        [9] * 4,
+                        [9] * 3 + [0],
                     ]
-                ).float(),
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 9], [5, 2], [6, 4], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[6], [7]]),
-                edge_attr=torch.tensor([[11] * 4]).float(),
+                edge_attr=torch.tensor([[11] * 3]),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.tensor([[2, 4]]),
             ),
             torch.tensor(
@@ -758,18 +989,39 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([2, 1, 0]),
             torch.tensor([0, 0, 1]),
-            torch.tensor([[12] * 4, [1] * 4, [11] * 4]).float(),
+            torch.tensor([[12] * 2, [1] * 2, [11] * 2]),
+            torch.tensor([[True, True], [True, False], [True, False]]),
             torch.tensor([[3, 8], [1, 4], [6, 7]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 2, 2]),
                 x=torch.tensor(
-                    [[4] * 4, [5] * 4, [10] * 4, [2] * 4, [8] * 4, [7] * 4, [9] * 4]
-                ).float(),
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [10] * 3 + [0],
+                        [2] * 4,
+                        [8] * 3 + [0],
+                        [7] * 4,
+                        [9] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 9], [5, 2], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.tensor([[12] * 4]).float(),
+                edge_attr=torch.tensor([[12] * 2]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[3, 8]]),
             ),
         ),
@@ -777,13 +1029,33 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 2, 2]),
                 x=torch.tensor(
-                    [[4] * 4, [5] * 4, [10] * 4, [2] * 4, [8] * 4, [7] * 4, [9] * 4]
-                ).float(),
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [10] * 3 + [0],
+                        [2] * 4,
+                        [8] * 3 + [0],
+                        [7] * 4,
+                        [9] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 9], [5, 2], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.tensor([[12] * 4]).float(),
+                edge_attr=torch.tensor([[12] * 2]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[3, 8]]),
             ),
             torch.tensor(
@@ -795,32 +1067,64 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([2, 0, 1]),
             torch.tensor([0, 1, 0]),
-            torch.tensor([[12] * 4, [13] * 4, [14] * 4]).float(),
+            torch.tensor([[12] * 4, [13] * 4, [14] * 4]),
+            torch.tensor(
+                [[True, False, False, False], [True, True, True, False], [True] * 4]
+            ),
             torch.tensor([[2, 3], [8, 0], [7, 3]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 2, 2]),
                 x=torch.tensor(
-                    [[4] * 4, [5] * 4, [10] * 4, [2] * 4, [8] * 4, [7] * 4, [9] * 4]
-                ).float(),
+                    [
+                        [4] * 4,
+                        [5] * 4,
+                        [10] * 3 + [0],
+                        [2] * 4,
+                        [8] * 3 + [0],
+                        [7] * 4,
+                        [9] * 3 + [0],
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [3, 2], [5, 9], [5, 2], [3, 1], [4, 7], [4, 9]]
                 ),
                 edge_index=torch.tensor([[3, 6], [4, 5]]),
-                edge_attr=torch.tensor([[13] * 4, [14] * 4]).float(),
+                edge_attr=torch.tensor([[13] * 4, [14] * 4]),
+                edge_label_mask=torch.tensor([[True, True, True, False], [True] * 4]),
                 edge_last_update=torch.tensor([[8, 0], [7, 3]]),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1]),
-                x=torch.tensor(
-                    [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
-                ).float(),
+                x=torch.tensor([[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [2, 3], [3, 1], [4, 6], [5, 9], [6, 1]]
                 ),
                 edge_index=torch.tensor([[2, 5], [0, 3]]),
-                edge_attr=torch.tensor([[1] * 4, [2] * 4]).float(),
+                edge_attr=torch.tensor([[1] * 3, [2] * 3]),
+                edge_label_mask=torch.tensor([[True, True, False], [True] * 3]),
                 edge_last_update=torch.tensor([[3, 2], [2, 5]]),
             ),
             torch.tensor(
@@ -828,18 +1132,80 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([0, 2]),
             torch.tensor([1, 0]),
-            torch.tensor([[7] * 4, [8] * 4]).float(),
+            torch.tensor([[7] * 4, [8] * 4]),
+            torch.tensor([[True] * 4, [True, False, False, False]]),
             torch.tensor([[5, 2], [3, 0]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1]),
-                x=torch.tensor(
-                    [[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]
-                ).float(),
+                x=torch.tensor([[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 0], [2, 3], [3, 1], [4, 6], [5, 9], [6, 1]]
                 ),
                 edge_index=torch.tensor([[2, 0], [0, 1]]),
-                edge_attr=torch.tensor([[1] * 4, [7] * 4]).float(),
+                edge_attr=torch.tensor([[1] * 3 + [0], [7] * 4]),
+                edge_label_mask=torch.tensor([[True, True, False, False], [True] * 4]),
+                edge_last_update=torch.tensor([[3, 2], [5, 2]]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor([[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
+                node_last_update=torch.tensor(
+                    [[1, 0], [2, 3], [3, 1], [4, 6], [5, 9], [6, 1]]
+                ),
+                edge_index=torch.tensor([[2, 5], [0, 3]]),
+                edge_attr=torch.tensor([[1] * 3, [2] * 3]),
+                edge_label_mask=torch.tensor([[True, True, False], [True] * 3]),
+                edge_last_update=torch.tensor([[3, 2], [2, 5]]),
+            ),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+            ),
+            torch.tensor([0, 2]),
+            torch.tensor([1, 0]),
+            torch.tensor([[7] * 2, [8] * 2]),
+            torch.tensor([[True] * 2, [True, False]]),
+            torch.tensor([[5, 2], [3, 0]]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1]),
+                x=torch.tensor([[3] * 4, [4] * 4, [5] * 4, [6] * 4, [7] * 4, [8] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
+                node_last_update=torch.tensor(
+                    [[1, 0], [2, 3], [3, 1], [4, 6], [5, 9], [6, 1]]
+                ),
+                edge_index=torch.tensor([[2, 0], [0, 1]]),
+                edge_attr=torch.tensor([[1] * 2, [7] * 2]),
+                edge_label_mask=torch.ones(2, 2).bool(),
                 edge_last_update=torch.tensor([[3, 2], [5, 2]]),
             ),
         ),
@@ -858,7 +1224,20 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                         [8] * 4,
                         [9] * 4,
                     ]
-                ).float(),
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [
                         [0, 2],
@@ -873,7 +1252,10 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                     ]
                 ),
                 edge_index=torch.tensor([[2, 5], [0, 3]]),
-                edge_attr=torch.tensor([[1] * 4, [2] * 4]).float(),
+                edge_attr=torch.tensor([[1] * 4, [2] * 4]),
+                edge_label_mask=torch.tensor(
+                    [[True, True, False, False], [True, True, True, True]]
+                ),
                 edge_last_update=torch.tensor([[3, 2], [2, 2]]),
             ),
             torch.tensor(
@@ -886,7 +1268,15 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([2, 2, 2, 0]),
             torch.tensor([0, 0, 0, 0]),
-            torch.tensor([[1] * 4, [2] * 4, [3] * 4, [10] * 4]).float(),
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4, [10] * 4]),
+            torch.tensor(
+                [
+                    [True, True, False, False],
+                    [True, True, True, True],
+                    [True, False, False, False],
+                    [True, True, False, False],
+                ]
+            ),
             torch.tensor([[5, 0], [3, 2], [2, 5], [1, 2]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 3]),
@@ -903,7 +1293,21 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                         [9] * 4,
                         [10] * 4,
                     ]
-                ).float(),
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                        [True, True, False, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [
                         [0, 2],
@@ -919,17 +1323,33 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                     ]
                 ),
                 edge_index=torch.tensor([[2, 5, 8], [0, 3, 6]]),
-                edge_attr=torch.tensor([[1] * 4, [2] * 4, [3] * 4]).float(),
+                edge_attr=torch.tensor([[1] * 4, [2] * 4, [3] * 4]),
+                edge_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                    ]
+                ),
                 edge_last_update=torch.tensor([[3, 2], [2, 2], [2, 5]]),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([2, 2, 3, 3]),
-                x=torch.tensor([[3] * 4, [4] * 4, [5] * 4, [6] * 4]).float(),
+                x=torch.tensor([[3] * 3, [4] * 3, [5] * 3, [6] * 3]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, True],
+                        [True, False, False],
+                        [True, True, True],
+                    ]
+                ),
                 node_last_update=torch.tensor([[1, 2], [2, 0], [3, 7], [4, 1]]),
                 edge_index=torch.tensor([[3], [2]]),
-                edge_attr=torch.tensor([[1] * 4]).float(),
+                edge_attr=torch.tensor([[1] * 2]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[4, 2]]),
             ),
             torch.tensor(
@@ -942,32 +1362,71 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([0, 0, 1, 0]),
             torch.tensor([0, 0, 0, 0]),
-            torch.tensor([[1] * 4, [2] * 4, [3] * 4, [4] * 4]).float(),
+            torch.tensor([[1] * 4, [2] * 4, [3] * 4, [4] * 4]),
+            torch.tensor(
+                [
+                    [True, True, False, False],
+                    [True, True, True, True],
+                    [True, False, False, False],
+                    [True, True, True, False],
+                ]
+            ),
             torch.tensor([[3, 2], [5, 1], [2, 4], [3, 8]]),
             Batch(
                 batch=torch.tensor([0, 1, 2, 2, 3, 3, 3]),
                 x=torch.tensor(
-                    [[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4, [4] * 4]
-                ).float(),
+                    [
+                        [1] * 4,
+                        [2] * 4,
+                        [3] * 3 + [0],
+                        [4] * 3 + [0],
+                        [5] * 3 + [0],
+                        [6] * 3 + [0],
+                        [4] * 4,
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[3, 2], [5, 1], [1, 2], [2, 0], [3, 7], [4, 1], [3, 8]]
                 ),
                 edge_index=torch.tensor([[5, 3], [4, 2]]),
-                edge_attr=torch.tensor([[1] * 4, [3] * 4]).float(),
+                edge_attr=torch.tensor([[1] * 2, [3] * 2]),
+                edge_label_mask=torch.tensor([[True, True], [True, False]]),
                 edge_last_update=torch.tensor([[4, 2], [2, 4]]),
             ),
         ),
         (
             Batch(
                 batch=torch.tensor([0, 0, 1, 1, 2, 2]),
-                x=torch.tensor(
-                    [[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4]
-                ).float(),
+                x=torch.tensor([[1] * 4, [2] * 4, [3] * 4, [4] * 4, [5] * 4, [6] * 4]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [[1, 3], [2, 0], [3, 2], [4, 5], [5, 2], [6, 3]]
                 ),
                 edge_index=torch.tensor([[0, 2, 4], [1, 3, 5]]),
-                edge_attr=torch.tensor([[3] * 4, [2] * 4, [1] * 4]).float(),
+                edge_attr=torch.tensor([[3] * 3, [2] * 3, [1] * 3]),
+                edge_label_mask=torch.tensor(
+                    [[True, False, False], [True, True, True], [True, True, False]]
+                ),
                 edge_last_update=torch.tensor([[4, 1], [3, 2], [2, 0]]),
             ),
             torch.tensor(
@@ -979,7 +1438,14 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
             ),
             torch.tensor([0, 0, 0]),
             torch.tensor([0, 0, 0]),
-            torch.tensor([[7] * 4, [8] * 4, [9] * 4]).float(),
+            torch.tensor([[7] * 4, [8] * 4, [9] * 4]),
+            torch.tensor(
+                [
+                    [True, True, False, False],
+                    [True, True, True, True],
+                    [True, True, False, False],
+                ]
+            ),
             torch.tensor([[3, 2], [5, 9], [2, 1]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2]),
@@ -995,7 +1461,20 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                         [6] * 4,
                         [9] * 4,
                     ]
-                ).float(),
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, False, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, False],
+                        [True, True, False, False],
+                    ]
+                ),
                 node_last_update=torch.tensor(
                     [
                         [1, 3],
@@ -1010,40 +1489,11 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                     ]
                 ),
                 edge_index=torch.tensor([[0, 3, 6], [1, 4, 7]]),
-                edge_attr=torch.tensor([[3] * 4, [2] * 4, [1] * 4]).float(),
-                edge_last_update=torch.tensor([[4, 1], [3, 2], [2, 0]]),
-            ),
-        ),
-        (
-            Batch(
-                batch=torch.tensor([2, 2, 3, 3]),
-                x=torch.tensor([3, 4, 5, 6]).float(),
-                node_last_update=torch.tensor([[1, 2], [2, 6], [3, 0], [4, 3]]),
-                edge_index=torch.tensor([[3], [2]]),
-                edge_attr=torch.tensor([1]).float(),
-                edge_last_update=torch.tensor([[4, 5]]),
-            ),
-            torch.tensor(
-                [
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                ]
-            ),
-            torch.tensor([0, 0, 1, 0]),
-            torch.tensor([0, 0, 0, 0]),
-            torch.tensor([1, 2, 3, 4]).float(),
-            torch.tensor([[3, 1], [5, 2], [2, 9], [3, 8]]),
-            Batch(
-                batch=torch.tensor([0, 1, 2, 2, 3, 3, 3]),
-                x=torch.tensor([1, 2, 3, 4, 5, 6, 4]).float(),
-                node_last_update=torch.tensor(
-                    [[3, 1], [5, 2], [1, 2], [2, 6], [3, 0], [4, 3], [3, 8]]
+                edge_attr=torch.tensor([[3] * 3, [2] * 3, [1] * 3]),
+                edge_label_mask=torch.tensor(
+                    [[True, False, False], [True, True, True], [True, True, False]]
                 ),
-                edge_index=torch.tensor([[5, 3], [4, 2]]),
-                edge_attr=torch.tensor([1, 3]).float(),
-                edge_last_update=torch.tensor([[4, 5], [2, 9]]),
+                edge_last_update=torch.tensor([[4, 1], [3, 2], [2, 0]]),
             ),
         ),
     ],
@@ -1053,7 +1503,8 @@ def test_update_batched_graph(
     event_type_ids,
     event_src_ids,
     event_dst_ids,
-    event_embeddings,
+    event_label_word_ids,
+    event_label_mask,
     event_timestamps,
     expected_updated_batched_graph,
 ):
@@ -1062,11 +1513,15 @@ def test_update_batched_graph(
         event_type_ids,
         event_src_ids,
         event_dst_ids,
-        event_embeddings,
+        event_label_word_ids,
+        event_label_mask,
         event_timestamps,
     )
     assert updated_batched_graph.batch.equal(expected_updated_batched_graph.batch)
     assert updated_batched_graph.x.equal(expected_updated_batched_graph.x)
+    assert updated_batched_graph.node_label_mask.equal(
+        expected_updated_batched_graph.node_label_mask
+    )
     assert updated_batched_graph.node_last_update.equal(
         expected_updated_batched_graph.node_last_update
     )
@@ -1075,6 +1530,9 @@ def test_update_batched_graph(
     )
     assert updated_batched_graph.edge_attr.equal(
         expected_updated_batched_graph.edge_attr
+    )
+    assert updated_batched_graph.edge_label_mask.equal(
+        expected_updated_batched_graph.edge_label_mask
     )
     assert updated_batched_graph.edge_last_update.equal(
         expected_updated_batched_graph.edge_last_update
