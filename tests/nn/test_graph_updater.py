@@ -458,11 +458,16 @@ def test_tdgu_forward(
         )
 
 
-@pytest.mark.parametrize("batch,num_node", [(1, 5), (8, 12)])
+@pytest.mark.parametrize("num_word", [10, 20])
+@pytest.mark.parametrize("label_len", [2, 3])
+@pytest.mark.parametrize("num_node", [5, 12])
+@pytest.mark.parametrize("batch", [1, 8])
 @pytest.mark.parametrize("label", [True, False])
 @pytest.mark.parametrize("dst", [True, False])
 @pytest.mark.parametrize("src", [True, False])
-def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
+def test_uncertainty_weighted_loss(
+    src, dst, label, batch, num_node, label_len, num_word
+):
     groundtruth_event_src_mask = torch.zeros(batch).bool()
     if src:
         groundtruth_event_src_mask[
@@ -486,8 +491,9 @@ def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
         torch.rand(batch, num_node),
         torch.randint(num_node, (batch,)),
         torch.randint(2, (batch, num_node)).bool(),
-        torch.rand(batch, len(tdgu.labels)),
-        torch.randint(len(tdgu.labels), (batch,)),
+        torch.rand(batch, label_len, num_word),
+        torch.randint(num_word, (batch, label_len)),
+        torch.randint(2, (batch, label_len)).bool(),
         torch.randint(2, (batch,)).bool(),
         groundtruth_event_src_mask,
         groundtruth_event_dst_mask,

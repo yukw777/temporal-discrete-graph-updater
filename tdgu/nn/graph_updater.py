@@ -838,7 +838,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_dst_ids,
                     results["batch_node_mask"],
                     results["event_label_logits"],
-                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_label_groundtruth_word_ids,
+                    graphical_input.groundtruth_event_label_tgt_mask,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
@@ -874,7 +875,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_dst_ids,
                     results["batch_node_mask"],
                     results["event_label_logits"],
-                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_label_groundtruth_word_ids,
+                    graphical_input.groundtruth_event_label_tgt_mask,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
@@ -1591,7 +1593,8 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_dst_ids: torch.Tensor,
         batch_node_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
-        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_label_word_ids: torch.Tensor,
+        groundtruth_event_label_word_mask: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
@@ -1608,8 +1611,9 @@ class UncertaintyWeightedLoss(nn.Module):
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
         batch_node_mask: (batch, num_node)
-        event_label_logits: (batch, num_label)
-        groundtruth_event_label_ids: (batch)
+        event_label_logits: (batch, groundtruth_event_label_len, num_word)
+        groundtruth_event_label_word_ids: (batch, groundtruth_event_label_len)
+        groundtruth_event_label_word_mask: (batch, groundtruth_event_label_len)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
@@ -1649,9 +1653,19 @@ class UncertaintyWeightedLoss(nn.Module):
         # (batch)
         if groundtruth_event_label_mask.any():
             # label loss
-            label_loss += (
-                self.ce_criterion(event_label_logits, groundtruth_event_label_ids)
-                * groundtruth_event_label_mask
+            # first calculate the combined label mask
+            combined_label_mask = (
+                groundtruth_event_label_word_mask
+                * groundtruth_event_label_mask.unsqueeze(-1)
+            )
+            # (batch, groundtruth_event_label_len)
+            label_loss += torch.sum(
+                self.ce_criterion(
+                    event_label_logits.flatten(end_dim=1),
+                    groundtruth_event_label_word_ids.flatten(),
+                ).view(combined_label_mask.size(0), -1)
+                * combined_label_mask,
+                dim=1,
             )
 
         # calculate the total loss
