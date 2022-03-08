@@ -86,17 +86,10 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         allow_objs_with_same_label: bool = False,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
-        node_vocab_path: Optional[str] = None,
-        relation_vocab_path: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(
-            ignore=[
-                "pretrained_word_embedding_path",
-                "word_vocab_path",
-                "node_vocab_path",
-                "relation_vocab_path",
-            ]
+            ignore=["pretrained_word_embedding_path", "word_vocab_path"]
         )
         # preprocessor
         if word_vocab_path is None:
@@ -129,19 +122,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self.word_embeddings = nn.Sequential(
             pretrained_word_embeddings, nn.Linear(word_emb_dim, hidden_dim)
         )
-
-        if node_vocab_path is not None and relation_vocab_path is not None:
-            self.labels, self.label_id_map = read_label_vocab_files(
-                to_absolute_path(node_vocab_path), to_absolute_path(relation_vocab_path)
-            )
-        else:
-            self.labels = ["", "node", "relation"]
-            self.label_id_map = {label: i for i, label in enumerate(self.labels)}
-
-        # node/edge labels
-        label_word_ids, label_mask = self.preprocessor.preprocess(self.labels)
-        self.register_buffer("label_word_ids", label_word_ids)
-        self.register_buffer("label_mask", label_mask)
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -536,15 +516,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             **decoder_attn_weights,
         }
 
-    def embed_label(self, label_ids: torch.Tensor) -> torch.Tensor:
+    def embed_label(
+        self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
+    ) -> torch.Tensor:
         """
-        label_word_ids: (batch)
+        label_word_ids: (batch, label_len)
+        label_mask: (batch, label_len)
+
         output: (batch, hidden_dim)
         """
-        return masked_mean(
-            self.word_embeddings(self.label_word_ids[label_ids]),  # type: ignore
-            self.label_mask[label_ids],  # type: ignore
-        )
+        return masked_mean(self.word_embeddings(label_word_ids), label_mask)
 
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """

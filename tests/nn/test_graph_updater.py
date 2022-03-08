@@ -20,14 +20,16 @@ def tdgu(tmp_path):
     return TemporalDiscreteGraphUpdater(
         pretrained_word_embedding_path=f"{tmp_path}/test-fasttext.vec",
         word_vocab_path="tests/data/test_word_vocab.txt",
-        node_vocab_path="tests/data/test_node_vocab.txt",
-        relation_vocab_path="tests/data/test_relation_vocab.txt",
     )
 
 
+@pytest.mark.parametrize("label_len", [2, 4])
 @pytest.mark.parametrize("batch", [1, 8])
-def test_tdgu_embed_label(tdgu, batch):
-    assert tdgu.embed_label(torch.randint(6, (batch,))).size() == (
+def test_tdgu_embed_label(tdgu, batch, label_len):
+    assert tdgu.embed_label(
+        torch.randint(len(tdgu.preprocessor.word_vocab), (batch, label_len)),
+        torch.randint(2, (batch, label_len)).bool(),
+    ).size() == (
         batch,
         tdgu.hparams.hidden_dim,
     )
