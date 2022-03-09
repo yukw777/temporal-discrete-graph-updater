@@ -1473,9 +1473,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: torch.Tensor,
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
-        event_label_ids: torch.Tensor,
+        event_label_word_ids: torch.Tensor,
+        event_label_mask: torch.Tensor,
         batch: torch.Tensor,
-        node_label_ids: torch.Tensor,
+        node_label_word_ids: torch.Tensor,
+        node_label_mask: torch.Tensor,
+        masks: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """
         Turn the graph events into decoder inputs by concatenating their embeddings.
@@ -1484,9 +1487,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             event_type_ids: (batch)
             event_src_ids: (batch)
             event_dst_ids: (batch)
-            event_label_ids: (batch)
+            event_label_word_ids: (batch, event_label_len)
+            event_label_mask: (batch, event_label_len)
             batch: (num_node)
-            node_label_ids: (num_node)
+            node_label_word_ids: (num_node, node_label_len)
+            node_label_mask: (num_node, node_label_len)
+            masks: masks calculated by compute_masks_from_event_type_ids(event_type_ids)
 
         output: (batch, decoder_input_dim)
             where decoder_input_dim = event_type_embedding_dim + 3 * label_embedding_dim
@@ -1504,20 +1510,10 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             device=event_type_ids.device,
         )
         # (batch, label_embedding_dim)
-        node_add_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
-        # (batch)
-        node_delete_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
-        # (batch)
-        edge_event_mask = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+        event_label_embs[masks["label_mask"]] = self.embed_label(
+            event_label_word_ids[masks["label_mask"]],
+            event_label_mask[masks["label_mask"]],
         )
-        # (batch)
-        label_mask = node_add_mask.logical_or(node_delete_mask).logical_or(
-            edge_event_mask
-        )
-        # (batch)
-        event_label_embs[label_mask] = self.embed_label(event_label_ids[label_mask])
         # (batch, label_embedding_dim)
 
         # event source/destination node embeddings
@@ -1533,19 +1529,23 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             device=event_type_ids.device,
         )
         # (batch, label_embedding_dim)
-        src_node_mask = node_delete_mask.logical_or(edge_event_mask)
-        # (batch)
         node_id_offsets = calculate_node_id_offsets(batch_size, batch)
         # (batch)
-        if src_node_mask.any():
-            event_src_embs[src_node_mask] = self.embed_label(
-                node_label_ids[(event_src_ids + node_id_offsets)[src_node_mask]]
+        if masks["src_mask"].any():
+            event_src_embs[masks["src_mask"]] = self.embed_label(
+                node_label_word_ids[
+                    (event_src_ids + node_id_offsets)[masks["src_mask"]]
+                ],
+                node_label_mask[(event_src_ids + node_id_offsets)[masks["src_mask"]]],
             )
             # (batch, label_embedding_dim)
 
-        if edge_event_mask.any():
-            event_dst_embs[edge_event_mask] = self.embed_label(
-                node_label_ids[(event_dst_ids + node_id_offsets)[edge_event_mask]]
+        if masks["dst_mask"].any():
+            event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                node_label_word_ids[
+                    (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
+                ],
+                node_label_mask[(event_dst_ids + node_id_offsets)[masks["dst_mask"]]],
             )
             # (batch, label_embedding_dim)
 
