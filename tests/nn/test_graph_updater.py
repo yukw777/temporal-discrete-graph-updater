@@ -14,6 +14,8 @@ from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.nn.utils import compute_masks_from_event_type_ids
 
+from utils import increasing_mask
+
 
 @pytest.fixture()
 def tdgu(tmp_path):
@@ -44,23 +46,27 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
 
 
 @pytest.mark.parametrize(
-    "batch_size,event_type_ids,event_src_ids,event_dst_ids,obs_len,prev_action_len,"
-    "batched_graph,groundtruth_event,expected_num_node,expected_num_edge",
+    "batch_size,event_type_ids,event_src_ids,event_dst_ids,event_label_len,obs_len,"
+    "prev_action_len,batched_graph,groundtruth_event,expected_num_node,"
+    "expected_num_edge",
     [
         (
             1,
             torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
             torch.tensor([0]),
             torch.tensor([0]),
+            3,
             10,
             5,
             Batch(
-                batch=torch.empty(0).long(),
-                x=torch.empty(0).long(),
-                node_last_update=torch.empty(0, 2).long(),
-                edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0).long(),
-                edge_last_update=torch.empty(0, 2).long(),
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, 0, dtype=torch.long),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2),
             ),
             None,
             0,
@@ -78,15 +84,18 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             ),
             torch.tensor([0, 0, 0, 0]),
             torch.tensor([0, 0, 0, 0]),
+            3,
             10,
             5,
             Batch(
-                batch=torch.empty(0).long(),
-                x=torch.empty(0).long(),
-                node_last_update=torch.empty(0, 2).long(),
-                edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0).long(),
-                edge_last_update=torch.empty(0, 2).long(),
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, 0, dtype=torch.long),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2),
             ),
             None,
             0,
@@ -97,14 +106,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
             torch.tensor([0]),
             torch.tensor([0]),
+            3,
             10,
             5,
             Batch(
                 batch=torch.tensor([0, 0, 0]),
-                x=torch.randint(6, (3,)),
+                x=torch.randint(6, (3, 2)),
+                node_label_mask=torch.randint(2, (3, 2)).bool(),
                 node_last_update=torch.randint(10, (3, 2)),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.randint(6, (1,)),
+                edge_attr=torch.randint(6, (1, 3)),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.randint(10, (1, 2)),
             ),
             None,
@@ -123,14 +135,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             ),
             torch.tensor([0, 0, 0, 0]),
             torch.tensor([0, 0, 0, 0]),
+            3,
             10,
             5,
             Batch(
                 batch=torch.tensor([0, 0, 1, 2, 2, 3]),
-                x=torch.randint(6, (6,)),
+                x=torch.randint(6, (6, 3)),
+                node_label_mask=torch.randint(2, (6, 3)).bool(),
                 node_last_update=torch.randint(10, (6, 2)),
                 edge_index=torch.tensor([[1, 3], [0, 4]]),
-                edge_attr=torch.randint(6, (2,)),
+                edge_attr=torch.randint(6, (2, 3)),
+                edge_label_mask=torch.randint(2, (2, 3)).bool(),
                 edge_last_update=torch.randint(10, (2, 2)),
             ),
             None,
@@ -142,14 +157,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
             torch.tensor([0]),
             torch.tensor([0]),
+            3,
             10,
             5,
             Batch(
                 batch=torch.tensor([0, 0, 0]),
-                x=torch.randint(6, (3,)),
+                x=torch.randint(6, (3, 2)),
+                node_label_mask=torch.randint(2, (3, 2)).bool(),
                 node_last_update=torch.randint(10, (3, 2)),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.randint(6, (1,)),
+                edge_attr=torch.randint(6, (1, 3)),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.randint(10, (1, 2)),
             ),
             None,
@@ -161,14 +179,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
             torch.tensor([1]),
             torch.tensor([0]),
+            3,
             10,
             5,
             Batch(
                 batch=torch.tensor([0, 0, 0]),
-                x=torch.randint(6, (3,)),
+                x=torch.randint(6, (3, 2)),
+                node_label_mask=torch.randint(2, (3, 2)).bool(),
                 node_last_update=torch.randint(10, (3, 2)),
                 edge_index=torch.tensor([[2], [0]]),
-                edge_attr=torch.randint(6, (1,)),
+                edge_attr=torch.randint(6, (1, 3)),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.randint(10, (1, 2)),
             ),
             None,
@@ -180,14 +201,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
             torch.tensor([2]),
             torch.tensor([6]),
+            3,
             10,
             5,
             Batch(
                 batch=torch.zeros(9).long(),
-                x=torch.randint(6, (9,)),
+                x=torch.randint(6, (9, 3)),
+                node_label_mask=torch.randint(2, (9, 3)).bool(),
                 node_last_update=torch.randint(10, (9, 2)),
                 edge_index=torch.tensor([[2, 1, 8], [0, 3, 6]]),
-                edge_attr=torch.randint(6, (3,)),
+                edge_attr=torch.randint(6, (3, 2)),
+                edge_label_mask=torch.randint(2, (3, 2)).bool(),
                 edge_last_update=torch.randint(10, (3, 2)),
             ),
             None,
@@ -199,14 +223,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
             torch.tensor([2]),
             torch.tensor([6]),
+            3,
             10,
             5,
             Batch(
                 batch=torch.zeros(9).long(),
-                x=torch.randint(6, (9,)),
+                x=torch.randint(6, (9, 3)),
+                node_label_mask=torch.randint(2, (9, 3)).bool(),
                 node_last_update=torch.randint(10, (9, 2)),
                 edge_index=torch.tensor([[2, 1, 2, 8], [0, 3, 6, 6]]),
-                edge_attr=torch.randint(6, (4,)),
+                edge_attr=torch.randint(6, (4, 2)),
+                edge_label_mask=torch.randint(2, (4, 2)).bool(),
                 edge_last_update=torch.randint(10, (4, 2)),
             ),
             None,
@@ -225,14 +252,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             ),
             torch.tensor([0, 0, 1, 0]),
             torch.tensor([0, 0, 0, 0]),
+            5,
             12,
             8,
             Batch(
                 batch=torch.tensor([1, 1, 1, 2, 2, 3, 3, 3]),
-                x=torch.randint(6, (8,)),
+                x=torch.randint(6, (8, 4)),
+                node_label_mask=torch.randint(2, (8, 4)).bool(),
                 node_last_update=torch.randint(10, (8, 2)),
                 edge_index=torch.tensor([[0, 5, 7], [2, 6, 6]]),
-                edge_attr=torch.randint(6, (3,)),
+                edge_attr=torch.randint(6, (3, 3)),
+                edge_label_mask=torch.randint(2, (3, 3)).bool(),
                 edge_last_update=torch.randint(10, (3, 2)),
             ),
             None,
@@ -251,14 +281,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             ),
             torch.tensor([0, 0, 3, 1]),
             torch.tensor([2, 0, 0, 0]),
+            5,
             12,
             8,
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
-                x=torch.randint(6, (12,)),
+                x=torch.randint(6, (12, 3)),
+                node_label_mask=torch.randint(2, (12, 3)).bool(),
                 node_last_update=torch.randint(10, (12, 2)),
                 edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
-                edge_attr=torch.randint(6, (4,)),
+                edge_attr=torch.randint(6, (4, 3)),
+                edge_label_mask=torch.randint(2, (4, 3)).bool(),
                 edge_last_update=torch.randint(10, (4, 2)),
             ),
             None,
@@ -277,14 +310,17 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
             ),
             torch.tensor([0, 0, 3, 1]),
             torch.tensor([2, 0, 0, 0]),
+            5,
             12,
             8,
             Batch(
                 batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
-                x=torch.randint(6, (12,)),
+                x=torch.randint(6, (12, 3)),
+                node_label_mask=torch.randint(2, (12, 3)).bool(),
                 node_last_update=torch.randint(10, (12, 2)),
                 edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
-                edge_attr=torch.randint(6, (4,)),
+                edge_attr=torch.randint(6, (4, 3)),
+                edge_label_mask=torch.randint(2, (4, 3)).bool(),
                 edge_last_update=torch.randint(10, (4, 2)),
             ),
             {
@@ -301,6 +337,8 @@ def test_tdgu_encode_text(tdgu, batch, seq_len):
                 "groundtruth_event_src_mask": torch.tensor([True, True, False, False]),
                 "groundtruth_event_dst_ids": torch.tensor([1, 0, 0, 0]),
                 "groundtruth_event_dst_mask": torch.tensor([True, False, False, False]),
+                "groundtruth_event_label_tgt_word_ids": torch.randint(6, (4, 3)),
+                "groundtruth_event_label_tgt_mask": increasing_mask(4, 3).bool(),
             },
             12,
             4,
@@ -317,6 +355,7 @@ def test_tdgu_forward(
     event_type_ids,
     event_src_ids,
     event_dst_ids,
+    event_label_len,
     obs_len,
     prev_action_len,
     batched_graph,
@@ -365,7 +404,8 @@ def test_tdgu_forward(
         event_type_ids,
         event_src_ids,
         event_dst_ids,
-        torch.randint(len(tdgu.labels), (batch_size,)),
+        torch.randint(len(tdgu.preprocessor.word_vocab), (batch_size, event_label_len)),
+        increasing_mask(batch_size, event_label_len).bool(),
         batched_graph,
         obs_mask,
         prev_action_mask,
@@ -398,7 +438,15 @@ def test_tdgu_forward(
         max_sub_graph_num_node = 0
     assert results["event_src_logits"].size() == (batch_size, max_sub_graph_num_node)
     assert results["event_dst_logits"].size() == (batch_size, max_sub_graph_num_node)
-    assert results["event_label_logits"].size() == (batch_size, len(tdgu.labels))
+    if groundtruth_event is None:
+        assert results["decoded_event_label_word_ids"].dim() == 2
+        assert results["decoded_event_label_word_ids"].size(0) == batch_size
+        assert results["decoded_event_label_mask"].dim() == 2
+        assert results["decoded_event_label_mask"].size(0) == batch_size
+    else:
+        assert results["event_label_logits"].size() == groundtruth_event[
+            "groundtruth_event_label_tgt_word_ids"
+        ].size() + (len(tdgu.preprocessor.word_vocab),)
     assert results["updated_prev_input_event_emb_seq"].size() == (
         tdgu.hparams.graph_event_decoder_num_dec_blocks,
         batch_size,
@@ -424,13 +472,17 @@ def test_tdgu_forward(
             tdgu.hparams.hidden_dim,
         )
     assert results["updated_batched_graph"].batch.size() == (expected_num_node,)
-    assert results["updated_batched_graph"].x.size() == (expected_num_node,)
+    assert results["updated_batched_graph"].x.dim() == 2
+    assert results["updated_batched_graph"].x.size(0) == expected_num_node
+    assert results["updated_batched_graph"].node_label_mask.dim() == 2
+    assert results["updated_batched_graph"].node_label_mask.size(0) == expected_num_node
     assert results["updated_batched_graph"].node_last_update.size() == (
         expected_num_node,
         2,
     )
     assert results["updated_batched_graph"].edge_index.size() == (2, expected_num_edge)
-    assert results["updated_batched_graph"].edge_attr.size() == (expected_num_edge,)
+    assert results["updated_batched_graph"].edge_attr.dim() == 2
+    assert results["updated_batched_graph"].edge_attr.size(0) == expected_num_edge
     assert results["updated_batched_graph"].edge_last_update.size() == (
         expected_num_edge,
         2,
