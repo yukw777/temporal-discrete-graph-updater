@@ -126,3 +126,22 @@ We use [`mypy`](http://mypy-lang.org/) as our static type checker. It uses Pytho
   year={Year}
 }
 ``` -->
+
+### Git Branching Strategy
+We follow a very simple git branching strategy where changes to the code base are made in a *short-lived* branch off the `main` branch. These branches should be merged as soon as possible via pull requests. A typical workflow is described below:
+
+1. Create a new branch for your changes.
+```bash
+# No rules around branch names, but try to use a descriptive one.
+git checkout -b <your-branch-name>
+```
+2. Make your changes while saving as frequently as necessary by making small commits.\
+While you should always try to write descriptive commit messages, at this step, it's not strictly necessary. So commit messages like `wip` or `typo` are OK here.
+2. Clean up your commits using git interactive rebasing.\
+The goal of this step is to ensure all of the commits on your branch are self-contained with descriptive commit messages. You can do so by using git interactive rebasing. Here's a quick [blog post](https://www.sitepoint.com/git-interactive-rebase-guide/) and a short [video](https://www.youtube.com/watch?v=tukOm3Afd8s) on how to use it. If you'd like a more thorough documentation, you can check out this [page](https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History). Here is a good [blog post](https://cbea.ms/git-commit/) on how to write good commit messages.
+2. Open a pull request (PR).\
+Now that your branch is all cleaned up, go ahead and open an PR. If your branch has only one self-contained commit, you don't have to do much since the title and description would be pre-filled. If your branch has multiple self-contained commits, make sure to summarize them in the MR similar to how you'd write a git commit message.
+2. Fix the PR based on review comments.\
+Make sure to clean up your commits via git interactive rebasing. Your local branch may go out of sync with the remote branch at this step, and it's OK to force push `git push origin HEAD --force` to push the cleaned up branch with the fixes.
+2. Merge the merge request.\
+Once the merge request is approved, go ahead and merge the merge request. Squashing is recommended (unless you know what you're doing).
