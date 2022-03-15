@@ -1,4 +1,3 @@
-from re import M
 import torch
 
 from typing import List, Tuple, Optional
@@ -179,7 +178,7 @@ class BERTPreprocessor(Preprocessor):
             "distilbert-base-uncased", use_fast=True
         )
 
-        ### NOTE: Acceptable to have different tokens from Spacy, code bellow can modify this
+        # NOTE: Acceptable to have different tokens from Spacy
         # special_token_dict = {
         #     "pad_token" : PAD,
         #     "unk_token" : UNK,
@@ -195,8 +194,8 @@ class BERTPreprocessor(Preprocessor):
         self.word_vocab = list(DistilBERT_vocab.keys())
         self.word_to_id_dict = DistilBERT_vocab
 
-    ### NOTE: The BERT pretrained tokenizer is rather specific about
-    ### tokenization before mapping to ids
+    # NOTE: The BERT pretrained tokenizer is rather specific about
+    # tokenization before mapping to ids
     def id_to_word(self, word_id: int) -> str:
         return self.tokenizer.convert_ids_to_tokens(word_id)
 
@@ -212,8 +211,8 @@ class BERTPreprocessor(Preprocessor):
     def tokenize(self, s: str) -> List[str]:
         return self.tokenizer.tokenize(s)
 
-    ### NOTE: Default padding to max model length to maintain consistency
-    ### with tokenizer __call__ (in this case 512)
+    # NOTE: Default padding to max model length to maintain consistency
+    # with tokenizer __call__ (in this case 512)
     def pad(
         self, unpadded_batch: List[List[int]], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -238,8 +237,9 @@ class BERTPreprocessor(Preprocessor):
             ),
         )
 
-    ### NOTE: Assumes the input is already correctly formatted with CLS, etc. tokens if necessary
-    ### NOTE: Mask is in the form of bool(s) rather than (long) int(s) or float(s), this distinction is kept to maintain consistency in data.py
+    # NOTE: Assumes the input is already correctly formatted with CLS, etc. tokens
+    # NOTE: Mask is in the form of bool(s) rather than (long) int(s) or float(s),
+    # this distinction is kept to maintain consistency in data.py
     def preprocess_tokenized(
         self, tokenized_batch: List[List[str]], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -248,8 +248,9 @@ class BERTPreprocessor(Preprocessor):
             device=device,
         )
 
-    ### NOTE: Assumes the input has no formatting at all (will add CLS, etc. tokens)
-    ### NOTE: Mask is in the form of (long) int(s) rather than bool(s), this distinction is made so the transformer may accept it
+    # NOTE: Assumes the input has no formatting at all (will add CLS, etc. tokens)
+    # NOTE: Mask is in the form of (long) int(s) rather than bool(s),
+    # this distinction is made so the transformer may accept it
     def preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -261,7 +262,7 @@ class BERTPreprocessor(Preprocessor):
             processed["attention_mask"].to(device=device),
         )
 
-    ### NOTE: preprocess_tokenized preceded by clean
+    # NOTE: preprocess_tokenized preceded by clean
     def clean_and_preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -281,7 +282,7 @@ class BERTPreprocessor(Preprocessor):
             for word_ids in batch
         ]
 
-    ### NOTE: No need to load from file, simply downloads the vocabulary
+    # NOTE: No need to load from file, simply downloads the vocabulary
     @classmethod
     def load_from_file(cls, word_vocab_path: str) -> "BERTPreprocessor":
         return cls()
