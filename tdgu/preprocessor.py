@@ -12,6 +12,7 @@ BOS = "<bos>"
 EOS = "<eos>"
 SEP = "<sep>"
 
+
 class Preprocessor:
     def __init__(self, word_vocab: List[str]) -> None:
         pass
@@ -172,7 +173,7 @@ class SpacyPreprocessor(Preprocessor):
 
 
 class BERTPreprocessor(Preprocessor):
-    def __init__(self, word_vocab: List[str]) -> None:
+    def __init__(self, word_vocab: List[str] = []) -> None:
         super().__init__(word_vocab)
         self.tokenizer = DistilBertTokenizer.from_pretrained(
             "distilbert-base-uncased", use_fast=True
@@ -255,7 +256,10 @@ class BERTPreprocessor(Preprocessor):
         processed = self.tokenizer(
             batch, return_tensors="pt", padding="longest", truncation="longest_first"
         )
-        return (processed["input_ids"].to(device=device), processed["attention_mask"].to(device=device))
+        return (
+            processed["input_ids"].to(device=device),
+            processed["attention_mask"].to(device=device),
+        )
 
     ### NOTE: preprocess_tokenized preceded by clean
     def clean_and_preprocess(
@@ -273,13 +277,11 @@ class BERTPreprocessor(Preprocessor):
 
     def decode(self, batch: List[List[int]]) -> List[str]:
         return [
-            self.tokenizer.decode(
-                word_ids, skip_special_tokens=True
-            )
+            self.tokenizer.decode(word_ids, skip_special_tokens=True)
             for word_ids in batch
         ]
 
     ### NOTE: No need to load from file, simply downloads the vocabulary
     @classmethod
     def load_from_file(cls, word_vocab_path: str) -> "BERTPreprocessor":
-        return cls([])
+        return cls()

@@ -46,7 +46,12 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
         ),
         (
             ["My name is Peter", "Is my name David?"],
-            torch.tensor([[101, 2026, 2171, 2003, 2848, 102, 0], [101, 2003, 2026, 2171, 2585, 1029, 102]]),
+            torch.tensor(
+                [
+                    [101, 2026, 2171, 2003, 2848, 102, 0],
+                    [101, 2003, 2026, 2171, 2585, 1029, 102],
+                ]
+            ),
             torch.tensor([[1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1]]),
         ),
     ],
@@ -85,6 +90,7 @@ def test_spacy_preprocessor_decode(batch, expected_preprocessed, expected_mask):
     preprocessed, _ = sp.preprocess(batch)
     assert sp.decode(preprocessed.tolist()) == [" ".join(sp.tokenize(s)) for s in batch]
 
+
 @pytest.mark.parametrize(
     "batch,expected_preprocessed,expected_mask",
     [
@@ -106,9 +112,7 @@ def test_spacy_preprocessor_decode(batch, expected_preprocessed, expected_mask):
     ],
 )
 def test_BERT_preprocessor_decode(batch, expected_preprocessed, expected_mask):
-    sp = BERTPreprocessor(
-        ["<pad>", "<unk>", "my", "name", "is", "peter", "david", "?"]
-    )
+    sp = BERTPreprocessor(["<pad>", "<unk>", "my", "name", "is", "peter", "david", "?"])
     preprocessed, _ = sp.preprocess(batch)
     assert sp.decode(preprocessed.tolist()) == [s.lower() for s in batch]
 
@@ -116,6 +120,7 @@ def test_BERT_preprocessor_decode(batch, expected_preprocessed, expected_mask):
 def test_spacy_preprocessor_load_from_file():
     sp = SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
     assert len(sp.word_to_id_dict) == 772
+
 
 def test_BERT_preprocessor_load_from_file():
     sp = BERTPreprocessor.load_from_file("vocabs/word_vocab.txt")
@@ -188,6 +193,7 @@ def test_spacy_preprocessor_clean(raw_str, cleaned, batch_size):
     sp = SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
     assert sp.clean(raw_str) == cleaned
     assert sp.batch_clean([raw_str] * batch_size) == [cleaned] * batch_size
+
 
 @pytest.mark.parametrize("batch_size", list(range(3)))
 @pytest.mark.parametrize(
@@ -282,6 +288,7 @@ def test_spacy_preprocessor_clean_preprocess(
     preprocessed, mask = sp.clean_and_preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
     assert mask.equal(expected_mask)
+
 
 @pytest.mark.parametrize(
     "batch,expected_preprocessed,expected_mask",
