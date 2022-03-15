@@ -98,7 +98,7 @@ pip install -r requirements-dev.txt
 ```
 
 ### Testing
-We use [`pytest`](https://docs.pytest.org/) to write and run tests. Once your local development environment is set up, simply run `pytest` to run tests.
+We use [`pytest`](https://docs.pytest.org/) to write and run tests. Once your local development environment is set up, simply run `pytest` to run tests. By default, slow tests are not run locally. If you want to run them locally, use `pytest -m ""`.
 
 All the tests are run as part of the CI/CD pipeline, so it's highly recommended that you make sure all the tests locally before opening a merge request.
 
