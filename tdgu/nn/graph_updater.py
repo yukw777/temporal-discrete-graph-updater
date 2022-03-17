@@ -565,6 +565,26 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         """
         return masked_mean(self.word_embeddings(label_word_ids), label_mask)
 
+    def decode_label(
+        self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
+    ) -> List[str]:
+        """
+        label_word_ids: (batch, label_len)
+        label_mask: (batch, label_len)
+
+        output: [label, ...]
+        """
+        decoded: List[str] = []
+        for word_ids, mask in zip(label_word_ids, label_mask):
+            decoded.append(
+                " ".join(
+                    self.preprocessor.convert_ids_to_tokens(word_ids[mask].tolist())[
+                        :-1
+                    ]
+                )
+            )
+        return decoded
+
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         word_ids: (batch, seq_len)

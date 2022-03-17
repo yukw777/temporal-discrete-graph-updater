@@ -38,6 +38,21 @@ def test_tdgu_embed_label(tdgu, batch, label_len):
     )
 
 
+@pytest.mark.parametrize(
+    "label_word_ids,label_mask,expected",
+    [
+        (torch.tensor([[13, 3]]), torch.ones(1, 2).bool(), ["player"]),
+        (
+            torch.tensor([[14, 3, 0, 0, 0], [8, 7, 11, 13, 3]]),
+            torch.tensor([[True, True, False, False, False], [True] * 5]),
+            ["inventory", "peter is a player"],
+        ),
+    ],
+)
+def test_tdgu_decode_label(tdgu, label_word_ids, label_mask, expected):
+    assert tdgu.decode_label(label_word_ids, label_mask) == expected
+
+
 @pytest.mark.parametrize("batch,seq_len", [(1, 10), (8, 24)])
 def test_tdgu_encode_text(tdgu, batch, seq_len):
     assert tdgu.encode_text(
