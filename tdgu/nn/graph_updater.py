@@ -665,7 +665,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_ids: torch.Tensor,
         batch_node_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
-        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_label_word_ids: torch.Tensor,
+        groundtruth_event_label_word_mask: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
@@ -682,8 +683,9 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
         batch_node_mask: (batch, num_node)
-        event_label_logits: (batch, num_label)
-        groundtruth_event_label_ids: (batch)
+        event_label_logits: (batch, groundtruth_event_label_len, num_word)
+        groundtruth_event_label_word_ids: (batch, groundtruth_event_label_len)
+        groundtruth_event_label_word_mask: (batch, groundtruth_event_label_len)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
@@ -717,9 +719,13 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
         if groundtruth_event_label_mask.any():
+            combined_label_mask = (
+                groundtruth_event_label_word_mask
+                * groundtruth_event_label_mask.unsqueeze(-1)
+            )
             label_f1.update(
-                event_label_logits[groundtruth_event_label_mask].softmax(dim=1),
-                groundtruth_event_label_ids[groundtruth_event_label_mask],
+                event_label_logits[combined_label_mask].softmax(dim=1),
+                groundtruth_event_label_word_ids[combined_label_mask],
             )
         self.log(log_prefix + "_event_type_f1", event_type_f1)
         self.log(log_prefix + "_src_node_f1", src_node_f1)
@@ -919,7 +925,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_dst_ids,
                 results["batch_node_mask"],
                 results["event_label_logits"],
-                graphical_input.groundtruth_event_label_ids,
+                graphical_input.groundtruth_event_label_groundtruth_word_ids,
+                graphical_input.groundtruth_event_label_tgt_mask,
                 graphical_input.groundtruth_event_mask,
                 graphical_input.groundtruth_event_src_mask,
                 graphical_input.groundtruth_event_dst_mask,
