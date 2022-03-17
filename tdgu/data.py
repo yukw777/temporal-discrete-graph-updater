@@ -511,7 +511,7 @@ class TWCmdGenGraphEventDataCollator:
         )
         """
         # textual observation
-        obs_word_ids, obs_mask = self.preprocessor.preprocess_spacy_tokenized(
+        obs_word_ids, obs_mask = self.preprocessor.preprocess_tokenized(
             [ob.split() for ob in obs]
         )
 
@@ -519,7 +519,7 @@ class TWCmdGenGraphEventDataCollator:
         (
             prev_action_word_ids,
             prev_action_mask,
-        ) = self.preprocessor.preprocess_spacy_tokenized(
+        ) = self.preprocessor.preprocess_tokenized(
             [prev_action.split() for prev_action in prev_actions]
         )
         return TWCmdGenGraphEventStepInput(

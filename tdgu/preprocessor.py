@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import torch
 
-from typing import List, Tuple, Optional
+from typing import List, Dict, Tuple, Optional
 from spacy.lang.en import English
 
 from transformers import AutoTokenizer
@@ -33,14 +33,6 @@ def clean(raw_str: Optional[str]) -> str:
 
 class Preprocessor(ABC):
     @abstractmethod
-    def preprocess_spacy_tokenized(
-        self,
-        tokenized_batch: List[List[str]],
-        device: Optional[torch.device] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pass
-
-    @abstractmethod
     def clean_and_preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -66,7 +58,7 @@ class Preprocessor(ABC):
         pass
 
     @abstractmethod
-    def get_vocab(self) -> List[str]:
+    def get_vocab(self) -> Dict[str, int]:
         pass
 
     @property
@@ -120,13 +112,16 @@ class SpacyPreprocessor(Preprocessor):
             ),
         )
 
-    # NOTE: Assumes the batch has already been tokenized by a preprocessor with the
-    # similar vocab mapping
-    def preprocess_spacy_tokenized(
+    def preprocess_tokenized(
         self,
         tokenized_batch: List[List[str]],
         device: Optional[torch.device] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        NOTE: Assumes the batch has already been tokenized by a preprocessor with the
+        similar vocab mapping
+        """
+
         return self.pad(
             [self.convert_tokens_to_ids(tokenized) for tokenized in tokenized_batch],
             device=device,
@@ -137,11 +132,14 @@ class SpacyPreprocessor(Preprocessor):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.preprocess([clean(s) for s in batch], device=device)
 
-    # NOTE: Assumes the batch has not been altered yet
     def preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.preprocess_spacy_tokenized(
+        """
+        NOTE: Assumes the batch has not been altered yet
+        """
+
+        return self.preprocess_tokenized(
             [self.tokenize(s) for s in batch], device=device
         )
 
@@ -149,8 +147,8 @@ class SpacyPreprocessor(Preprocessor):
     def vocab_size(self) -> int:
         return len(self.word_vocab)
 
-    def get_vocab(self) -> List[str]:
-        return self.word_vocab
+    def get_vocab(self) -> Dict[str, int]:
+        return self.word_to_id_dict
 
     @property
     def pad_token_id(self) -> int:
@@ -171,36 +169,24 @@ class HuggingFacePreprocessor(Preprocessor):
     def __init__(self, tokenizer_model: str) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, use_fast=True)
 
-        tokenizer_vocab = self.tokenizer.get_vocab()
-        self.word_vocab = list(tokenizer_vocab.keys())
-        self.word_to_id_dict = tokenizer_vocab
-        self.pad_id = self.tokenizer.pad_token_id
-        self.unk_id = self.tokenizer.unk_token_id
-
     def convert_ids_to_tokens(self, word_ids: List[int]) -> List[str]:
         return self.tokenizer.convert_ids_to_tokens(word_ids)
 
     def convert_tokens_to_ids(self, tokens: List[str]) -> List[int]:
         return self.tokenizer.convert_tokens_to_ids(tokens)
 
-    # NOTE: Assumes the batch has already been tokenized by a spacy tokenizer
-    def preprocess_spacy_tokenized(
-        self, tokenized_batch: List[List[str]], device: Optional[torch.device] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # NOTE: Somewhat a hack to detokenize as we don't have access to the Doc
-        recovered_batch = [" ".join(tokens).strip() for tokens in tokenized_batch]
-
-        return self.preprocess(recovered_batch, device=device)
-
     def clean_and_preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.preprocess([clean(s) for s in batch], device=device)
 
-    # NOTE: Assumes the batch has not been altered yet
     def preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        NOTE: Assumes the batch has not been altered yet
+        """
+
         processed = self.tokenizer(
             batch, return_tensors="pt", padding="longest", truncation="longest_first"
         )
@@ -211,15 +197,15 @@ class HuggingFacePreprocessor(Preprocessor):
 
     @property
     def vocab_size(self) -> int:
-        return len(self.word_vocab)
+        return len(self.tokenizer.get_vocab())
 
-    def get_vocab(self) -> List[str]:
-        return self.word_vocab
+    def get_vocab(self) -> Dict[str, int]:
+        return self.tokenizer.get_vocab()
 
     @property
     def pad_token_id(self) -> int:
-        return self.pad_id
+        return self.tokenizer.pad_token_id
 
     @property
     def unk_token_id(self) -> int:
-        return self.unk_id
+        return self.tokenizer.unk_token_id

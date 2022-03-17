@@ -56,7 +56,7 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
         ),
     ],
 )
-def test_BERT_preprocessor_preprocess(batch, expected_preprocessed, expected_mask):
+def test_hf_preprocessor_preprocess(batch, expected_preprocessed, expected_mask):
     sp = HuggingFacePreprocessor("distilbert-base-uncased")
     preprocessed, mask = sp.preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
@@ -65,7 +65,6 @@ def test_BERT_preprocessor_preprocess(batch, expected_preprocessed, expected_mas
 
 def test_spacy_preprocessor_load_from_file():
     sp = SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
-    assert len(sp.word_to_id_dict) == 772
     assert sp.vocab_size == 772
 
 
@@ -75,9 +74,9 @@ def test_spacy_preprocessor_load():
     assert sp.unk_token_id == 1
 
 
-def test_bert_preprocessor_load():
+def test_hf_preprocessor_load():
     sp = HuggingFacePreprocessor("distilbert-base-uncased")
-    assert sp.vocab_size != 0
+    assert sp.vocab_size == 30522
     assert sp.pad_token_id == 0
     assert sp.unk_token_id == 100
 
@@ -136,7 +135,7 @@ def test_spacy_preprocessor_clean_preprocess(
         ),
     ],
 )
-def test_BERT_preprocessor_clean_preprocess(
+def test_hf_preprocessor_clean_preprocess(
     batch, expected_preprocessed, expected_mask
 ):
     sp = HuggingFacePreprocessor("distilbert-base-uncased")

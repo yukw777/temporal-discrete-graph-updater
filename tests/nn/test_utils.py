@@ -250,7 +250,7 @@ def test_load_fasttext(tmpdir):
     assert not serialized_path.exists()
     preprocessor = SpacyPreprocessor([PAD, UNK, "my", "name", "is", "peter"])
     emb = load_fasttext("tests/data/test-fasttext.vec", serialized_path, preprocessor)
-    word_ids, _ = preprocessor.preprocess_spacy_tokenized(
+    word_ids, _ = preprocessor.preprocess_tokenized(
         [
             ["hi", "there", "what's", "your", "name"],
             ["my", "name", "is", "peter"],
@@ -259,7 +259,7 @@ def test_load_fasttext(tmpdir):
     embedded = emb(word_ids)
     # OOVs
     assert embedded[0, :4].equal(
-        emb(torch.tensor(preprocessor.unk_id)).unsqueeze(0).expand(4, -1)
+        emb(torch.tensor(preprocessor.unk_token_id)).unsqueeze(0).expand(4, -1)
     )
     # name
     assert embedded[0, 4].equal(emb(torch.tensor(3)))

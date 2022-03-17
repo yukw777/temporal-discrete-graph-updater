@@ -123,7 +123,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             assert word_emb_dim == pretrained_word_embeddings.embedding_dim
         else:
             pretrained_word_embeddings = nn.Embedding(
-                len(self.preprocessor.word_to_id_dict), word_emb_dim
+                self.preprocessor.vocab_size, word_emb_dim
             )
         pretrained_word_embeddings.weight.requires_grad = False
         self.word_embeddings = nn.Sequential(
