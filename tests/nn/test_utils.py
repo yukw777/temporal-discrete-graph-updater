@@ -250,7 +250,7 @@ def test_load_fasttext(tmpdir):
     assert not serialized_path.exists()
     preprocessor = SpacyPreprocessor([PAD, UNK, "my", "name", "is", "peter"])
     emb = load_fasttext("tests/data/test-fasttext.vec", serialized_path, preprocessor)
-    word_ids, _ = preprocessor.preprocess_tokenized(
+    word_ids, _ = preprocessor.preprocess_spacy_tokenized(
         [
             ["hi", "there", "what's", "your", "name"],
             ["my", "name", "is", "peter"],
