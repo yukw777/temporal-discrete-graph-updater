@@ -841,7 +841,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_id_seq: Sequence[torch.Tensor],
         src_id_seq: Sequence[torch.Tensor],
         dst_id_seq: Sequence[torch.Tensor],
-        label_id_seq: Sequence[torch.Tensor],
+        label_word_id_seq: Sequence[torch.Tensor],
+        label_mask_seq: Sequence[torch.Tensor],
         batched_graph_seq: Sequence[Batch],
     ) -> Tuple[List[List[str]], List[List[str]]]:
         batch_size = event_type_id_seq[0].size(0)
@@ -849,17 +850,30 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         batch_cmds: List[List[str]] = [[] for _ in range(batch_size)]
         # (batch, event_seq_len, token_len)
         batch_tokens: List[List[str]] = [[] for _ in range(batch_size)]
-        for event_type_ids, src_ids, dst_ids, label_ids, batched_graph in zip(
+        for (
+            event_type_ids,
+            src_ids,
+            dst_ids,
+            label_word_ids,
+            label_mask,
+            batched_graph,
+        ) in zip(
             event_type_id_seq,
             src_id_seq,
             dst_id_seq,
-            label_id_seq,
+            label_word_id_seq,
+            label_mask_seq,
             batched_graph_seq,
         ):
             for batch_id, (cmd, tokens) in enumerate(
                 zip(
                     *self.generate_graph_triples(
-                        event_type_ids, src_ids, dst_ids, label_ids, batched_graph
+                        event_type_ids,
+                        src_ids,
+                        dst_ids,
+                        label_word_ids,
+                        label_mask,
+                        batched_graph,
                     )
                 )
             ):
@@ -976,7 +990,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         tf_event_type_id_seq: List[torch.Tensor] = []
         tf_src_id_seq: List[torch.Tensor] = []
         tf_dst_id_seq: List[torch.Tensor] = []
-        tf_label_id_seq: List[torch.Tensor] = []
+        tf_label_word_id_seq: List[torch.Tensor] = []
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
             # filter out pad events
             unfiltered_event_type_ids = (
@@ -1024,17 +1038,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             tf_dst_id_seq.append(
                 unfiltered_event_dst_ids.masked_fill(invalid_event_mask, 0)
             )
-            tf_label_id_seq.append(
-                results["event_label_logits"]
-                .argmax(dim=1)
-                .masked_fill(invalid_event_mask, self.label_id_map[""])
-            )
+            tf_label_word_id_seq.append(results["event_label_logits"].argmax(dim=2))
 
         batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
             tf_event_type_id_seq,
             tf_src_id_seq,
             tf_dst_id_seq,
-            tf_label_id_seq,
+            tf_label_word_id_seq,
+            [
+                graphical_input.groundtruth_event_label_tgt_mask
+                for graphical_input in batch.graphical_input_seq
+            ],
             [results["updated_batched_graph"] for results in tf_results_list],
         )
 
@@ -1069,7 +1083,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             [results["decoded_event_type_ids"] for results in gd_results_list],
             [results["decoded_event_src_ids"] for results in gd_results_list],
             [results["decoded_event_dst_ids"] for results in gd_results_list],
-            [results["decoded_event_label_ids"] for results in gd_results_list],
+            [results["decoded_event_label_word_ids"] for results in gd_results_list],
+            [results["decoded_event_label_mask"] for results in gd_results_list],
             [results["updated_batched_graph"] for results in gd_results_list],
         )
 
