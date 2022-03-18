@@ -1023,19 +1023,23 @@ def test_tdgu_calculate_f1s(
 
 
 @pytest.mark.parametrize(
-    "event_type_ids,src_ids,dst_ids,label_ids,batched_graph,expected",
+    "event_type_ids,src_ids,dst_ids,batch_label_word_ids,batch_label_mask,"
+    "batched_graph,expected",
     [
         (
             torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
             torch.tensor([0]),
             torch.tensor([0]),
-            torch.tensor([1]),  # player
+            torch.tensor([[13, 3]]),
+            torch.ones(1, 2).bool(),
             Batch(
                 batch=torch.tensor([0]),
-                x=torch.tensor([1]),
+                x=torch.tensor([[13, 3]]),
+                node_label_mask=torch.ones(1, 2).bool(),
                 node_last_update=torch.tensor([[1, 2]]),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0),
             ),
             ([""], [[]]),
@@ -1044,13 +1048,16 @@ def test_tdgu_calculate_f1s(
             torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
             torch.tensor([0]),
             torch.tensor([0]),
-            torch.tensor([1]),  # player
+            torch.tensor([[13, 3]]),
+            torch.ones(1, 2).bool(),
             Batch(
                 batch=torch.tensor([0]),
-                x=torch.tensor([1]),
+                x=torch.tensor([[13, 3]]),
+                node_label_mask=torch.ones(1, 2).bool(),
                 node_last_update=torch.tensor([[1, 2]]),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0),
             ),
             ([""], [[]]),
@@ -1059,13 +1066,16 @@ def test_tdgu_calculate_f1s(
             torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
             torch.tensor([1]),
             torch.tensor([0]),
-            torch.tensor([5]),  # is
+            torch.tensor([[7, 3]]),
+            torch.ones(1, 2).bool(),
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([3, 1]),
+                x=torch.tensor([[15, 3], [13, 3]]),
+                node_label_mask=torch.ones(2, 2).bool(),
                 node_last_update=torch.tensor([[1, 2], [2, 3]]),
                 edge_index=torch.empty(2, 0).long(),
-                edge_attr=torch.empty(0, 300),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
                 edge_last_update=torch.empty(0),
             ),
             (["add , player , chopped , is"], [["add", "player", "chopped", "is"]]),
@@ -1074,13 +1084,16 @@ def test_tdgu_calculate_f1s(
             torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
             torch.tensor([1]),
             torch.tensor([0]),
-            torch.tensor([0]),
+            torch.tensor([[7, 3]]),
+            torch.ones(1, 2).bool(),
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([3, 1]),
+                x=torch.tensor([[15, 3], [13, 3]]),
+                node_label_mask=torch.ones(2, 2).bool(),
                 node_last_update=torch.tensor([[1, 2], [1, 3]]),
                 edge_index=torch.tensor([[1], [0]]),
-                edge_attr=torch.tensor([5]),  # is
+                edge_attr=torch.tensor([[7, 3]]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[1, 4]]),
             ),
             (
@@ -1094,15 +1107,18 @@ def test_tdgu_calculate_f1s(
             ),
             torch.tensor([1, 0]),
             torch.tensor([0, 1]),
-            torch.tensor([5, 0]),  # [is, <pad>]
+            torch.tensor([[7, 3], [3, 0]]),
+            torch.tensor([[True, True], [True, False]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                x=torch.tensor([[3], [1], [1], [2], [1], [2]]),
+                x=torch.tensor([[15, 3], [13, 3], [13, 3], [8, 3], [13, 3], [14, 3]]),
+                node_label_mask=torch.ones(6, 2).bool(),
                 node_last_update=torch.tensor(
                     [[0, 0], [0, 1], [0, 2], [0, 3], [1, 4], [1, 5]]
                 ),
                 edge_index=torch.tensor([[4], [5]]),
-                edge_attr=torch.tensor([4]),  # in
+                edge_attr=torch.tensor([[12, 3]]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[1, 6]]),
             ),
             (
@@ -1119,15 +1135,18 @@ def test_tdgu_calculate_f1s(
             ),
             torch.tensor([1, 0]),
             torch.tensor([0, 1]),
-            torch.tensor([5, 0]),  # [is, <pad>]
+            torch.tensor([[7, 3], [3, 0]]),
+            torch.tensor([[True, True], [True, False]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                x=torch.tensor([[3], [1], [1], [2], [1], [2]]),
+                x=torch.tensor([[15, 3], [13, 3], [13, 3], [8, 3], [13, 3], [14, 3]]),
+                node_label_mask=torch.ones(6, 2).bool(),
                 node_last_update=torch.tensor(
                     [[0, 0], [0, 1], [0, 2], [0, 3], [1, 4], [1, 5]]
                 ),
                 edge_index=torch.tensor([[4], [5]]),
-                edge_attr=torch.tensor([6]),  # east of
+                edge_attr=torch.tensor([[16, 10, 3]]),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.tensor([[1, 6]]),
             ),
             (
@@ -1147,15 +1166,18 @@ def test_tdgu_calculate_f1s(
             ),
             torch.tensor([0, 0]),
             torch.tensor([0, 1]),
-            torch.tensor([1, 0]),  # [player, <pad>]
+            torch.tensor([[13, 3], [3, 0]]),
+            torch.tensor([[True, True], [True, False]]),
             Batch(
                 batch=torch.tensor([0, 0, 0, 0, 1, 1]),
-                x=torch.tensor([[3], [1], [1], [2], [1], [2]]),
+                x=torch.tensor([[15, 3], [13, 3], [13, 3], [8, 3], [13, 3], [14, 3]]),
+                node_label_mask=torch.ones(6, 2).bool(),
                 node_last_update=torch.tensor(
                     [[0, 0], [0, 1], [0, 2], [0, 3], [1, 4], [1, 5]]
                 ),
                 edge_index=torch.tensor([[4], [5]]),
-                edge_attr=torch.tensor([4]),  # in
+                edge_attr=torch.tensor([[12, 3]]),
+                edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[1, 6]]),
             ),
             (
@@ -1170,13 +1192,19 @@ def test_tdgu_generate_graph_triples(
     event_type_ids,
     src_ids,
     dst_ids,
-    label_ids,
+    batch_label_word_ids,
+    batch_label_mask,
     batched_graph,
     expected,
 ):
     assert (
         tdgu.generate_graph_triples(
-            event_type_ids, src_ids, dst_ids, label_ids, batched_graph
+            event_type_ids,
+            src_ids,
+            dst_ids,
+            batch_label_word_ids,
+            batch_label_mask,
+            batched_graph,
         )
         == expected
     )

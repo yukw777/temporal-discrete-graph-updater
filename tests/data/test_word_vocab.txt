@@ -14,3 +14,4 @@ in
 player
 inventory
 chopped
+east

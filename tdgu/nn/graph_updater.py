@@ -757,7 +757,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
-        label_ids: torch.Tensor,
+        batch_label_word_ids: torch.Tensor,
+        batch_label_mask: torch.Tensor,
         batched_graph: Batch,
     ) -> Tuple[List[str], List[List[str]]]:
         """
@@ -766,7 +767,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: (batch)
         src_ids: (batch)
         dst_ids: (batch)
-        label_ids: (batch)
+        batch_label_word_ids: (batch, label_len)
+        batch_label_mask: (batch, label_len)
         batched_graph: batched graph before the given events
 
         output: (
@@ -785,29 +787,45 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         cmds: List[str] = []
         tokens: List[List[str]] = []
-        for event_type_id, batch_src_id, batch_dst_id, label_id in zip(
-            event_type_ids.tolist(), batch_src_ids, batch_dst_ids, label_ids
+        for event_type_id, src_id, dst_id, label_word_ids, label_mask in zip(
+            event_type_ids.tolist(),
+            batch_src_ids,
+            batch_dst_ids,
+            batch_label_word_ids,
+            batch_label_mask,
         ):
             if event_type_id in {
                 EVENT_TYPE_ID_MAP["edge-add"],
                 EVENT_TYPE_ID_MAP["edge-delete"],
             }:
-                src_label = self.labels[batched_graph.x[batch_src_id]]
-                dst_label = self.labels[batched_graph.x[batch_dst_id]]
+                src_label = self.decode_label(
+                    batched_graph.x[src_id].unsqueeze(0),
+                    batched_graph.node_label_mask[src_id].unsqueeze(0),
+                )[0]
+                dst_label = self.decode_label(
+                    batched_graph.x[dst_id].unsqueeze(0),
+                    batched_graph.node_label_mask[dst_id].unsqueeze(0),
+                )[0]
                 if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
                     cmd = "add"
-                    edge_label = self.labels[label_id]
+                    edge_label = self.decode_label(
+                        label_word_ids.unsqueeze(0), label_mask.unsqueeze(0)
+                    )[0]
                 else:
                     cmd = "delete"
-                    edge_label = self.labels[
-                        index_edge_attr(
-                            batched_graph.edge_index,
-                            batched_graph.edge_attr,
-                            torch.stack(
-                                [batch_src_id.unsqueeze(0), batch_dst_id.unsqueeze(0)]
-                            ),
-                        )
-                    ]
+                    edge_label_word_ids = index_edge_attr(
+                        batched_graph.edge_index,
+                        batched_graph.edge_attr,
+                        torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
+                    )
+                    edge_label_mask = index_edge_attr(
+                        batched_graph.edge_index,
+                        batched_graph.edge_label_mask,
+                        torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
+                    )
+                    edge_label = self.decode_label(
+                        edge_label_word_ids, edge_label_mask
+                    )[0]
                 # in the original dataset, multi-word edge labels are joined by
                 # an underscore
                 cmd_tokens = [cmd, src_label, dst_label, "_".join(edge_label.split())]
