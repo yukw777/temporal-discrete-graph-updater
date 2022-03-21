@@ -1317,7 +1317,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             decoded_event_type_ids: (batch)
             decoded_event_src_ids: (batch)
             decoded_event_dst_ids: (batch)
-            decoded_event_label_ids: (batch)
+            decoded_event_label_word_ids: (batch, decoded_label_len)
+            decoded_event_label_mask: (batch, decoded_label_len)
             updated_batched_graph: diagonally stacked batch of updated graphs.
                 these are the graphs used to decode the graph events above
             self_attn_weights:
@@ -1330,7 +1331,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 len([(batch, 1, num_node), ...]) == num_decoder_block,
             graph_prev_action_attn_weights:
                 len([(batch, 1, num_node), ...]) == num_decoder_block,
-        }, ...]) == decode_len <= max_decode_len
+        }, ...]) == decode_len <= max_event_decode_len
         """
         # initialize the initial inputs
         batch_size = step_input.obs_word_ids.size(0)
@@ -1339,7 +1340,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         )
         decoded_src_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
         decoded_dst_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
-        decoded_label_ids = torch.tensor([0] * batch_size, device=self.device)
+        decoded_label_word_ids = torch.empty(
+            batch_size, 0, device=self.device, dtype=torch.long
+        )
+        decoded_label_mask = torch.empty(
+            batch_size, 0, device=self.device, dtype=torch.bool
+        )
 
         end_event_mask = torch.tensor([False] * batch_size, device=self.device)
         # (batch)
@@ -1349,12 +1355,13 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         encoded_obs: Optional[torch.Tensor] = None
         encoded_prev_action: Optional[torch.Tensor] = None
         results_list: List[Dict[str, Any]] = []
-        for _ in range(self.hparams.max_decode_len):  # type: ignore
+        for _ in range(self.hparams.max_event_decode_len):  # type: ignore
             results = self(
                 decoded_event_type_ids,
                 decoded_src_ids,
                 decoded_dst_ids,
-                decoded_label_ids,
+                decoded_label_word_ids,
+                decoded_label_mask,
                 prev_batched_graph,
                 step_input.obs_mask,
                 step_input.prev_action_mask,
@@ -1380,33 +1387,21 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     batch_size, dtype=torch.long, device=self.device
                 )
             else:
-                decoded_src_ids = (
-                    masked_softmax(
-                        results["event_src_logits"], results["batch_node_mask"], dim=1
-                    )
-                    .argmax(dim=1)
-                    .masked_fill(end_event_mask, 0)
-                )
+                decoded_src_ids = masked_softmax(
+                    results["event_src_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
             # (batch)
             if results["event_dst_logits"].size(1) == 0:
                 decoded_dst_ids = torch.zeros(
                     batch_size, dtype=torch.long, device=self.device
                 )
             else:
-                decoded_dst_ids = (
-                    masked_softmax(
-                        results["event_dst_logits"], results["batch_node_mask"], dim=1
-                    )
-                    .argmax(dim=1)
-                    .masked_fill(end_event_mask, 0)
-                )
+                decoded_dst_ids = masked_softmax(
+                    results["event_dst_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
             # (batch)
-            decoded_label_ids = (
-                results["event_label_logits"]
-                .argmax(dim=1)
-                .masked_fill(end_event_mask, self.label_id_map[""])
-            )
-            # (batch)
+            decoded_label_word_ids = results["decoded_event_label_word_ids"]
+            decoded_label_mask = results["decoded_event_label_mask"]
 
             # filter out invalid decoded events
             invalid_event_mask = self.filter_invalid_events(
@@ -1420,11 +1415,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             decoded_event_type_ids = decoded_event_type_ids.masked_fill(
                 invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
             )
-            decoded_src_ids = decoded_src_ids.masked_fill(invalid_event_mask, 0)
-            decoded_dst_ids = decoded_dst_ids.masked_fill(invalid_event_mask, 0)
-            decoded_label_ids = decoded_label_ids.masked_fill(
-                invalid_event_mask, self.label_id_map[""]
-            )
 
             # collect the results
             results_list.append(
@@ -1432,7 +1422,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     "decoded_event_type_ids": decoded_event_type_ids,
                     "decoded_event_src_ids": decoded_src_ids,
                     "decoded_event_dst_ids": decoded_dst_ids,
-                    "decoded_event_label_ids": decoded_label_ids,
+                    "decoded_event_label_word_ids": decoded_label_word_ids,
+                    "decoded_event_label_mask": decoded_label_mask,
                     "updated_batched_graph": results["updated_batched_graph"],
                     "self_attn_weights": results["self_attn_weights"],
                     "obs_graph_attn_weights": results["obs_graph_attn_weights"],
