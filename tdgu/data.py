@@ -516,10 +516,7 @@ class TWCmdGenGraphEventDataCollator:
         )
 
         # textual previous action
-        (
-            prev_action_word_ids,
-            prev_action_mask,
-        ) = self.preprocessor.preprocess_tokenized(
+        prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
             [prev_action.split() for prev_action in prev_actions]
         )
         return TWCmdGenGraphEventStepInput(

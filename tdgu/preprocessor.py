@@ -32,11 +32,10 @@ def clean(raw_str: Optional[str]) -> str:
 
 
 class Preprocessor(ABC):
-    @abstractmethod
     def clean_and_preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pass
+        return self.preprocess([clean(s) for s in batch], device=device)
 
     @abstractmethod
     def preprocess(
@@ -127,11 +126,6 @@ class SpacyPreprocessor(Preprocessor):
             device=device,
         )
 
-    def clean_and_preprocess(
-        self, batch: List[str], device: Optional[torch.device] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.preprocess([clean(s) for s in batch], device=device)
-
     def preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -174,11 +168,6 @@ class HuggingFacePreprocessor(Preprocessor):
 
     def convert_tokens_to_ids(self, tokens: List[str]) -> List[int]:
         return self.tokenizer.convert_tokens_to_ids(tokens)
-
-    def clean_and_preprocess(
-        self, batch: List[str], device: Optional[torch.device] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.preprocess([clean(s) for s in batch], device=device)
 
     def preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
