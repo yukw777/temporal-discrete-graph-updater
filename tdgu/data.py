@@ -350,11 +350,11 @@ def empty_graph() -> Batch:
         batch=torch.empty(0, dtype=torch.long),
         x=torch.empty(0, 0, dtype=torch.long),
         node_label_mask=torch.empty(0, 0).bool(),
-        node_last_update=torch.empty(0, 2),
+        node_last_update=torch.empty(0, 2, dtype=torch.long),
         edge_index=torch.empty(2, 0, dtype=torch.long),
         edge_attr=torch.empty(0, 0).long(),
         edge_label_mask=torch.empty(0, 0).bool(),
-        edge_last_update=torch.empty(0, 2),
+        edge_last_update=torch.empty(0, 2, dtype=torch.long),
     )
 
 
