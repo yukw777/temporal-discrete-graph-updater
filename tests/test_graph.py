@@ -12,7 +12,6 @@ from tdgu.graph import (
     FoodNameNode,
     FoodAdjNode,
     process_triplet_cmd,
-    data_to_networkx,
     batch_to_data_list,
     networkx_to_rdf,
     update_rdf_graph,
@@ -267,92 +266,6 @@ def test_process_triplet_cmd_allow_objs_with_same_label(
         process_triplet_cmd(graph, timestamp, cmd, allow_objs_with_same_label=True)
         == expected
     )
-
-
-@pytest.mark.parametrize(
-    "data,labels,expected_node_attrs,expected_edge_attrs",
-    [
-        (
-            Data(
-                x=torch.empty(0, dtype=torch.long),
-                node_last_update=torch.empty(0, 2),
-                edge_index=torch.empty(2, 0, dtype=torch.long),
-                edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0, 2),
-            ),
-            ["", "player", "livingroom", "table", "at", "in"],
-            {},
-            [],
-        ),
-        (
-            Data(
-                x=torch.tensor([1]),
-                node_last_update=torch.tensor([[1, 0]]),
-                edge_index=torch.empty(2, 0, dtype=torch.long),
-                edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0, 2),
-            ),
-            ["", "player", "livingroom", "table", "at", "in"],
-            {0: {"x": 1, "node_last_update": [1, 0], "label": "player"}},
-            [],
-        ),
-        (
-            Data(
-                x=torch.tensor([1, 2]),
-                node_last_update=torch.tensor([[1, 0], [1, 1]]),
-                edge_index=torch.tensor([[0], [1]]),
-                edge_attr=torch.tensor([4]),
-                edge_last_update=torch.tensor([[1, 2]]),
-            ),
-            ["", "player", "livingroom", "table", "at", "in"],
-            {
-                0: {"x": 1, "node_last_update": [1, 0], "label": "player"},
-                1: {"x": 2, "node_last_update": [1, 1], "label": "livingroom"},
-            },
-            [
-                (0, 1, {"edge_attr": 4, "edge_last_update": [1, 2], "label": "at"}),
-            ],
-        ),
-        (
-            Data(
-                x=torch.tensor([1, 2]),
-                node_last_update=torch.tensor([[1, 0], [1, 1]]),
-                edge_index=torch.empty(2, 0, dtype=torch.long),
-                edge_attr=torch.empty(0, dtype=torch.long),
-                edge_last_update=torch.empty(0, 2),
-            ),
-            ["", "player", "livingroom", "table", "at", "in"],
-            {
-                0: {"x": 1, "node_last_update": [1, 0], "label": "player"},
-                1: {"x": 2, "node_last_update": [1, 1], "label": "livingroom"},
-            },
-            [],
-        ),
-        (
-            Data(
-                x=torch.tensor([1, 2, 3]),
-                node_last_update=torch.tensor([[1, 0], [1, 1], [2, 3]]),
-                edge_index=torch.tensor([[0, 2], [1, 1]]),
-                edge_attr=torch.tensor([4, 5]),
-                edge_last_update=torch.tensor([[1, 2], [2, 2]]),
-            ),
-            ["", "player", "livingroom", "table", "at", "in"],
-            {
-                0: {"x": 1, "node_last_update": [1, 0], "label": "player"},
-                1: {"x": 2, "node_last_update": [1, 1], "label": "livingroom"},
-                2: {"x": 3, "node_last_update": [2, 3], "label": "table"},
-            },
-            [
-                (0, 1, {"edge_attr": 4, "edge_last_update": [1, 2], "label": "at"}),
-                (2, 1, {"edge_attr": 5, "edge_last_update": [2, 2], "label": "in"}),
-            ],
-        ),
-    ],
-)
-def test_data_to_networkx(data, labels, expected_node_attrs, expected_edge_attrs):
-    nx_graph = data_to_networkx(data, labels)
-    assert dict(nx_graph.nodes.data()) == expected_node_attrs
-    assert list(nx_graph.edges.data()) == expected_edge_attrs
 
 
 @pytest.mark.parametrize(

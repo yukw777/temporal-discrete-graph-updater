@@ -263,49 +263,6 @@ def process_triplet_cmd(
     raise ValueError(f"Unknown command {cmd}")
 
 
-def data_to_networkx(data: Data, labels: List[str]) -> nx.DiGraph:
-    """
-    Turn torch_geometric.Data into a networkx graph.
-    """
-    # There is a bug in to_networkx() where it turns an attribute that is a list
-    # with one element into a scalar, so we just manually construct a networkx graph.
-    graph = nx.DiGraph()
-    graph.add_nodes_from(
-        [
-            (
-                nid,
-                {
-                    "x": node_label_id,
-                    "node_last_update": node_last_update,
-                    "label": labels[node_label_id],
-                },
-            )
-            for nid, (node_label_id, node_last_update) in enumerate(
-                zip(data.x.tolist(), data.node_last_update.tolist())
-            )
-        ]
-    )
-    graph.add_edges_from(
-        [
-            (
-                src_id,
-                dst_id,
-                {
-                    "edge_attr": edge_label_id,
-                    "edge_last_update": edge_last_update,
-                    "label": labels[edge_label_id],
-                },
-            )
-            for (src_id, dst_id), edge_label_id, edge_last_update in zip(
-                data.edge_index.t().tolist(),
-                data.edge_attr.tolist(),
-                data.edge_last_update.tolist(),
-            )
-        ]
-    )
-    return graph
-
-
 def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
     """
     Split the given batched graph into a list of Data. We have to implement our own

@@ -4,7 +4,7 @@ import shutil
 import torch.nn as nn
 import random
 
-from torch_geometric.data.batch import Batch
+from torch_geometric.data.batch import Data, Batch
 
 from tdgu.nn.graph_updater import (
     TemporalDiscreteGraphUpdater,
@@ -3651,3 +3651,96 @@ def test_tdgu_get_decoder_input(
         node_label_mask,
         compute_masks_from_event_type_ids(event_type_ids),
     ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "data,expected_node_attrs,expected_edge_attrs",
+    [
+        (
+            Data(
+                x=torch.empty(0, 0, dtype=torch.long),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2),
+            ),
+            {},
+            [],
+        ),
+        (
+            Data(
+                x=torch.tensor([[13, 3]]),
+                node_label_mask=torch.tensor([[True, True]]),
+                node_last_update=torch.tensor([[1.0, 0.0]]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2),
+            ),
+            {0: {"node_last_update": [1.0, 0.0], "label": "player"}},
+            [],
+        ),
+        (
+            Data(
+                x=torch.tensor([[13, 3, 0], [15, 14, 3]]),
+                node_label_mask=torch.tensor([[True, True, False], [True] * 3]),
+                node_last_update=torch.tensor([[1.0, 0.0], [1.0, 1.0]]),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2),
+            ),
+            {
+                0: {"node_last_update": [1.0, 0.0], "label": "player"},
+                1: {"node_last_update": [1.0, 1.0], "label": "chopped inventory"},
+            },
+            [],
+        ),
+        (
+            Data(
+                x=torch.tensor([[13, 3, 0], [15, 14, 3]]),
+                node_label_mask=torch.tensor([[True, True, False], [True] * 3]),
+                node_last_update=torch.tensor([[1.0, 0.0], [1.0, 1.0]]),
+                edge_index=torch.tensor([[0], [1]]),
+                edge_attr=torch.tensor([[12, 3]]),
+                edge_label_mask=torch.tensor([[True, True]]),
+                edge_last_update=torch.tensor([[1.0, 2.0]]),
+            ),
+            {
+                0: {"node_last_update": [1.0, 0.0], "label": "player"},
+                1: {"node_last_update": [1.0, 1.0], "label": "chopped inventory"},
+            },
+            [
+                (0, 1, {"edge_last_update": [1.0, 2.0], "label": "in"}),
+            ],
+        ),
+        (
+            Data(
+                x=torch.tensor([[13, 3, 0], [15, 14, 3], [8, 3, 0]]),
+                node_label_mask=torch.tensor(
+                    [[True, True, False], [True] * 3, [True, True, False]]
+                ),
+                node_last_update=torch.tensor([[1.0, 0.0], [1.0, 1.0], [1.0, 2.0]]),
+                edge_index=torch.tensor([[0, 0], [1, 2]]),
+                edge_attr=torch.tensor([[12, 11, 3], [7, 3, 0]]),
+                edge_label_mask=torch.tensor([[True] * 3, [True, True, False]]),
+                edge_last_update=torch.tensor([[1.0, 2.0], [2.0, 2.0]]),
+            ),
+            {
+                0: {"node_last_update": [1.0, 0.0], "label": "player"},
+                1: {"node_last_update": [1.0, 1.0], "label": "chopped inventory"},
+                2: {"node_last_update": [1.0, 2.0], "label": "peter"},
+            },
+            [
+                (0, 1, {"edge_last_update": [1.0, 2.0], "label": "in a"}),
+                (0, 2, {"edge_last_update": [2.0, 2.0], "label": "is"}),
+            ],
+        ),
+    ],
+)
+def test_tdgu_data_to_networkx(tdgu, data, expected_node_attrs, expected_edge_attrs):
+    nx_graph = tdgu.data_to_networkx(data)
+    assert dict(nx_graph.nodes.data()) == expected_node_attrs
+    assert list(nx_graph.edges.data()) == expected_edge_attrs

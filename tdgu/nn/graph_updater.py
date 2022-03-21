@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torchmetrics
 import wandb
 import tqdm
+import networkx as nx
 
 from typing import Optional, Dict, List, Sequence, Tuple, Any
 from torch.optim import AdamW, Optimizer
@@ -45,12 +46,7 @@ from tdgu.data import (
     TWCmdGenGraphEventStepInput,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.graph import (
-    batch_to_data_list,
-    data_to_networkx,
-    networkx_to_rdf,
-    update_rdf_graph,
-)
+from tdgu.graph import batch_to_data_list, networkx_to_rdf, update_rdf_graph
 
 
 class TemporalDiscreteGraphUpdater(pl.LightningModule):
@@ -1113,6 +1109,61 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         return table_data
 
+    def data_to_networkx(self, data: Data) -> nx.DiGraph:
+        """
+        Turn torch_geometric.Data into a networkx graph.
+
+        There is a bug in to_networkx() where it turns an attribute that is a list
+        with one element into a scalar, so we just manually construct a networkx graph.
+        """
+        graph = nx.DiGraph()
+        graph.add_nodes_from(
+            [
+                (
+                    nid,
+                    {
+                        "node_last_update": node_last_update,
+                        "label": self.decode_label(
+                            node_label_word_ids.unsqueeze(0),
+                            node_label_mask.unsqueeze(0),
+                        )[0],
+                    },
+                )
+                for nid, (
+                    node_label_word_ids,
+                    node_label_mask,
+                    node_last_update,
+                ) in enumerate(
+                    zip(data.x, data.node_label_mask, data.node_last_update.tolist())
+                )
+            ]
+        )
+        graph.add_edges_from(
+            [
+                (
+                    src_id,
+                    dst_id,
+                    {
+                        "edge_last_update": edge_last_update,
+                        "label": self.decode_label(
+                            edge_label_word_ids.unsqueeze(0),
+                            edge_label_mask.unsqueeze(0),
+                        )[0],
+                    },
+                )
+                for (
+                    src_id,
+                    dst_id,
+                ), edge_label_word_ids, edge_label_mask, edge_last_update in zip(
+                    data.edge_index.t().tolist(),
+                    data.edge_attr,
+                    data.edge_label_mask,
+                    data.edge_last_update.tolist(),
+                )
+            ]
+        )
+        return graph
+
     def eval_free_run(
         self, dataset: TWCmdGenGraphEventFreeRunDataset, dataloader: DataLoader
     ) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float]]:
@@ -1159,7 +1210,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 }:
                     step_data, graph = game_id_to_step_data_graph.pop(finished_game_id)
                     generated_rdfs = networkx_to_rdf(
-                        data_to_networkx(graph, self.labels),
+                        self.data_to_networkx(graph),
                         allow_objs_with_same_label=(
                             self.hparams.allow_objs_with_same_label  # type: ignore
                         ),
