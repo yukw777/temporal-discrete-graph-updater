@@ -603,17 +603,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         batch_graph: diagonally stacked batch of current graphs
 
         output:
-        [{
-            event_type_logits: (batch, num_event_type)
-            event_src_logits: (batch, max_sub_graph_num_node)
-            event_dst_logits: (batch, max_sub_graph_num_node)
-            event_label_logits: (batch, num_label)
-            new_decoder_hidden: (batch, hidden_dim)
-            encoded_obs: (batch, obs_len, hidden_dim)
-            encoded_prev_action: (batch, prev_action_len, hidden_dim)
-            updated_batched_graph: diagonally stacked batch of updated graphs
-            batch_node_mask: (batch, max_sub_graph_num_node)
-        }, ...]
+        [forward pass output, ...]
         """
         prev_input_event_emb_seq: Optional[torch.Tensor] = None
         prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None
@@ -625,7 +615,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.tgt_event_type_ids,
                 graphical_input.tgt_event_src_ids,
                 graphical_input.tgt_event_dst_ids,
-                graphical_input.tgt_event_label_ids,
+                graphical_input.tgt_event_label_word_ids,
+                graphical_input.tgt_event_label_mask,
                 graphical_input.prev_batched_graph,
                 step_input.obs_mask,
                 step_input.prev_action_mask,
@@ -652,6 +643,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     ),
                     "groundtruth_event_dst_mask": (
                         graphical_input.groundtruth_event_dst_mask
+                    ),
+                    "groundtruth_event_label_tgt_word_ids": (
+                        graphical_input.groundtruth_event_label_tgt_word_ids
+                    ),
+                    "groundtruth_event_label_tgt_mask": (
+                        graphical_input.groundtruth_event_label_tgt_mask
                     ),
                 },
             )
