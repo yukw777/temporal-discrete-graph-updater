@@ -13,6 +13,7 @@ from tdgu.graph import (
     FoodAdjNode,
     process_triplet_cmd,
     batch_to_data_list,
+    data_list_to_batch,
     networkx_to_rdf,
     update_rdf_graph,
 )
@@ -384,6 +385,121 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
         assert data.edge_attr.equal(expected.edge_attr)
         assert data.edge_label_mask.equal(expected.edge_label_mask)
         assert data.edge_last_update.equal(expected.edge_last_update)
+
+
+@pytest.mark.parametrize(
+    "data_list,expected",
+    [
+        (
+            [
+                Data(
+                    x=torch.empty(0, 0, dtype=torch.long),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0).long(),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, 0, dtype=torch.long),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0).long(),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, 0, dtype=torch.long),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0).long(),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+            ],
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, 0, dtype=torch.long),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2, dtype=torch.long),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0).long(),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2, dtype=torch.long),
+            ),
+        ),
+        (
+            [
+                Data(
+                    x=torch.empty(0, 0, dtype=torch.long),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0).long(),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, 0, dtype=torch.long),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0).long(),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.tensor([[2, 3], [4, 3]]),
+                    node_label_mask=torch.ones(2, 2).bool(),
+                    node_last_update=torch.tensor([[1, 2], [2, 0]]),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0).long(),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.tensor([[5, 4, 3], [6, 3, 0]]),
+                    node_label_mask=torch.tensor([[True] * 3, [True, True, False]]),
+                    node_last_update=torch.tensor([[3, 7], [4, 1]]),
+                    edge_index=torch.tensor([[1], [0]]),
+                    edge_attr=torch.tensor([[2, 3]]),
+                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_last_update=torch.tensor([[4, 2]]),
+                ),
+            ],
+            Batch(
+                batch=torch.tensor([2, 2, 3, 3]),
+                x=torch.tensor([[2, 3, 0], [4, 3, 0], [5, 4, 3], [6, 3, 0]]),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, False],
+                        [True] * 3,
+                        [True, True, False],
+                    ]
+                ),
+                node_last_update=torch.tensor([[1, 2], [2, 0], [3, 7], [4, 1]]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=torch.tensor([[2, 3]]),
+                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_last_update=torch.tensor([[4, 2]]),
+            ),
+        ),
+    ],
+)
+def test_data_list_to_batch(data_list, expected):
+    batch = data_list_to_batch(data_list)
+    assert batch.batch.equal(expected.batch)
+    assert batch.x.equal(expected.x)
+    assert batch.node_label_mask.equal(expected.node_label_mask)
+    assert batch.node_last_update.equal(expected.node_last_update)
+    assert batch.edge_index.equal(expected.edge_index)
+    assert batch.edge_attr.equal(expected.edge_attr)
+    assert batch.edge_label_mask.equal(expected.edge_label_mask)
+    assert batch.edge_last_update.equal(expected.edge_last_update)
 
 
 @pytest.mark.parametrize(

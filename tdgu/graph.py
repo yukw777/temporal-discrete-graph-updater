@@ -309,6 +309,37 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
     return data_list
 
 
+def data_list_to_batch(data_list: List[Data]) -> Batch:
+    """
+    Inverse of batch_to_data_list(). Can't use Batch.from_data_list() directly due to
+    variable length labels.
+    """
+    max_node_label_len = max(data.x.size(1) for data in data_list)
+    max_edge_label_len = max(data.edge_attr.size(1) for data in data_list)
+    return Batch.from_data_list(
+        [
+            Data(
+                x=F.pad(data.x, (0, max_node_label_len - data.x.size(1))),
+                node_label_mask=F.pad(
+                    data.node_label_mask,
+                    (0, max_node_label_len - data.node_label_mask.size(1)),
+                ),
+                node_last_update=data.node_last_update,
+                edge_index=data.edge_index,
+                edge_attr=F.pad(
+                    data.edge_attr, (0, max_edge_label_len - data.edge_attr.size(1))
+                ),
+                edge_label_mask=F.pad(
+                    data.edge_label_mask,
+                    (0, max_edge_label_len - data.edge_label_mask.size(1)),
+                ),
+                edge_last_update=data.edge_last_update,
+            )
+            for data in data_list
+        ]
+    )
+
+
 def networkx_to_rdf(
     graph: nx.DiGraph, allow_objs_with_same_label: bool = False
 ) -> Set[str]:
