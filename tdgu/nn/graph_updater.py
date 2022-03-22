@@ -46,7 +46,12 @@ from tdgu.data import (
     TWCmdGenGraphEventStepInput,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.graph import batch_to_data_list, networkx_to_rdf, update_rdf_graph
+from tdgu.graph import (
+    batch_to_data_list,
+    data_list_to_batch,
+    networkx_to_rdf,
+    update_rdf_graph,
+)
 
 
 class TemporalDiscreteGraphUpdater(pl.LightningModule):
@@ -1243,10 +1248,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                         game_id_to_step_data_graph[game_id] = (
                             step_data,
                             Data(
-                                x=torch.empty(0, dtype=torch.long),
+                                x=torch.empty(0, 0, dtype=torch.long),
+                                node_label_mask=torch.empty(0, 0).bool(),
                                 node_last_update=torch.empty(0, 2, dtype=torch.long),
                                 edge_index=torch.empty(2, 0, dtype=torch.long),
-                                edge_attr=torch.empty(0, dtype=torch.long),
+                                edge_attr=torch.empty(0, 0).long(),
+                                edge_label_mask=torch.empty(0, 0).bool(),
                                 edge_last_update=torch.empty(0, 2, dtype=torch.long),
                             ).to(self.device),
                         )
@@ -1272,7 +1279,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     collator.collate_step_inputs(  # type: ignore
                         batched_obs, batched_prev_actions, batched_timestamps
                     ).to(self.device),
-                    Batch.from_data_list(graph_list),
+                    data_list_to_batch(graph_list),
                 )
 
                 # update graphs in game_id_to_step_data_graph
