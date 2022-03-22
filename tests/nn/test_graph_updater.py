@@ -369,14 +369,10 @@ def test_tdgu_forward(
         torch.randint(10, (batch_size,)),
         obs_word_ids=None
         if encoded_textual_input
-        else torch.randint(
-            len(tdgu.preprocessor.word_to_id_dict), (batch_size, obs_len)
-        ),
+        else torch.randint(tdgu.preprocessor.vocab_size, (batch_size, obs_len)),
         prev_action_word_ids=None
         if encoded_textual_input
-        else torch.randint(
-            len(tdgu.preprocessor.word_to_id_dict), (batch_size, prev_action_len)
-        ),
+        else torch.randint(tdgu.preprocessor.vocab_size, (batch_size, prev_action_len)),
         encoded_obs=encoded_obs,
         encoded_prev_action=encoded_prev_action,
         prev_input_event_emb_seq=None
@@ -2825,12 +2821,10 @@ def test_tdgu_greedy_decode(
     monkeypatch.setattr(tdgu.hparams, "max_decode_len", max_decode_len)
     decoded_list = tdgu.greedy_decode(
         TWCmdGenGraphEventStepInput(
-            obs_word_ids=torch.randint(
-                len(tdgu.preprocessor.word_vocab), (batch, obs_len)
-            ),
+            obs_word_ids=torch.randint(tdgu.preprocessor.vocab_size, (batch, obs_len)),
             obs_mask=torch.randint(2, (batch, obs_len)).float(),
             prev_action_word_ids=torch.randint(
-                len(tdgu.preprocessor.word_vocab), (batch, prev_action_len)
+                tdgu.preprocessor.vocab_size, (batch, prev_action_len)
             ),
             prev_action_mask=torch.randint(2, (batch, prev_action_len)).float(),
             timestamps=torch.tensor([4.0] * batch),

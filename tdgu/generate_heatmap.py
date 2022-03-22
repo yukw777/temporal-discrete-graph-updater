@@ -125,7 +125,7 @@ def main(
                 )
                 plt.xticks(
                     torch.arange(obs_len) + 0.5,
-                    lm.preprocessor.ids_to_words(obs_word_ids[:obs_len]),
+                    lm.preprocessor.convert_ids_to_tokens(obs_word_ids[:obs_len]),
                 )
                 plt.yticks(
                     torch.arange(decoded_event_seq_len) + 0.5,

@@ -124,10 +124,10 @@ def load_fasttext(
     # embedding for pad is initalized to 0
     # embeddings for OOVs are randomly initialized from N(0, 1)
     emb = nn.Embedding(
-        len(preprocessor.word_to_id_dict), emb_dim, padding_idx=preprocessor.pad_id
+        preprocessor.vocab_size, emb_dim, padding_idx=preprocessor.pad_token_id
     )
     for word, i in tqdm(
-        preprocessor.word_to_id_dict.items(), desc="constructing word embeddings"
+        preprocessor.get_vocab().items(), desc="constructing word embeddings"
     ):
         if word in data:
             with torch.no_grad():
