@@ -1,4 +1,5 @@
 import networkx as nx
+import torch.nn.functional as F
 
 from dataclasses import dataclass
 from typing import Dict, List, Any, Set
@@ -278,11 +279,30 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
         # mask for all the edges that belong to the i'th subgraph
         # use the source node
         edge_mask = batch.batch[batch.edge_index[0]] == i
+        max_node_label_len = (
+            batch.node_label_mask.sum(dim=1)[node_mask].max() if node_mask.any() else 0
+        )
+        max_edge_label_len = (
+            batch.edge_label_mask.sum(dim=1)[edge_mask].max() if edge_mask.any() else 0
+        )
         subgraph = Data(
-            x=batch.x[node_mask],
-            edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
-            edge_attr=batch.edge_attr[edge_mask],
+            x=F.pad(
+                batch.x[node_mask], (0, max_node_label_len - batch.x[node_mask].size(1))
+            ),
+            node_label_mask=F.pad(
+                batch.node_label_mask[node_mask],
+                (0, max_node_label_len - batch.node_label_mask[node_mask].size(1)),
+            ),
             node_last_update=batch.node_last_update[node_mask],
+            edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
+            edge_attr=F.pad(
+                batch.edge_attr[edge_mask],
+                (0, max_edge_label_len - batch.edge_attr[edge_mask].size(1)),
+            ),
+            edge_label_mask=F.pad(
+                batch.edge_label_mask[edge_mask],
+                (0, max_edge_label_len - batch.edge_label_mask[edge_mask].size(1)),
+            ),
             edge_last_update=batch.edge_last_update[edge_mask],
         )
         data_list.append(subgraph)
