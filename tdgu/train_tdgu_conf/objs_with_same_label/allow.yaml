@@ -1,6 +1,5 @@
 # @package _global_
 data_module:
   allow_objs_with_same_label: true
-  node_vocab_path: vocabs/node_vocab_objs_same_label.txt
 model:
   allow_objs_with_same_label: true
