@@ -262,7 +262,7 @@ class EventSequentialLabelHead(nn.Module):
         # pack it
         packed = pack_padded_sequence(
             embedded_output_tgt_seq,
-            output_tgt_seq_mask.sum(dim=1),
+            output_tgt_seq_mask.sum(dim=1).cpu(),
             batch_first=True,
             enforce_sorted=False,
         )
