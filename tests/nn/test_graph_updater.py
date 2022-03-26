@@ -868,8 +868,10 @@ def test_uncertainty_weighted_loss(tdgu, src, dst, label, batch, num_node):
         ),
     ],
 )
+@pytest.mark.parametrize("log_prefix", ["val", "test"])
 def test_tdgu_calculate_f1s(
     tdgu,
+    log_prefix,
     event_type_logits,
     groundtruth_event_type_ids,
     event_src_logits,
@@ -902,14 +904,21 @@ def test_tdgu_calculate_f1s(
         groundtruth_event_src_mask,
         groundtruth_event_dst_mask,
         groundtruth_event_label_mask,
+        log_prefix,
     )
-    assert tdgu.event_type_f1.compute() == expected_event_type_f1
+    assert (
+        getattr(tdgu, log_prefix + "_event_type_f1").compute() == expected_event_type_f1
+    )
     if groundtruth_event_src_mask.any():
-        assert tdgu.src_node_f1.compute() == expected_src_node_f1
+        assert (
+            getattr(tdgu, log_prefix + "_src_node_f1").compute() == expected_src_node_f1
+        )
     if groundtruth_event_dst_mask.any():
-        assert tdgu.dst_node_f1.compute() == expected_dst_node_f1
+        assert (
+            getattr(tdgu, log_prefix + "_dst_node_f1").compute() == expected_dst_node_f1
+        )
     if groundtruth_event_label_mask.any():
-        assert tdgu.label_f1.compute() == expected_label_f1
+        assert getattr(tdgu, log_prefix + "_label_f1").compute() == expected_label_f1
 
 
 @pytest.mark.parametrize(

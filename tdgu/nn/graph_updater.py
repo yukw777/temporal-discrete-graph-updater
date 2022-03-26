@@ -231,23 +231,37 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         self.criterion = UncertaintyWeightedLoss()
 
-        self.event_type_f1 = torchmetrics.F1()
-        self.src_node_f1 = torchmetrics.F1()
-        self.dst_node_f1 = torchmetrics.F1()
-        self.label_f1 = torchmetrics.F1()
+        self.val_event_type_f1 = torchmetrics.F1()
+        self.val_src_node_f1 = torchmetrics.F1()
+        self.val_dst_node_f1 = torchmetrics.F1()
+        self.val_label_f1 = torchmetrics.F1()
+        self.test_event_type_f1 = torchmetrics.F1()
+        self.test_src_node_f1 = torchmetrics.F1()
+        self.test_dst_node_f1 = torchmetrics.F1()
+        self.test_label_f1 = torchmetrics.F1()
 
-        self.graph_tf_exact_match = ExactMatch()
-        self.token_tf_exact_match = ExactMatch()
-        self.graph_tf_f1 = F1()
-        self.token_tf_f1 = F1()
+        self.val_graph_tf_exact_match = ExactMatch()
+        self.val_token_tf_exact_match = ExactMatch()
+        self.val_graph_tf_f1 = F1()
+        self.val_token_tf_f1 = F1()
+        self.test_graph_tf_exact_match = ExactMatch()
+        self.test_token_tf_exact_match = ExactMatch()
+        self.test_graph_tf_f1 = F1()
+        self.test_token_tf_f1 = F1()
 
-        self.graph_gd_exact_match = ExactMatch()
-        self.token_gd_exact_match = ExactMatch()
-        self.graph_gd_f1 = F1()
-        self.token_gd_f1 = F1()
+        self.val_graph_gd_exact_match = ExactMatch()
+        self.val_token_gd_exact_match = ExactMatch()
+        self.val_graph_gd_f1 = F1()
+        self.val_token_gd_f1 = F1()
+        self.test_graph_gd_exact_match = ExactMatch()
+        self.test_token_gd_exact_match = ExactMatch()
+        self.test_graph_gd_f1 = F1()
+        self.test_token_gd_f1 = F1()
 
-        self.free_run_f1 = F1()
-        self.free_run_em = ExactMatch()
+        self.val_free_run_f1 = F1()
+        self.val_free_run_em = ExactMatch()
+        self.test_free_run_f1 = F1()
+        self.test_free_run_em = ExactMatch()
 
     def forward(  # type: ignore
         self,
@@ -652,6 +666,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
         groundtruth_event_label_mask: torch.Tensor,
+        log_prefix: str,
     ) -> None:
         """
         Calculate various F1 scores.
@@ -670,12 +685,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_mask: (batch)
         groundtruth_event_label_mask: (batch)
         """
-        self.event_type_f1(
+        event_type_f1 = getattr(self, f"{log_prefix}_event_type_f1")
+        src_node_f1 = getattr(self, f"{log_prefix}_src_node_f1")
+        dst_node_f1 = getattr(self, f"{log_prefix}_dst_node_f1")
+        label_f1 = getattr(self, f"{log_prefix}_label_f1")
+
+        event_type_f1.update(
             event_type_logits[groundtruth_event_mask].softmax(dim=1),
             groundtruth_event_type_ids[groundtruth_event_mask],
         )
         if groundtruth_event_src_mask.any():
-            self.src_node_f1(
+            src_node_f1.update(
                 masked_softmax(
                     event_src_logits[groundtruth_event_src_mask],
                     batch_node_mask[groundtruth_event_src_mask],
@@ -684,7 +704,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 groundtruth_event_src_ids[groundtruth_event_src_mask],
             )
         if groundtruth_event_dst_mask.any():
-            self.dst_node_f1(
+            dst_node_f1.update(
                 masked_softmax(
                     event_dst_logits[groundtruth_event_dst_mask],
                     batch_node_mask[groundtruth_event_dst_mask],
@@ -693,10 +713,14 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
         if groundtruth_event_label_mask.any():
-            self.label_f1(
+            label_f1.update(
                 event_label_logits[groundtruth_event_label_mask].softmax(dim=1),
                 groundtruth_event_label_ids[groundtruth_event_label_mask],
             )
+        self.log(log_prefix + "_event_type_f1", event_type_f1)
+        self.log(log_prefix + "_src_node_f1", src_node_f1)
+        self.log(log_prefix + "_dst_node_f1", dst_node_f1)
+        self.log(log_prefix + "_label_f1", label_f1)
 
     def generate_graph_triples(
         self,
@@ -894,11 +918,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_src_mask,
                 graphical_input.groundtruth_event_dst_mask,
                 graphical_input.groundtruth_event_label_mask,
+                log_prefix,
             )
-        self.log(log_prefix + "_event_type_f1", self.event_type_f1)
-        self.log(log_prefix + "_src_node_f1", self.src_node_f1)
-        self.log(log_prefix + "_dst_node_f1", self.dst_node_f1)
-        self.log(log_prefix + "_label_f1", self.label_f1)
 
         # calculate graph tuples from teacher forcing graph events
         tf_event_type_id_seq: List[torch.Tensor] = []
@@ -972,24 +993,20 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         )
 
         # log teacher force graph based metrics
-        self.log(
-            log_prefix + "_graph_tf_em",
-            self.graph_tf_exact_match(batch_tf_cmds, batch.graph_commands),
-        )
-        self.log(
-            log_prefix + "_graph_tf_f1",
-            self.graph_tf_f1(batch_tf_cmds, batch.graph_commands),
-        )
+        graph_tf_exact_match = getattr(self, f"{log_prefix}_graph_tf_exact_match")
+        graph_tf_exact_match.update(batch_tf_cmds, batch.graph_commands)
+        self.log(log_prefix + "_graph_tf_em", graph_tf_exact_match)
+        graph_tf_f1 = getattr(self, f"{log_prefix}_graph_tf_f1")
+        graph_tf_f1.update(batch_tf_cmds, batch.graph_commands)
+        self.log(log_prefix + "_graph_tf_f1", graph_tf_f1)
 
         # log teacher force token based metrics
-        self.log(
-            log_prefix + "_token_tf_em",
-            self.token_tf_exact_match(batch_tf_tokens, batch_groundtruth_tokens),
-        )
-        self.log(
-            log_prefix + "_token_tf_f1",
-            self.token_tf_f1(batch_tf_tokens, batch_groundtruth_tokens),
-        )
+        token_tf_exact_match = getattr(self, f"{log_prefix}_token_tf_exact_match")
+        token_tf_exact_match.update(batch_tf_tokens, batch_groundtruth_tokens)
+        self.log(log_prefix + "_token_tf_em", token_tf_exact_match)
+        token_tf_f1 = getattr(self, f"{log_prefix}_token_tf_f1")
+        token_tf_f1.update(batch_tf_tokens, batch_groundtruth_tokens)
+        self.log(log_prefix + "_token_tf_f1", token_tf_f1)
 
         # greedy decoding
         gd_results_list = self.greedy_decode(
@@ -1006,24 +1023,20 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         )
 
         # log greedy decode graph based metrics
-        self.log(
-            log_prefix + "_graph_gd_em",
-            self.graph_gd_exact_match(batch_gd_cmds, batch.graph_commands),
-        )
-        self.log(
-            log_prefix + "_graph_gd_f1",
-            self.graph_gd_f1(batch_gd_cmds, batch.graph_commands),
-        )
+        graph_gd_exact_match = getattr(self, log_prefix + "_graph_gd_exact_match")
+        graph_gd_exact_match.update(batch_gd_cmds, batch.graph_commands)
+        self.log(log_prefix + "_graph_gd_em", graph_gd_exact_match)
+        graph_gd_f1 = getattr(self, log_prefix + "_graph_gd_f1")
+        graph_gd_f1.update(batch_gd_cmds, batch.graph_commands)
+        self.log(log_prefix + "_graph_gd_f1", graph_gd_f1)
 
         # log greedy decode token based metrics
-        self.log(
-            log_prefix + "_token_gd_em",
-            self.token_gd_exact_match(batch_gd_tokens, batch_groundtruth_tokens),
-        )
-        self.log(
-            log_prefix + "_token_gd_f1",
-            self.token_gd_f1(batch_gd_tokens, batch_groundtruth_tokens),
-        )
+        token_gd_exact_match = getattr(self, log_prefix + "_token_gd_exact_match")
+        token_gd_exact_match.update(batch_gd_tokens, batch_groundtruth_tokens)
+        self.log(log_prefix + "_token_gd_em", token_gd_exact_match)
+        token_gd_f1 = getattr(self, log_prefix + "_token_gd_f1")
+        token_gd_f1.update(batch_gd_tokens, batch_groundtruth_tokens)
+        self.log(log_prefix + "_token_gd_f1", token_gd_f1)
 
         # collect graph triple table data
         table_data.extend(
@@ -1041,8 +1054,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
         )
         if is_sanity_checking:
+            free_run_f1 = self.val_free_run_f1
+            free_run_em = self.val_free_run_em
             total = self.trainer.num_sanity_val_steps  # type: ignore
         elif self.trainer.state.stage == RunningStage.VALIDATING:  # type: ignore
+            free_run_f1 = self.val_free_run_f1
+            free_run_em = self.val_free_run_em
             if isinstance(self.trainer.limit_val_batches, float):  # type: ignore
                 total = int(
                     self.trainer.limit_val_batches * len(dataset)  # type: ignore
@@ -1052,6 +1069,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             else:
                 total = len(dataset)
         elif self.trainer.state.stage == RunningStage.TESTING:  # type: ignore
+            free_run_f1 = self.test_free_run_f1
+            free_run_em = self.test_free_run_em
             if isinstance(self.trainer.limit_test_batches, float):  # type: ignore
                 total = int(
                     self.trainer.limit_test_batches * len(dataset)  # type: ignore
@@ -1060,8 +1079,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 total = self.trainer.limit_test_batches  # type: ignore
             else:
                 total = len(dataset)
-        else:
-            total = len(dataset)
 
         collator = self.trainer.datamodule.collator  # type: ignore
         game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
@@ -1085,17 +1102,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                         set(step_data["previous_graph_seen"]),
                         step_data["target_commands"],
                     )
-                    self.free_run_f1([generated_rdfs], [groundtruth_rdfs])
-                    self.free_run_em([generated_rdfs], [groundtruth_rdfs])
+                    free_run_f1.update([list(generated_rdfs)], [list(groundtruth_rdfs)])
+                    free_run_em([generated_rdfs], [groundtruth_rdfs])
                     game, walkthrough_step = dataset.walkthrough_example_ids[
                         finished_game_id
                     ]
-                    f1_scores_per_game[
-                        (game, walkthrough_step)
-                    ] = self.free_run_f1.scores[-1].item()
-                    em_scores_per_game[
-                        (game, walkthrough_step)
-                    ] = self.free_run_em.scores[-1].item()
+                    f1_scores_per_game[(game, walkthrough_step)] = free_run_f1.scores[
+                        -1
+                    ].item()
+                    em_scores_per_game[(game, walkthrough_step)] = free_run_em.scores[
+                        -1
+                    ].item()
                     pbar.update()
                     if pbar.n > total:
                         return (f1_scores_per_game, em_scores_per_game)
@@ -1185,8 +1202,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             self.trainer.datamodule.valid_free_run,  # type: ignore
             self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
         )
-        self.log("val_free_run_f1", self.free_run_f1, prog_bar=True)
-        self.log("val_free_run_em", self.free_run_em)
+        self.log("val_free_run_f1", self.val_free_run_f1, prog_bar=True)
+        self.log("val_free_run_em", self.val_free_run_em)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
 
@@ -1198,8 +1215,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
         )
-        self.log("test_free_run_f1", self.free_run_f1)
-        self.log("test_free_run_em", self.free_run_em)
+        self.log("test_free_run_f1", self.test_free_run_f1)
+        self.log("test_free_run_em", self.test_free_run_em)
         fr_f1_scores_path = (
             "test-fr-f1-scores-epoch="  # type: ignore
             f"{self.trainer.current_epoch}.pt"
