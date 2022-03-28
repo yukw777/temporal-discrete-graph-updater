@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-import torchmetrics
 import wandb
 import tqdm
 import networkx as nx
@@ -17,6 +16,7 @@ from torch_geometric.nn import TransformerConv, GATv2Conv
 from torch_geometric.data import Batch, Data
 from torch_geometric.utils import to_dense_batch
 from torch.utils.data import DataLoader
+from torchmetrics.classification.f_beta import F1Score
 
 from tdgu.nn.text import TextEncoder
 from tdgu.nn.rep_aggregator import ReprAggregator
@@ -198,14 +198,14 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         self.criterion = UncertaintyWeightedLoss()
 
-        self.val_event_type_f1 = torchmetrics.F1()
-        self.val_src_node_f1 = torchmetrics.F1()
-        self.val_dst_node_f1 = torchmetrics.F1()
-        self.val_label_f1 = torchmetrics.F1()
-        self.test_event_type_f1 = torchmetrics.F1()
-        self.test_src_node_f1 = torchmetrics.F1()
-        self.test_dst_node_f1 = torchmetrics.F1()
-        self.test_label_f1 = torchmetrics.F1()
+        self.val_event_type_f1 = F1Score()
+        self.val_src_node_f1 = F1Score()
+        self.val_dst_node_f1 = F1Score()
+        self.val_label_f1 = F1Score()
+        self.test_event_type_f1 = F1Score()
+        self.test_src_node_f1 = F1Score()
+        self.test_dst_node_f1 = F1Score()
+        self.test_label_f1 = F1Score()
 
         self.val_graph_tf_exact_match = ExactMatch()
         self.val_token_tf_exact_match = ExactMatch()
