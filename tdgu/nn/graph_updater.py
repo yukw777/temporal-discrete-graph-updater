@@ -44,6 +44,7 @@ from tdgu.data import (
     TWCmdGenGraphEventFreeRunDataset,
     TWCmdGenGraphEventGraphicalInput,
     TWCmdGenGraphEventStepInput,
+    TWCmdGenGraphEventDataCollator,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.graph import (
@@ -1173,42 +1174,40 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         return graph
 
     def eval_free_run(
-        self, dataset: TWCmdGenGraphEventFreeRunDataset, dataloader: DataLoader
-    ) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float]]:
-        is_sanity_checking = (
-            self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
-        )
-        if is_sanity_checking:
-            free_run_f1 = self.val_free_run_f1
-            free_run_em = self.val_free_run_em
-            total = self.trainer.num_sanity_val_steps  # type: ignore
-        elif self.trainer.state.stage == RunningStage.VALIDATING:  # type: ignore
-            free_run_f1 = self.val_free_run_f1
-            free_run_em = self.val_free_run_em
-            if isinstance(self.trainer.limit_val_batches, float):  # type: ignore
-                total = int(
-                    self.trainer.limit_val_batches * len(dataset)  # type: ignore
-                )
-            elif isinstance(self.trainer.limit_val_batches, int):  # type: ignore
-                total = self.trainer.limit_val_batches  # type: ignore
-            else:
-                total = len(dataset)
-        elif self.trainer.state.stage == RunningStage.TESTING:  # type: ignore
-            free_run_f1 = self.test_free_run_f1
-            free_run_em = self.test_free_run_em
-            if isinstance(self.trainer.limit_test_batches, float):  # type: ignore
-                total = int(
-                    self.trainer.limit_test_batches * len(dataset)  # type: ignore
-                )
-            elif isinstance(self.trainer.limit_test_batches, int):  # type: ignore
-                total = self.trainer.limit_test_batches  # type: ignore
-            else:
-                total = len(dataset)
+        self,
+        dataset: TWCmdGenGraphEventFreeRunDataset,
+        dataloader: DataLoader,
+        collator: TWCmdGenGraphEventDataCollator,
+        total: Optional[int] = None,
+    ) -> Tuple[List[List[str]], List[List[str]]]:
+        if total is None:
+            is_sanity_checking = (
+                self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
+            )
+            if is_sanity_checking:
+                total = self.trainer.num_sanity_val_steps  # type: ignore
+            elif self.trainer.state.stage == RunningStage.VALIDATING:  # type: ignore
+                if isinstance(self.trainer.limit_val_batches, float):  # type: ignore
+                    total = int(
+                        self.trainer.limit_val_batches * len(dataset)  # type: ignore
+                    )
+                elif isinstance(self.trainer.limit_val_batches, int):  # type: ignore
+                    total = self.trainer.limit_val_batches  # type: ignore
+                else:
+                    total = len(dataset)
+            elif self.trainer.state.stage == RunningStage.TESTING:  # type: ignore
+                if isinstance(self.trainer.limit_test_batches, float):  # type: ignore
+                    total = int(
+                        self.trainer.limit_test_batches * len(dataset)  # type: ignore
+                    )
+                elif isinstance(self.trainer.limit_test_batches, int):  # type: ignore
+                    total = self.trainer.limit_test_batches  # type: ignore
+                else:
+                    total = len(dataset)
 
-        collator = self.trainer.datamodule.collator  # type: ignore
         game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
-        f1_scores_per_game: Dict[Tuple[str, int], float] = {}
-        em_scores_per_game: Dict[Tuple[str, int], float] = {}
+        generated_rdfs_list: List[List[str]] = []
+        groundtruth_rdfs_list: List[List[str]] = []
         with tqdm.tqdm(desc="Free Run", total=total) as pbar:
             for batch in dataloader:
                 # finished games are the ones that were in game_id_to_graph, but are not
@@ -1227,20 +1226,11 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                         set(step_data["previous_graph_seen"]),
                         step_data["target_commands"],
                     )
-                    free_run_f1.update([list(generated_rdfs)], [list(groundtruth_rdfs)])
-                    free_run_em([generated_rdfs], [groundtruth_rdfs])
-                    game, walkthrough_step = dataset.walkthrough_example_ids[
-                        finished_game_id
-                    ]
-                    f1_scores_per_game[(game, walkthrough_step)] = free_run_f1.scores[
-                        -1
-                    ].item()
-                    em_scores_per_game[(game, walkthrough_step)] = free_run_em.scores[
-                        -1
-                    ].item()
+                    generated_rdfs_list.append(list(generated_rdfs))
+                    groundtruth_rdfs_list.append(list(groundtruth_rdfs))
                     pbar.update()
                     if pbar.n > total:
-                        return (f1_scores_per_game, em_scores_per_game)
+                        return generated_rdfs_list, groundtruth_rdfs_list
 
                 # new games are the ones that were not in game_id_to_graph, but are now
                 # part of the new batch.
@@ -1296,7 +1286,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 ):
                     game_id_to_step_data_graph[game_id] = (step_data, updated_graph)
-        return (f1_scores_per_game, em_scores_per_game)
+        return generated_rdfs_list, groundtruth_rdfs_list
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
@@ -1325,11 +1315,14 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
-        self.eval_free_run(
+        generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.valid_free_run,  # type: ignore
             self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
+            self.trainer.datamodule.collator,  # type: ignore
         )
+        self.val_free_run_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_f1", self.val_free_run_f1, prog_bar=True)
+        self.val_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_em", self.val_free_run_em)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
@@ -1338,30 +1331,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
-        fr_f1_scores_per_game, fr_em_scores_per_game = self.eval_free_run(
+        generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
+            self.trainer.datamodule.collator,  # type: ignore
         )
+        self.test_free_run_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_f1", self.test_free_run_f1)
+        self.test_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_em", self.test_free_run_em)
-        fr_f1_scores_path = (
-            "test-fr-f1-scores-epoch="  # type: ignore
-            f"{self.trainer.current_epoch}.pt"
-        )
-        torch.save(fr_f1_scores_per_game, fr_f1_scores_path)
-        fr_em_scores_path = (
-            "test-fr-em-scores-epoch="  # type: ignore
-            f"{self.trainer.current_epoch}.pt"
-        )
-        torch.save(fr_em_scores_per_game, fr_em_scores_path)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
-            fr_metrics_artifact = wandb.Artifact(
-                f"fr_metrics_{self.logger.experiment.id}", "metrics"
-            )
-            fr_metrics_artifact.add_file(fr_f1_scores_path)
-            fr_metrics_artifact.add_file(fr_em_scores_path)
-            self.logger.experiment.log_artifact(fr_metrics_artifact)
 
     def configure_optimizers(self) -> Optimizer:
         return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
