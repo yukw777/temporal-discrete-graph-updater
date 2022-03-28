@@ -745,10 +745,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 event_label_logits[combined_label_mask].softmax(dim=1),
                 groundtruth_event_label_word_ids[combined_label_mask],
             )
-        self.log(log_prefix + "_event_type_f1", event_type_f1)
-        self.log(log_prefix + "_src_node_f1", src_node_f1)
-        self.log(log_prefix + "_dst_node_f1", dst_node_f1)
-        self.log(log_prefix + "_label_f1", label_f1)
 
     def generate_graph_triples(
         self,
@@ -983,6 +979,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_label_mask,
                 log_prefix,
             )
+        self.log(
+            log_prefix + "_event_type_f1", getattr(self, f"{log_prefix}_event_type_f1")
+        )
+        self.log(
+            log_prefix + "_src_node_f1", getattr(self, f"{log_prefix}_src_node_f1")
+        )
+        self.log(
+            log_prefix + "_dst_node_f1", getattr(self, f"{log_prefix}_dst_node_f1")
+        )
+        self.log(log_prefix + "_label_f1", getattr(self, f"{log_prefix}_label_f1"))
 
         # calculate graph tuples from teacher forcing graph events
         tf_event_type_id_seq: List[torch.Tensor] = []
