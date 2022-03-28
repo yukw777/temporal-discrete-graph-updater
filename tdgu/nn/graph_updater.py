@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torchmetrics
 import wandb
 import tqdm
+import networkx as nx
 
 from typing import Optional, Dict, List, Sequence, Tuple, Any
 from torch.optim import AdamW, Optimizer
@@ -34,7 +35,7 @@ from tdgu.nn.graph_event_decoder import (
     TransformerGraphEventDecoder,
     EventTypeHead,
     EventNodeHead,
-    EventStaticLabelHead,
+    EventSequentialLabelHead,
 )
 from tdgu.nn.dynamic_gnn import DynamicGNN
 from tdgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
@@ -43,12 +44,12 @@ from tdgu.data import (
     TWCmdGenGraphEventFreeRunDataset,
     TWCmdGenGraphEventGraphicalInput,
     TWCmdGenGraphEventStepInput,
-    read_label_vocab_files,
+    TWCmdGenGraphEventDataCollator,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.graph import (
     batch_to_data_list,
-    data_to_networkx,
+    data_list_to_batch,
     networkx_to_rdf,
     update_rdf_graph,
 )
@@ -80,23 +81,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         graph_event_decoder_key_query_dim: int = 8,
         graph_event_decoder_num_dec_blocks: int = 1,
         graph_event_decoder_dec_block_num_heads: int = 1,
-        max_decode_len: int = 100,
+        max_event_decode_len: int = 100,
+        max_label_decode_len: int = 10,
         learning_rate: float = 5e-4,
         dropout: float = 0.3,
         allow_objs_with_same_label: bool = False,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
-        node_vocab_path: Optional[str] = None,
-        relation_vocab_path: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(
-            ignore=[
-                "pretrained_word_embedding_path",
-                "word_vocab_path",
-                "node_vocab_path",
-                "relation_vocab_path",
-            ]
+            ignore=["pretrained_word_embedding_path", "word_vocab_path"]
         )
         # preprocessor
         if word_vocab_path is None:
@@ -129,19 +124,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self.word_embeddings = nn.Sequential(
             pretrained_word_embeddings, nn.Linear(word_emb_dim, hidden_dim)
         )
-
-        if node_vocab_path is not None and relation_vocab_path is not None:
-            self.labels, self.label_id_map = read_label_vocab_files(
-                to_absolute_path(node_vocab_path), to_absolute_path(relation_vocab_path)
-            )
-        else:
-            self.labels = ["", "node", "relation"]
-            self.label_id_map = {label: i for i, label in enumerate(self.labels)}
-
-        # node/edge labels
-        label_word_ids, label_mask = self.preprocessor.preprocess(self.labels)
-        self.register_buffer("label_word_ids", label_word_ids)
-        self.register_buffer("label_mask", label_mask)
 
         # text encoder
         self.text_encoder = TextEncoder(
@@ -207,11 +189,11 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             hidden_dim,
             graph_event_decoder_key_query_dim,
         )
-        self.event_label_head = EventStaticLabelHead(
+        self.event_label_head = EventSequentialLabelHead(
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
-            len(self.labels),
-            dropout=dropout,
+            self.preprocessor.word_to_id_dict,
+            pretrained_word_embeddings,
         )
 
         self.criterion = UncertaintyWeightedLoss()
@@ -254,7 +236,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: torch.Tensor,
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
-        event_label_ids: torch.Tensor,
+        event_label_word_ids: torch.Tensor,
+        event_label_mask: torch.Tensor,
         # diagonally stacked graph BEFORE the given graph events
         prev_batched_graph: Batch,
         # game step
@@ -276,15 +259,18 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             event_type_ids: (batch)
             event_src_ids: (batch)
             event_dst_ids: (batch)
-            event_label_ids: (batch)
+            event_label_word_ids: (batch, event_label_len)
+            event_label_mask: (batch, event_label_len)
         }
         prev_batched_graph: diagonally stacked graph BEFORE the given graph events:
             Batch(
                 batch: (prev_num_node)
-                x: node label IDs, (prev_num_node)
+                x: node label IDs, (prev_num_node, prev_node_label_len)
+                node_label_mask: (prev_num_node, prev_node_label_len)
                 node_last_update: (prev_num_node)
                 edge_index: (2, prev_num_edge)
-                edge_attr: edge label IDs, (prev_num_edge)
+                edge_attr: edge label IDs, (prev_num_edge, prev_edge_label_len)
+                edge_label_mask: (prev_num_edge, prev_edge_label_len)
                 edge_last_update: (prev_num_edge)
             )
         prev_input_event_emb_seq:
@@ -313,6 +299,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             groundtruth_event_src_mask: (batch)
             groundtruth_event_dst_ids: (batch)
             groundtruth_event_dst_mask: (batch)
+            groundtruth_event_label_tgt_word_ids: (batch, groundtruth_event_label_len)
+            groundtruth_event_label_tgt_mask: (batch, groundtruth_event_label_len)
         }
         Ground-truth graph events used for teacher forcing of the decoder
 
@@ -321,7 +309,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             event_type_logits: (batch, num_event_type)
             event_src_logits: (batch, max_sub_graph_num_node)
             event_dst_logits: (batch, max_sub_graph_num_node)
-            event_label_logits: (batch, num_label)
+            event_label_logits: (batch, groundtruth_event_label_len, num_word),
+                returned only if groundtruth event is given
+            decoded_event_label_word_ids: (batch, decoded_label_len)
+                returned only if groundtruth event is not given
+            decoded_event_label_mask: (batch, decoded_label_len)
+                returned only if groundtruth event is not given
             updated_prev_input_event_emb_seq:
                 (graph_event_decoder_num_dec_blocks, batch,
                  input_seq_len, graph_event_decoder_hidden_dim)
@@ -330,11 +323,13 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             encoded_prev_action: (batch, prev_action_len, hidden_dim)
             updated_batched_graph: Batch(
                 batch: (num_node)
-                x: (num_node)
-                node_last_update: (num_node)
+                x: (num_node, node_label_len)
+                node_label_mask: (num_node, node_label_len)
+                node_last_update: (num_node, 2)
                 edge_index: (2, num_edge)
-                edge_attr: (num_edge)
-                edge_last_update: (num_edge)
+                edge_attr: (num_edge, edge_label_len)
+                edge_label_mask: (num_edge, edge_label_len)
+                edge_last_update: (num_edge, 2)
             )
             batch_node_mask: (batch, max_sub_graph_num_node)
             self_attn_weights:
@@ -380,7 +375,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             event_type_ids,
             event_src_ids,
             event_dst_ids,
-            event_label_ids,
+            event_label_word_ids,
+            event_label_mask,
             event_timestamps,
         )
         if updated_batched_graph.num_nodes == 0:
@@ -394,10 +390,15 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             node_embeddings = self.dgnn(
                 Batch(
                     batch=updated_batched_graph.batch,
-                    x=self.embed_label(updated_batched_graph.x),
+                    x=self.embed_label(
+                        updated_batched_graph.x, updated_batched_graph.node_label_mask
+                    ),
                     node_last_update=updated_batched_graph.node_last_update,
                     edge_index=updated_batched_graph.edge_index,
-                    edge_attr=self.embed_label(updated_batched_graph.edge_attr),
+                    edge_attr=self.embed_label(
+                        updated_batched_graph.edge_attr,
+                        updated_batched_graph.edge_label_mask,
+                    ),
                     edge_last_update=updated_batched_graph.edge_last_update,
                 )
             )
@@ -429,15 +430,18 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         # h_ag: (batch, prev_action_len, hidden_dim)
         # h_ga: (batch, num_node, hidden_dim)
 
-        # (batch)
+        masks = compute_masks_from_event_type_ids(event_type_ids)
         decoder_output, decoder_attn_weights = self.decoder(
             self.get_decoder_input(
                 event_type_ids,
                 event_src_ids,
                 event_dst_ids,
-                event_label_ids,
+                event_label_word_ids,
+                event_label_mask,
                 prev_batched_graph.batch,
                 prev_batched_graph.x,
+                prev_batched_graph.node_label_mask,
+                masks,
             ),
             event_type_ids != EVENT_TYPE_ID_MAP["pad"],
             h_og,
@@ -462,7 +466,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             # (batch, hidden_dim)
         else:
             event_type_ids = event_type_logits.argmax(dim=1)
-            masks = compute_masks_from_event_type_ids(event_type_ids)
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
                 decoder_output["output"], event_type_ids, masks["event_mask"]
             )
@@ -515,14 +518,10 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 masks["dst_mask"],
                 event_dst_key,
             )
-        label_logits = self.event_label_head(autoregressive_emb)
-        # (batch, num_label)
-
-        return {
+        output = {
             "event_type_logits": event_type_logits,
             "event_src_logits": event_src_logits,
             "event_dst_logits": event_dst_logits,
-            "event_label_logits": label_logits,
             "updated_prev_input_event_emb_seq": decoder_output[
                 "updated_prev_input_event_emb_seq"
             ],
@@ -535,16 +534,58 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             "batch_node_mask": batch_node_mask,
             **decoder_attn_weights,
         }
+        if groundtruth_event is not None:
+            event_label_logits, _ = self.event_label_head(
+                groundtruth_event["groundtruth_event_label_tgt_word_ids"],
+                groundtruth_event["groundtruth_event_label_tgt_mask"],
+                autoregressive_embedding=autoregressive_emb,
+            )
+            # (batch, groundtruth_event_label_len, num_word)
+            output["event_label_logits"] = event_label_logits
+        else:
+            (
+                decoded_event_label_word_ids,
+                decoded_event_label_mask,
+            ) = self.event_label_head.greedy_decode(
+                autoregressive_emb,
+                max_decode_len=self.hparams.max_label_decode_len,  # type: ignore
+            )
+            # decoded_event_label_word_ids: (batch, decoded_label_len)
+            # decoded_event_label_mask: (batch, decoded_label_len)
+            output["decoded_event_label_word_ids"] = decoded_event_label_word_ids
+            output["decoded_event_label_mask"] = decoded_event_label_mask
+        return output
 
-    def embed_label(self, label_ids: torch.Tensor) -> torch.Tensor:
+    def embed_label(
+        self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
+    ) -> torch.Tensor:
         """
-        label_word_ids: (batch)
+        label_word_ids: (batch, label_len)
+        label_mask: (batch, label_len)
+
         output: (batch, hidden_dim)
         """
-        return masked_mean(
-            self.word_embeddings(self.label_word_ids[label_ids]),  # type: ignore
-            self.label_mask[label_ids],  # type: ignore
-        )
+        return masked_mean(self.word_embeddings(label_word_ids), label_mask)
+
+    def decode_label(
+        self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
+    ) -> List[str]:
+        """
+        label_word_ids: (batch, label_len)
+        label_mask: (batch, label_len)
+
+        output: [label, ...]
+        """
+        decoded: List[str] = []
+        for word_ids, mask in zip(label_word_ids, label_mask):
+            decoded.append(
+                " ".join(
+                    self.preprocessor.convert_ids_to_tokens(word_ids[mask].tolist())[
+                        :-1
+                    ]
+                )
+            )
+        return decoded
 
     def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -568,17 +609,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         batch_graph: diagonally stacked batch of current graphs
 
         output:
-        [{
-            event_type_logits: (batch, num_event_type)
-            event_src_logits: (batch, max_sub_graph_num_node)
-            event_dst_logits: (batch, max_sub_graph_num_node)
-            event_label_logits: (batch, num_label)
-            new_decoder_hidden: (batch, hidden_dim)
-            encoded_obs: (batch, obs_len, hidden_dim)
-            encoded_prev_action: (batch, prev_action_len, hidden_dim)
-            updated_batched_graph: diagonally stacked batch of updated graphs
-            batch_node_mask: (batch, max_sub_graph_num_node)
-        }, ...]
+        [forward pass output, ...]
         """
         prev_input_event_emb_seq: Optional[torch.Tensor] = None
         prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None
@@ -590,7 +621,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.tgt_event_type_ids,
                 graphical_input.tgt_event_src_ids,
                 graphical_input.tgt_event_dst_ids,
-                graphical_input.tgt_event_label_ids,
+                graphical_input.tgt_event_label_word_ids,
+                graphical_input.tgt_event_label_mask,
                 graphical_input.prev_batched_graph,
                 step_input.obs_mask,
                 step_input.prev_action_mask,
@@ -617,6 +649,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     ),
                     "groundtruth_event_dst_mask": (
                         graphical_input.groundtruth_event_dst_mask
+                    ),
+                    "groundtruth_event_label_tgt_word_ids": (
+                        graphical_input.groundtruth_event_label_tgt_word_ids
+                    ),
+                    "groundtruth_event_label_tgt_mask": (
+                        graphical_input.groundtruth_event_label_tgt_mask
                     ),
                 },
             )
@@ -646,7 +684,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         groundtruth_event_dst_ids: torch.Tensor,
         batch_node_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
-        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_label_word_ids: torch.Tensor,
+        groundtruth_event_label_word_mask: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
@@ -663,8 +702,9 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
         batch_node_mask: (batch, num_node)
-        event_label_logits: (batch, num_label)
-        groundtruth_event_label_ids: (batch)
+        event_label_logits: (batch, groundtruth_event_label_len, num_word)
+        groundtruth_event_label_word_ids: (batch, groundtruth_event_label_len)
+        groundtruth_event_label_word_mask: (batch, groundtruth_event_label_len)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
@@ -698,21 +738,22 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 groundtruth_event_dst_ids[groundtruth_event_dst_mask],
             )
         if groundtruth_event_label_mask.any():
-            label_f1.update(
-                event_label_logits[groundtruth_event_label_mask].softmax(dim=1),
-                groundtruth_event_label_ids[groundtruth_event_label_mask],
+            combined_label_mask = (
+                groundtruth_event_label_word_mask
+                * groundtruth_event_label_mask.unsqueeze(-1)
             )
-        self.log(log_prefix + "_event_type_f1", event_type_f1)
-        self.log(log_prefix + "_src_node_f1", src_node_f1)
-        self.log(log_prefix + "_dst_node_f1", dst_node_f1)
-        self.log(log_prefix + "_label_f1", label_f1)
+            label_f1.update(
+                event_label_logits[combined_label_mask].softmax(dim=1),
+                groundtruth_event_label_word_ids[combined_label_mask],
+            )
 
     def generate_graph_triples(
         self,
         event_type_ids: torch.Tensor,
         src_ids: torch.Tensor,
         dst_ids: torch.Tensor,
-        label_ids: torch.Tensor,
+        batch_label_word_ids: torch.Tensor,
+        batch_label_mask: torch.Tensor,
         batched_graph: Batch,
     ) -> Tuple[List[str], List[List[str]]]:
         """
@@ -721,7 +762,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: (batch)
         src_ids: (batch)
         dst_ids: (batch)
-        label_ids: (batch)
+        batch_label_word_ids: (batch, label_len)
+        batch_label_mask: (batch, label_len)
         batched_graph: batched graph before the given events
 
         output: (
@@ -740,29 +782,45 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         cmds: List[str] = []
         tokens: List[List[str]] = []
-        for event_type_id, batch_src_id, batch_dst_id, label_id in zip(
-            event_type_ids.tolist(), batch_src_ids, batch_dst_ids, label_ids
+        for event_type_id, src_id, dst_id, label_word_ids, label_mask in zip(
+            event_type_ids.tolist(),
+            batch_src_ids,
+            batch_dst_ids,
+            batch_label_word_ids,
+            batch_label_mask,
         ):
             if event_type_id in {
                 EVENT_TYPE_ID_MAP["edge-add"],
                 EVENT_TYPE_ID_MAP["edge-delete"],
             }:
-                src_label = self.labels[batched_graph.x[batch_src_id]]
-                dst_label = self.labels[batched_graph.x[batch_dst_id]]
+                src_label = self.decode_label(
+                    batched_graph.x[src_id].unsqueeze(0),
+                    batched_graph.node_label_mask[src_id].unsqueeze(0),
+                )[0]
+                dst_label = self.decode_label(
+                    batched_graph.x[dst_id].unsqueeze(0),
+                    batched_graph.node_label_mask[dst_id].unsqueeze(0),
+                )[0]
                 if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
                     cmd = "add"
-                    edge_label = self.labels[label_id]
+                    edge_label = self.decode_label(
+                        label_word_ids.unsqueeze(0), label_mask.unsqueeze(0)
+                    )[0]
                 else:
                     cmd = "delete"
-                    edge_label = self.labels[
-                        index_edge_attr(
-                            batched_graph.edge_index,
-                            batched_graph.edge_attr,
-                            torch.stack(
-                                [batch_src_id.unsqueeze(0), batch_dst_id.unsqueeze(0)]
-                            ),
-                        )
-                    ]
+                    edge_label_word_ids = index_edge_attr(
+                        batched_graph.edge_index,
+                        batched_graph.edge_attr,
+                        torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
+                    )
+                    edge_label_mask = index_edge_attr(
+                        batched_graph.edge_index,
+                        batched_graph.edge_label_mask,
+                        torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
+                    )
+                    edge_label = self.decode_label(
+                        edge_label_word_ids, edge_label_mask
+                    )[0]
                 # in the original dataset, multi-word edge labels are joined by
                 # an underscore
                 cmd_tokens = [cmd, src_label, dst_label, "_".join(edge_label.split())]
@@ -778,7 +836,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_id_seq: Sequence[torch.Tensor],
         src_id_seq: Sequence[torch.Tensor],
         dst_id_seq: Sequence[torch.Tensor],
-        label_id_seq: Sequence[torch.Tensor],
+        label_word_id_seq: Sequence[torch.Tensor],
+        label_mask_seq: Sequence[torch.Tensor],
         batched_graph_seq: Sequence[Batch],
     ) -> Tuple[List[List[str]], List[List[str]]]:
         batch_size = event_type_id_seq[0].size(0)
@@ -786,17 +845,30 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         batch_cmds: List[List[str]] = [[] for _ in range(batch_size)]
         # (batch, event_seq_len, token_len)
         batch_tokens: List[List[str]] = [[] for _ in range(batch_size)]
-        for event_type_ids, src_ids, dst_ids, label_ids, batched_graph in zip(
+        for (
+            event_type_ids,
+            src_ids,
+            dst_ids,
+            label_word_ids,
+            label_mask,
+            batched_graph,
+        ) in zip(
             event_type_id_seq,
             src_id_seq,
             dst_id_seq,
-            label_id_seq,
+            label_word_id_seq,
+            label_mask_seq,
             batched_graph_seq,
         ):
             for batch_id, (cmd, tokens) in enumerate(
                 zip(
                     *self.generate_graph_triples(
-                        event_type_ids, src_ids, dst_ids, label_ids, batched_graph
+                        event_type_ids,
+                        src_ids,
+                        dst_ids,
+                        label_word_ids,
+                        label_mask,
+                        batched_graph,
                     )
                 )
             ):
@@ -838,7 +910,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_dst_ids,
                     results["batch_node_mask"],
                     results["event_label_logits"],
-                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_label_groundtruth_word_ids,
+                    graphical_input.groundtruth_event_label_tgt_mask,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
@@ -874,7 +947,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     graphical_input.groundtruth_event_dst_ids,
                     results["batch_node_mask"],
                     results["event_label_logits"],
-                    graphical_input.groundtruth_event_label_ids,
+                    graphical_input.groundtruth_event_label_groundtruth_word_ids,
+                    graphical_input.groundtruth_event_label_tgt_mask,
                     graphical_input.groundtruth_event_mask,
                     graphical_input.groundtruth_event_src_mask,
                     graphical_input.groundtruth_event_dst_mask,
@@ -898,19 +972,30 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 graphical_input.groundtruth_event_dst_ids,
                 results["batch_node_mask"],
                 results["event_label_logits"],
-                graphical_input.groundtruth_event_label_ids,
+                graphical_input.groundtruth_event_label_groundtruth_word_ids,
+                graphical_input.groundtruth_event_label_tgt_mask,
                 graphical_input.groundtruth_event_mask,
                 graphical_input.groundtruth_event_src_mask,
                 graphical_input.groundtruth_event_dst_mask,
                 graphical_input.groundtruth_event_label_mask,
                 log_prefix,
             )
+        self.log(
+            log_prefix + "_event_type_f1", getattr(self, f"{log_prefix}_event_type_f1")
+        )
+        self.log(
+            log_prefix + "_src_node_f1", getattr(self, f"{log_prefix}_src_node_f1")
+        )
+        self.log(
+            log_prefix + "_dst_node_f1", getattr(self, f"{log_prefix}_dst_node_f1")
+        )
+        self.log(log_prefix + "_label_f1", getattr(self, f"{log_prefix}_label_f1"))
 
         # calculate graph tuples from teacher forcing graph events
         tf_event_type_id_seq: List[torch.Tensor] = []
         tf_src_id_seq: List[torch.Tensor] = []
         tf_dst_id_seq: List[torch.Tensor] = []
-        tf_label_id_seq: List[torch.Tensor] = []
+        tf_label_word_id_seq: List[torch.Tensor] = []
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
             # filter out pad events
             unfiltered_event_type_ids = (
@@ -958,17 +1043,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             tf_dst_id_seq.append(
                 unfiltered_event_dst_ids.masked_fill(invalid_event_mask, 0)
             )
-            tf_label_id_seq.append(
-                results["event_label_logits"]
-                .argmax(dim=1)
-                .masked_fill(invalid_event_mask, self.label_id_map[""])
-            )
+            tf_label_word_id_seq.append(results["event_label_logits"].argmax(dim=2))
 
         batch_tf_cmds, batch_tf_tokens = self.generate_batch_graph_triples_seq(
             tf_event_type_id_seq,
             tf_src_id_seq,
             tf_dst_id_seq,
-            tf_label_id_seq,
+            tf_label_word_id_seq,
+            [
+                graphical_input.groundtruth_event_label_tgt_mask
+                for graphical_input in batch.graphical_input_seq
+            ],
             [results["updated_batched_graph"] for results in tf_results_list],
         )
 
@@ -1003,7 +1088,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             [results["decoded_event_type_ids"] for results in gd_results_list],
             [results["decoded_event_src_ids"] for results in gd_results_list],
             [results["decoded_event_dst_ids"] for results in gd_results_list],
-            [results["decoded_event_label_ids"] for results in gd_results_list],
+            [results["decoded_event_label_word_ids"] for results in gd_results_list],
+            [results["decoded_event_label_mask"] for results in gd_results_list],
             [results["updated_batched_graph"] for results in gd_results_list],
         )
 
@@ -1032,43 +1118,96 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         return table_data
 
-    def eval_free_run(
-        self, dataset: TWCmdGenGraphEventFreeRunDataset, dataloader: DataLoader
-    ) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float]]:
-        is_sanity_checking = (
-            self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
-        )
-        if is_sanity_checking:
-            free_run_f1 = self.val_free_run_f1
-            free_run_em = self.val_free_run_em
-            total = self.trainer.num_sanity_val_steps  # type: ignore
-        elif self.trainer.state.stage == RunningStage.VALIDATING:  # type: ignore
-            free_run_f1 = self.val_free_run_f1
-            free_run_em = self.val_free_run_em
-            if isinstance(self.trainer.limit_val_batches, float):  # type: ignore
-                total = int(
-                    self.trainer.limit_val_batches * len(dataset)  # type: ignore
-                )
-            elif isinstance(self.trainer.limit_val_batches, int):  # type: ignore
-                total = self.trainer.limit_val_batches  # type: ignore
-            else:
-                total = len(dataset)
-        elif self.trainer.state.stage == RunningStage.TESTING:  # type: ignore
-            free_run_f1 = self.test_free_run_f1
-            free_run_em = self.test_free_run_em
-            if isinstance(self.trainer.limit_test_batches, float):  # type: ignore
-                total = int(
-                    self.trainer.limit_test_batches * len(dataset)  # type: ignore
-                )
-            elif isinstance(self.trainer.limit_test_batches, int):  # type: ignore
-                total = self.trainer.limit_test_batches  # type: ignore
-            else:
-                total = len(dataset)
+    def data_to_networkx(self, data: Data) -> nx.DiGraph:
+        """
+        Turn torch_geometric.Data into a networkx graph.
 
-        collator = self.trainer.datamodule.collator  # type: ignore
+        There is a bug in to_networkx() where it turns an attribute that is a list
+        with one element into a scalar, so we just manually construct a networkx graph.
+        """
+        graph = nx.DiGraph()
+        graph.add_nodes_from(
+            [
+                (
+                    nid,
+                    {
+                        "node_last_update": node_last_update,
+                        "label": self.decode_label(
+                            node_label_word_ids.unsqueeze(0),
+                            node_label_mask.unsqueeze(0),
+                        )[0],
+                    },
+                )
+                for nid, (
+                    node_label_word_ids,
+                    node_label_mask,
+                    node_last_update,
+                ) in enumerate(
+                    zip(data.x, data.node_label_mask, data.node_last_update.tolist())
+                )
+            ]
+        )
+        graph.add_edges_from(
+            [
+                (
+                    src_id,
+                    dst_id,
+                    {
+                        "edge_last_update": edge_last_update,
+                        "label": self.decode_label(
+                            edge_label_word_ids.unsqueeze(0),
+                            edge_label_mask.unsqueeze(0),
+                        )[0],
+                    },
+                )
+                for (
+                    src_id,
+                    dst_id,
+                ), edge_label_word_ids, edge_label_mask, edge_last_update in zip(
+                    data.edge_index.t().tolist(),
+                    data.edge_attr,
+                    data.edge_label_mask,
+                    data.edge_last_update.tolist(),
+                )
+            ]
+        )
+        return graph
+
+    def eval_free_run(
+        self,
+        dataset: TWCmdGenGraphEventFreeRunDataset,
+        dataloader: DataLoader,
+        collator: TWCmdGenGraphEventDataCollator,
+        total: Optional[int] = None,
+    ) -> Tuple[List[List[str]], List[List[str]]]:
+        if total is None:
+            is_sanity_checking = (
+                self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
+            )
+            if is_sanity_checking:
+                total = self.trainer.num_sanity_val_steps  # type: ignore
+            elif self.trainer.state.stage == RunningStage.VALIDATING:  # type: ignore
+                if isinstance(self.trainer.limit_val_batches, float):  # type: ignore
+                    total = int(
+                        self.trainer.limit_val_batches * len(dataset)  # type: ignore
+                    )
+                elif isinstance(self.trainer.limit_val_batches, int):  # type: ignore
+                    total = self.trainer.limit_val_batches  # type: ignore
+                else:
+                    total = len(dataset)
+            elif self.trainer.state.stage == RunningStage.TESTING:  # type: ignore
+                if isinstance(self.trainer.limit_test_batches, float):  # type: ignore
+                    total = int(
+                        self.trainer.limit_test_batches * len(dataset)  # type: ignore
+                    )
+                elif isinstance(self.trainer.limit_test_batches, int):  # type: ignore
+                    total = self.trainer.limit_test_batches  # type: ignore
+                else:
+                    total = len(dataset)
+
         game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
-        f1_scores_per_game: Dict[Tuple[str, int], float] = {}
-        em_scores_per_game: Dict[Tuple[str, int], float] = {}
+        generated_rdfs_list: List[List[str]] = []
+        groundtruth_rdfs_list: List[List[str]] = []
         with tqdm.tqdm(desc="Free Run", total=total) as pbar:
             for batch in dataloader:
                 # finished games are the ones that were in game_id_to_graph, but are not
@@ -1078,7 +1217,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 }:
                     step_data, graph = game_id_to_step_data_graph.pop(finished_game_id)
                     generated_rdfs = networkx_to_rdf(
-                        data_to_networkx(graph, self.labels),
+                        self.data_to_networkx(graph),
                         allow_objs_with_same_label=(
                             self.hparams.allow_objs_with_same_label  # type: ignore
                         ),
@@ -1087,20 +1226,11 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                         set(step_data["previous_graph_seen"]),
                         step_data["target_commands"],
                     )
-                    free_run_f1.update([list(generated_rdfs)], [list(groundtruth_rdfs)])
-                    free_run_em([generated_rdfs], [groundtruth_rdfs])
-                    game, walkthrough_step = dataset.walkthrough_example_ids[
-                        finished_game_id
-                    ]
-                    f1_scores_per_game[(game, walkthrough_step)] = free_run_f1.scores[
-                        -1
-                    ].item()
-                    em_scores_per_game[(game, walkthrough_step)] = free_run_em.scores[
-                        -1
-                    ].item()
+                    generated_rdfs_list.append(list(generated_rdfs))
+                    groundtruth_rdfs_list.append(list(groundtruth_rdfs))
                     pbar.update()
                     if pbar.n > total:
-                        return (f1_scores_per_game, em_scores_per_game)
+                        return generated_rdfs_list, groundtruth_rdfs_list
 
                 # new games are the ones that were not in game_id_to_graph, but are now
                 # part of the new batch.
@@ -1114,10 +1244,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                         game_id_to_step_data_graph[game_id] = (
                             step_data,
                             Data(
-                                x=torch.empty(0, dtype=torch.long),
+                                x=torch.empty(0, 0, dtype=torch.long),
+                                node_label_mask=torch.empty(0, 0).bool(),
                                 node_last_update=torch.empty(0, 2, dtype=torch.long),
                                 edge_index=torch.empty(2, 0, dtype=torch.long),
-                                edge_attr=torch.empty(0, dtype=torch.long),
+                                edge_attr=torch.empty(0, 0).long(),
+                                edge_label_mask=torch.empty(0, 0).bool(),
                                 edge_last_update=torch.empty(0, 2, dtype=torch.long),
                             ).to(self.device),
                         )
@@ -1143,7 +1275,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     collator.collate_step_inputs(  # type: ignore
                         batched_obs, batched_prev_actions, batched_timestamps
                     ).to(self.device),
-                    Batch.from_data_list(graph_list),
+                    data_list_to_batch(graph_list),
                 )
 
                 # update graphs in game_id_to_step_data_graph
@@ -1154,7 +1286,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     ),
                 ):
                     game_id_to_step_data_graph[game_id] = (step_data, updated_graph)
-        return (f1_scores_per_game, em_scores_per_game)
+        return generated_rdfs_list, groundtruth_rdfs_list
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
@@ -1183,11 +1315,14 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
-        self.eval_free_run(
+        generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.valid_free_run,  # type: ignore
             self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
+            self.trainer.datamodule.collator,  # type: ignore
         )
+        self.val_free_run_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_f1", self.val_free_run_f1, prog_bar=True)
+        self.val_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_em", self.val_free_run_em)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
@@ -1196,30 +1331,17 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self,
         outputs: List[List[Tuple[str, str, str, str]]],
     ) -> None:
-        fr_f1_scores_per_game, fr_em_scores_per_game = self.eval_free_run(
+        generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
+            self.trainer.datamodule.collator,  # type: ignore
         )
+        self.test_free_run_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_f1", self.test_free_run_f1)
+        self.test_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_em", self.test_free_run_em)
-        fr_f1_scores_path = (
-            "test-fr-f1-scores-epoch="  # type: ignore
-            f"{self.trainer.current_epoch}.pt"
-        )
-        torch.save(fr_f1_scores_per_game, fr_f1_scores_path)
-        fr_em_scores_path = (
-            "test-fr-em-scores-epoch="  # type: ignore
-            f"{self.trainer.current_epoch}.pt"
-        )
-        torch.save(fr_em_scores_per_game, fr_em_scores_path)
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
-            fr_metrics_artifact = wandb.Artifact(
-                f"fr_metrics_{self.logger.experiment.id}", "metrics"
-            )
-            fr_metrics_artifact.add_file(fr_f1_scores_path)
-            fr_metrics_artifact.add_file(fr_em_scores_path)
-            self.logger.experiment.log_artifact(fr_metrics_artifact)
 
     def configure_optimizers(self) -> Optimizer:
         return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
@@ -1236,7 +1358,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             decoded_event_type_ids: (batch)
             decoded_event_src_ids: (batch)
             decoded_event_dst_ids: (batch)
-            decoded_event_label_ids: (batch)
+            decoded_event_label_word_ids: (batch, decoded_label_len)
+            decoded_event_label_mask: (batch, decoded_label_len)
             updated_batched_graph: diagonally stacked batch of updated graphs.
                 these are the graphs used to decode the graph events above
             self_attn_weights:
@@ -1249,7 +1372,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 len([(batch, 1, num_node), ...]) == num_decoder_block,
             graph_prev_action_attn_weights:
                 len([(batch, 1, num_node), ...]) == num_decoder_block,
-        }, ...]) == decode_len <= max_decode_len
+        }, ...]) == decode_len <= max_event_decode_len
         """
         # initialize the initial inputs
         batch_size = step_input.obs_word_ids.size(0)
@@ -1258,7 +1381,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         )
         decoded_src_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
         decoded_dst_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
-        decoded_label_ids = torch.tensor([0] * batch_size, device=self.device)
+        decoded_label_word_ids = torch.empty(
+            batch_size, 0, device=self.device, dtype=torch.long
+        )
+        decoded_label_mask = torch.empty(
+            batch_size, 0, device=self.device, dtype=torch.bool
+        )
 
         end_event_mask = torch.tensor([False] * batch_size, device=self.device)
         # (batch)
@@ -1268,12 +1396,13 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         encoded_obs: Optional[torch.Tensor] = None
         encoded_prev_action: Optional[torch.Tensor] = None
         results_list: List[Dict[str, Any]] = []
-        for _ in range(self.hparams.max_decode_len):  # type: ignore
+        for _ in range(self.hparams.max_event_decode_len):  # type: ignore
             results = self(
                 decoded_event_type_ids,
                 decoded_src_ids,
                 decoded_dst_ids,
-                decoded_label_ids,
+                decoded_label_word_ids,
+                decoded_label_mask,
                 prev_batched_graph,
                 step_input.obs_mask,
                 step_input.prev_action_mask,
@@ -1299,33 +1428,21 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     batch_size, dtype=torch.long, device=self.device
                 )
             else:
-                decoded_src_ids = (
-                    masked_softmax(
-                        results["event_src_logits"], results["batch_node_mask"], dim=1
-                    )
-                    .argmax(dim=1)
-                    .masked_fill(end_event_mask, 0)
-                )
+                decoded_src_ids = masked_softmax(
+                    results["event_src_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
             # (batch)
             if results["event_dst_logits"].size(1) == 0:
                 decoded_dst_ids = torch.zeros(
                     batch_size, dtype=torch.long, device=self.device
                 )
             else:
-                decoded_dst_ids = (
-                    masked_softmax(
-                        results["event_dst_logits"], results["batch_node_mask"], dim=1
-                    )
-                    .argmax(dim=1)
-                    .masked_fill(end_event_mask, 0)
-                )
+                decoded_dst_ids = masked_softmax(
+                    results["event_dst_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
             # (batch)
-            decoded_label_ids = (
-                results["event_label_logits"]
-                .argmax(dim=1)
-                .masked_fill(end_event_mask, self.label_id_map[""])
-            )
-            # (batch)
+            decoded_label_word_ids = results["decoded_event_label_word_ids"]
+            decoded_label_mask = results["decoded_event_label_mask"]
 
             # filter out invalid decoded events
             invalid_event_mask = self.filter_invalid_events(
@@ -1339,11 +1456,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             decoded_event_type_ids = decoded_event_type_ids.masked_fill(
                 invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
             )
-            decoded_src_ids = decoded_src_ids.masked_fill(invalid_event_mask, 0)
-            decoded_dst_ids = decoded_dst_ids.masked_fill(invalid_event_mask, 0)
-            decoded_label_ids = decoded_label_ids.masked_fill(
-                invalid_event_mask, self.label_id_map[""]
-            )
 
             # collect the results
             results_list.append(
@@ -1351,7 +1463,8 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                     "decoded_event_type_ids": decoded_event_type_ids,
                     "decoded_event_src_ids": decoded_src_ids,
                     "decoded_event_dst_ids": decoded_dst_ids,
-                    "decoded_event_label_ids": decoded_label_ids,
+                    "decoded_event_label_word_ids": decoded_label_word_ids,
+                    "decoded_event_label_mask": decoded_label_mask,
                     "updated_batched_graph": results["updated_batched_graph"],
                     "self_attn_weights": results["self_attn_weights"],
                     "obs_graph_attn_weights": results["obs_graph_attn_weights"],
@@ -1490,9 +1603,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         event_type_ids: torch.Tensor,
         event_src_ids: torch.Tensor,
         event_dst_ids: torch.Tensor,
-        event_label_ids: torch.Tensor,
+        event_label_word_ids: torch.Tensor,
+        event_label_mask: torch.Tensor,
         batch: torch.Tensor,
-        node_label_ids: torch.Tensor,
+        node_label_word_ids: torch.Tensor,
+        node_label_mask: torch.Tensor,
+        masks: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """
         Turn the graph events into decoder inputs by concatenating their embeddings.
@@ -1501,9 +1617,12 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             event_type_ids: (batch)
             event_src_ids: (batch)
             event_dst_ids: (batch)
-            event_label_ids: (batch)
+            event_label_word_ids: (batch, event_label_len)
+            event_label_mask: (batch, event_label_len)
             batch: (num_node)
-            node_label_ids: (num_node)
+            node_label_word_ids: (num_node, node_label_len)
+            node_label_mask: (num_node, node_label_len)
+            masks: masks calculated by compute_masks_from_event_type_ids(event_type_ids)
 
         output: (batch, decoder_input_dim)
             where decoder_input_dim = event_type_embedding_dim + 3 * label_embedding_dim
@@ -1521,20 +1640,10 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             device=event_type_ids.device,
         )
         # (batch, label_embedding_dim)
-        node_add_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
-        # (batch)
-        node_delete_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-delete"]
-        # (batch)
-        edge_event_mask = torch.logical_or(
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"],
-            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"],
+        event_label_embs[masks["label_mask"]] = self.embed_label(
+            event_label_word_ids[masks["label_mask"]],
+            event_label_mask[masks["label_mask"]],
         )
-        # (batch)
-        label_mask = node_add_mask.logical_or(node_delete_mask).logical_or(
-            edge_event_mask
-        )
-        # (batch)
-        event_label_embs[label_mask] = self.embed_label(event_label_ids[label_mask])
         # (batch, label_embedding_dim)
 
         # event source/destination node embeddings
@@ -1550,19 +1659,23 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             device=event_type_ids.device,
         )
         # (batch, label_embedding_dim)
-        src_node_mask = node_delete_mask.logical_or(edge_event_mask)
-        # (batch)
         node_id_offsets = calculate_node_id_offsets(batch_size, batch)
         # (batch)
-        if src_node_mask.any():
-            event_src_embs[src_node_mask] = self.embed_label(
-                node_label_ids[(event_src_ids + node_id_offsets)[src_node_mask]]
+        if masks["src_mask"].any():
+            event_src_embs[masks["src_mask"]] = self.embed_label(
+                node_label_word_ids[
+                    (event_src_ids + node_id_offsets)[masks["src_mask"]]
+                ],
+                node_label_mask[(event_src_ids + node_id_offsets)[masks["src_mask"]]],
             )
             # (batch, label_embedding_dim)
 
-        if edge_event_mask.any():
-            event_dst_embs[edge_event_mask] = self.embed_label(
-                node_label_ids[(event_dst_ids + node_id_offsets)[edge_event_mask]]
+        if masks["dst_mask"].any():
+            event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                node_label_word_ids[
+                    (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
+                ],
+                node_label_mask[(event_dst_ids + node_id_offsets)[masks["dst_mask"]]],
             )
             # (batch, label_embedding_dim)
 
@@ -1591,7 +1704,8 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_dst_ids: torch.Tensor,
         batch_node_mask: torch.Tensor,
         event_label_logits: torch.Tensor,
-        groundtruth_event_label_ids: torch.Tensor,
+        groundtruth_event_label_word_ids: torch.Tensor,
+        groundtruth_event_label_word_mask: torch.Tensor,
         groundtruth_event_mask: torch.Tensor,
         groundtruth_event_src_mask: torch.Tensor,
         groundtruth_event_dst_mask: torch.Tensor,
@@ -1608,8 +1722,9 @@ class UncertaintyWeightedLoss(nn.Module):
         event_dst_logits: (batch, num_node)
         groundtruth_event_dst_ids: (batch)
         batch_node_mask: (batch, num_node)
-        event_label_logits: (batch, num_label)
-        groundtruth_event_label_ids: (batch)
+        event_label_logits: (batch, groundtruth_event_label_len, num_word)
+        groundtruth_event_label_word_ids: (batch, groundtruth_event_label_len)
+        groundtruth_event_label_word_mask: (batch, groundtruth_event_label_len)
         groundtruth_event_mask: (batch)
         groundtruth_event_src_mask: (batch)
         groundtruth_event_dst_mask: (batch)
@@ -1649,9 +1764,19 @@ class UncertaintyWeightedLoss(nn.Module):
         # (batch)
         if groundtruth_event_label_mask.any():
             # label loss
-            label_loss += (
-                self.ce_criterion(event_label_logits, groundtruth_event_label_ids)
-                * groundtruth_event_label_mask
+            # first calculate the combined label mask
+            combined_label_mask = (
+                groundtruth_event_label_word_mask
+                * groundtruth_event_label_mask.unsqueeze(-1)
+            )
+            # (batch, groundtruth_event_label_len)
+            label_loss += torch.sum(
+                self.ce_criterion(
+                    event_label_logits.flatten(end_dim=1),
+                    groundtruth_event_label_word_ids.flatten(),
+                ).view(combined_label_mask.size(0), -1)
+                * combined_label_mask,
+                dim=1,
             )
 
         # calculate the total loss

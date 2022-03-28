@@ -10,7 +10,7 @@ from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
 
-from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.preprocessor import SpacyPreprocessor, BOS, EOS
 from tdgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
 from tdgu.utils import draw_graph
 from tdgu.constants import (
@@ -348,10 +348,12 @@ def empty_tensor() -> torch.Tensor:
 def empty_graph() -> Batch:
     return Batch(
         batch=torch.empty(0, dtype=torch.long),
-        x=torch.empty(0, dtype=torch.long),
+        x=torch.empty(0, 0, dtype=torch.long),
+        node_label_mask=torch.empty(0, 0).bool(),
         node_last_update=torch.empty(0, 2, dtype=torch.long),
         edge_index=torch.empty(2, 0, dtype=torch.long),
-        edge_attr=torch.empty(0, dtype=torch.long),
+        edge_attr=torch.empty(0, 0).long(),
+        edge_label_mask=torch.empty(0, 0).bool(),
         edge_last_update=torch.empty(0, 2, dtype=torch.long),
     )
 
@@ -385,14 +387,21 @@ class TWCmdGenGraphEventGraphicalInput:
     tgt_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     tgt_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
-    tgt_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_label_word_ids: torch.Tensor = field(default_factory=empty_tensor)
+    tgt_event_label_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_type_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_src_mask: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_dst_ids: torch.Tensor = field(default_factory=empty_tensor)
     groundtruth_event_dst_mask: torch.Tensor = field(default_factory=empty_tensor)
-    groundtruth_event_label_ids: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_label_tgt_word_ids: torch.Tensor = field(
+        default_factory=empty_tensor
+    )
+    groundtruth_event_label_tgt_mask: torch.Tensor = field(default_factory=empty_tensor)
+    groundtruth_event_label_groundtruth_word_ids: torch.Tensor = field(
+        default_factory=empty_tensor
+    )
     groundtruth_event_label_mask: torch.Tensor = field(default_factory=empty_tensor)
     prev_batched_graph: Batch = field(default_factory=empty_graph)
 
@@ -406,6 +415,9 @@ class TWCmdGenGraphEventGraphicalInput:
         ) and (
             self.prev_batched_graph.batch.equal(o.prev_batched_graph.batch)
             and self.prev_batched_graph.x.equal(o.prev_batched_graph.x)
+            and self.prev_batched_graph.node_label_mask.equal(
+                o.prev_batched_graph.node_label_mask
+            )
             and self.prev_batched_graph.node_last_update.equal(
                 o.prev_batched_graph.node_last_update
             )
@@ -413,6 +425,9 @@ class TWCmdGenGraphEventGraphicalInput:
                 o.prev_batched_graph.edge_index
             )
             and self.prev_batched_graph.edge_attr.equal(o.prev_batched_graph.edge_attr)
+            and self.prev_batched_graph.edge_label_mask.equal(
+                o.prev_batched_graph.edge_label_mask
+            )
             and self.prev_batched_graph.edge_last_update.equal(
                 o.prev_batched_graph.edge_last_update
             )
@@ -447,6 +462,9 @@ class TWCmdGenGraphEventBatch:
         ) and (
             self.initial_batched_graph.batch.equal(o.initial_batched_graph.batch)
             and self.initial_batched_graph.x.equal(o.initial_batched_graph.x)
+            and self.initial_batched_graph.node_label_mask.equal(
+                o.initial_batched_graph.node_label_mask
+            )
             and self.initial_batched_graph.node_last_update.equal(
                 o.initial_batched_graph.node_last_update
             )
@@ -455,6 +473,9 @@ class TWCmdGenGraphEventBatch:
             )
             and self.initial_batched_graph.edge_attr.equal(
                 o.initial_batched_graph.edge_attr
+            )
+            and self.initial_batched_graph.edge_label_mask.equal(
+                o.initial_batched_graph.edge_label_mask
             )
             and self.initial_batched_graph.edge_last_update.equal(
                 o.initial_batched_graph.edge_last_update
@@ -485,13 +506,8 @@ class TWCmdGenGraphEventBatch:
 
 
 class TWCmdGenGraphEventDataCollator:
-    def __init__(
-        self,
-        preprocessor: SpacyPreprocessor,
-        label_id_map: Dict[str, int],
-    ) -> None:
+    def __init__(self, preprocessor: SpacyPreprocessor) -> None:
         self.preprocessor = preprocessor
-        self.label_id_map = label_id_map
 
     def collate_step_inputs(
         self,
@@ -537,14 +553,19 @@ class TWCmdGenGraphEventDataCollator:
             tgt_event_type_ids: (batch),
             tgt_event_src_ids: (batch),
             tgt_event_dst_ids: (batch),
-            tgt_event_label_ids: (batch),
+            tgt_event_label_word_ids: (batch, tgt_event_label_len),
+            tgt_event_label_mask: (batch, tgt_event_label_len),
             groundtruth_event_type_ids: (batch),
+            groundtruth_event_mask: (batch), boolean
             groundtruth_event_src_ids: (batch),
             groundtruth_event_src_mask: (batch), boolean
             groundtruth_event_dst_ids: (batch),
             groundtruth_event_dst_mask: (batch), boolean
-            groundtruth_event_label_ids: (batch),
-            groundtruth_event_mask: (batch), boolean
+            groundtruth_event_label_tgt_word_ids: (batch, groundtruth_event_label_len),
+            groundtruth_event_label_tgt_mask:
+                (batch, groundtruth_event_label_len), boolean
+            groundtruth_event_label_groundtruth_word_ids:
+                (batch, groundtruth_event_label_len),
             prev_batched_graph: Batch
         ), ...]) = event_seq_len
         """
@@ -563,7 +584,8 @@ class TWCmdGenGraphEventDataCollator:
         tgt_event_type_ids = torch.tensor([EVENT_TYPE_ID_MAP["start"]] * batch_size)
         tgt_event_src_ids = torch.tensor([0] * batch_size)
         tgt_event_dst_ids = torch.tensor([0] * batch_size)
-        tgt_event_label_ids = torch.tensor([self.label_id_map[""]] * batch_size)
+        tgt_event_label_word_ids = torch.empty(batch_size, 0, dtype=torch.long)
+        tgt_event_label_mask = torch.empty(batch_size, 0, dtype=torch.bool)
         tgt_event_timestamps = torch.tensor([step["timestamp"] for step in batch])
 
         prev_batched_graph = initial_batched_graph
@@ -572,7 +594,8 @@ class TWCmdGenGraphEventDataCollator:
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
-            batch_event_label_ids: List[int] = []
+            batch_event_label_tgt_tokens: List[List[str]] = []
+            batch_event_label_groundtruth_tokens: List[List[str]] = []
             for event_seq in batch_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
@@ -582,30 +605,50 @@ class TWCmdGenGraphEventDataCollator:
                         event.get("src_id", event.get("node_id", 0))
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
-                    batch_event_label_ids.append(self.label_id_map[event["label"]])
+                    label_tokens = event["label"].split()
+                    batch_event_label_tgt_tokens.append([BOS] + label_tokens)
+                    batch_event_label_groundtruth_tokens.append(label_tokens + [EOS])
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
-                    batch_event_label_ids.append(self.label_id_map[""])
+                    # can't pack an empty sequence so add one token
+                    batch_event_label_tgt_tokens.append([BOS])
+                    batch_event_label_groundtruth_tokens.append([EOS])
             groundtruth_event_type_ids = torch.tensor(batch_event_type_ids)
             groundtruth_event_src_ids = torch.tensor(batch_event_src_ids)
             groundtruth_event_dst_ids = torch.tensor(batch_event_dst_ids)
-            groundtruth_event_label_ids = torch.tensor(batch_event_label_ids)
+            (
+                groundtruth_event_label_tgt_word_ids,
+                groundtruth_event_label_tgt_mask,
+            ) = self.preprocessor.preprocess_tokenized(batch_event_label_tgt_tokens)
+            (
+                groundtruth_event_label_groundtruth_word_ids,
+                _,
+            ) = self.preprocessor.preprocess_tokenized(
+                batch_event_label_groundtruth_tokens
+            )
             masks = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
             collated.append(
                 TWCmdGenGraphEventGraphicalInput(
                     tgt_event_type_ids=tgt_event_type_ids,
                     tgt_event_src_ids=tgt_event_src_ids,
                     tgt_event_dst_ids=tgt_event_dst_ids,
-                    tgt_event_label_ids=tgt_event_label_ids,
+                    tgt_event_label_word_ids=tgt_event_label_word_ids,
+                    tgt_event_label_mask=tgt_event_label_mask,
                     groundtruth_event_type_ids=groundtruth_event_type_ids,
                     groundtruth_event_mask=masks["event_mask"],
                     groundtruth_event_src_ids=groundtruth_event_src_ids,
                     groundtruth_event_src_mask=masks["src_mask"],
                     groundtruth_event_dst_ids=groundtruth_event_dst_ids,
                     groundtruth_event_dst_mask=masks["dst_mask"],
-                    groundtruth_event_label_ids=groundtruth_event_label_ids,
+                    groundtruth_event_label_tgt_word_ids=(
+                        groundtruth_event_label_tgt_word_ids
+                    ),
+                    groundtruth_event_label_tgt_mask=groundtruth_event_label_tgt_mask,
+                    groundtruth_event_label_groundtruth_word_ids=(
+                        groundtruth_event_label_groundtruth_word_ids
+                    ),
                     groundtruth_event_label_mask=masks["label_mask"],
                     prev_batched_graph=prev_batched_graph,
                 )
@@ -617,7 +660,8 @@ class TWCmdGenGraphEventDataCollator:
                 tgt_event_type_ids,
                 tgt_event_src_ids,
                 tgt_event_dst_ids,
-                tgt_event_label_ids,
+                tgt_event_label_word_ids,
+                tgt_event_label_mask,
                 torch.stack(
                     [
                         tgt_event_timestamps,
@@ -632,7 +676,8 @@ class TWCmdGenGraphEventDataCollator:
             tgt_event_type_ids = groundtruth_event_type_ids
             tgt_event_src_ids = groundtruth_event_src_ids
             tgt_event_dst_ids = groundtruth_event_dst_ids
-            tgt_event_label_ids = groundtruth_event_label_ids
+            tgt_event_label_word_ids = groundtruth_event_label_groundtruth_word_ids
+            tgt_event_label_mask = groundtruth_event_label_tgt_mask
 
         return tuple(collated)
 
@@ -643,10 +688,12 @@ class TWCmdGenGraphEventDataCollator:
 
         output: Batch(
             batch: (num_node)
-            x: (num_node)
+            x: (num_node, node_label_len)
+            node_label_mask: (num_node, node_label_len)
             node_last_update: (num_node, 2)
             edge_index: (2, num_edge)
-            edge_attr: (num_edge)
+            edge_attr: (num_edge, edge_label_len)
+            edge_label_mask: (num_edge, edge_label_len)
             edge_last_update: (num_edge, 2)
         )
         """
@@ -662,7 +709,7 @@ class TWCmdGenGraphEventDataCollator:
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
-            batch_event_label_ids: List[int] = []
+            batch_event_label_tokens: List[List[str]] = []
             batch_event_timestamps: List[List[int]] = []
             for event_seq in batch_prev_event_seq:
                 # collect event data for all the items in the batch at event i
@@ -673,20 +720,25 @@ class TWCmdGenGraphEventDataCollator:
                         event.get("src_id", event.get("node_id", 0))
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
-                    batch_event_label_ids.append(self.label_id_map[event["label"]])
+                    batch_event_label_tokens.append(event["label"].split() + [EOS])
                     batch_event_timestamps.append(event["timestamp"])
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
-                    batch_event_label_ids.append(self.label_id_map[""])
+                    batch_event_label_tokens.append([])
                     batch_event_timestamps.append([0, 0])
+            (
+                event_label_word_ids,
+                event_label_mask,
+            ) = self.preprocessor.preprocess_tokenized(batch_event_label_tokens)
             batched_graph = update_batched_graph(
                 batched_graph,
                 torch.tensor(batch_event_type_ids),
                 torch.tensor(batch_event_src_ids),
                 torch.tensor(batch_event_dst_ids),
-                torch.tensor(batch_event_label_ids),
+                event_label_word_ids,
+                event_label_mask,
                 torch.tensor(batch_event_timestamps),
             )
 
@@ -771,8 +823,6 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         test_batch_size: int,
         test_num_worker: int,
         word_vocab_path: str,
-        node_vocab_path: str,
-        relation_vocab_path: str,
         allow_objs_with_same_label: bool = False,
         sort_commands: bool = False,
     ) -> None:
@@ -792,12 +842,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_path)
         )
-        self.labels, self.label_id_map = read_label_vocab_files(
-            to_absolute_path(node_vocab_path), to_absolute_path(relation_vocab_path)
-        )
-        self.collator = TWCmdGenGraphEventDataCollator(
-            self.preprocessor, self.label_id_map
-        )
+        self.collator = TWCmdGenGraphEventDataCollator(self.preprocessor)
 
     def prepare_data(self) -> None:
         pass

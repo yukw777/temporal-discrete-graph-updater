@@ -3,9 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from typing import Tuple, Optional, List, Dict
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from tdgu.nn.utils import masked_mean, PositionalEncoder
 from tdgu.constants import EVENT_TYPES
+from tdgu.preprocessor import BOS, PAD, EOS
 
 
 class EventTypeHead(nn.Module):
@@ -202,6 +204,133 @@ class EventStaticLabelHead(nn.Module):
             label_logits: (batch, num_label), logits for nodes first, then edges
         """
         return self.linear(autoregressive_embedding)
+
+
+class EventSequentialLabelHead(nn.Module):
+    def __init__(
+        self,
+        autoregressive_embedding_dim: int,
+        hidden_dim: int,
+        word_to_id_dict: Dict[str, int],
+        pretrained_word_embeddings: nn.Embedding,
+    ) -> None:
+        super().__init__()
+        self.word_to_id_dict = word_to_id_dict
+        self.word_embeddings = nn.Sequential(
+            pretrained_word_embeddings,
+            nn.Linear(pretrained_word_embeddings.embedding_dim, hidden_dim),
+        )
+        self.linear_hidden = nn.Linear(autoregressive_embedding_dim, hidden_dim)
+        self.gru = nn.GRU(hidden_dim, hidden_dim, batch_first=True)
+        self.linear_output = nn.Linear(hidden_dim, len(self.word_to_id_dict))
+
+    def forward(
+        self,
+        output_tgt_seq: torch.Tensor,
+        output_tgt_seq_mask: torch.Tensor,
+        autoregressive_embedding: Optional[torch.Tensor] = None,
+        prev_hidden: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        output_tgt_seq: (batch, seq_len)
+        output_tgt_seq_mask: (batch, seq_len)
+        autoregressive_embedding: (batch, autoregressive_embedding_dim)
+        prev_hidden: (batch, hidden_dim)
+
+        output:
+            output sequence logits: (batch, seq_len, num_word)
+            updated hidden state: (batch, hidden_dim)
+        """
+        # can't provide both autoregressive embedding and previous hidden state
+        assert not (autoregressive_embedding is not None and prev_hidden is not None)
+
+        # get the initial hidden state
+        if autoregressive_embedding is not None:
+            hidden = self.linear_hidden(autoregressive_embedding).unsqueeze(0)
+        elif prev_hidden is not None:
+            hidden = prev_hidden.unsqueeze(0)
+        else:
+            raise ValueError(
+                "Either autoregressive_embedding or prev_hidden has to be provided"
+            )
+        # (1, batch, hidden_dim)
+
+        # embed the output target sequence
+        embedded_output_tgt_seq = self.word_embeddings(output_tgt_seq)
+        # (batch, seq_len, hidden_dim)
+
+        # pack it
+        packed = pack_padded_sequence(
+            embedded_output_tgt_seq,
+            output_tgt_seq_mask.sum(dim=1).cpu(),
+            batch_first=True,
+            enforce_sorted=False,
+        )
+        packed_output, updated_hidden = self.gru(packed, hidden)
+        # updated_hidden: (1, batch, hidden_dim)
+        # unpack it
+        output_seq, _ = pad_packed_sequence(packed_output, batch_first=True)
+        # (batch, seq_len, hidden_dim)
+        output_seq_logits = self.linear_output(output_seq)
+        # (batch, seq_len, num_word)
+        return output_seq_logits, updated_hidden.squeeze(0)
+
+    def greedy_decode(
+        self, autoregressive_embedding: torch.Tensor, max_decode_len: int = 10
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        autoregressive_embedding: (batch, autoregressive_embedding_dim)
+        max_decode_len: max decode length, default 10
+
+        output: (
+            decoded: (batch, decoded_seq_len),
+            mask: (batch, decoded_seq_len),
+        )
+        """
+        batch_size = autoregressive_embedding.size(0)
+        decoded = torch.tensor(
+            [[self.word_to_id_dict[BOS]]] * batch_size,
+            device=autoregressive_embedding.device,
+        )
+        # (batch, 1)
+        end_mask = torch.tensor(
+            [[False]] * batch_size, device=autoregressive_embedding.device
+        )
+        # (batch, 1)
+        decoded_seq: List[torch.Tensor] = []
+        decoded_seq_mask: List[torch.Tensor] = []
+        for i in range(max_decode_len):
+            # we have to slice decoded and not_end_mask and deselect empty
+            # sequences b/c no sequence in the batch can be empty when packing.
+            not_end_mask = ~end_mask
+            decoded_seq_mask.append(not_end_mask)
+            if i == 0:
+                logits, hidden = self(
+                    decoded[not_end_mask.squeeze(1)],
+                    not_end_mask[not_end_mask.squeeze(1)],
+                    autoregressive_embedding=autoregressive_embedding,
+                )
+            else:
+                logits, hidden = self(
+                    decoded[not_end_mask.squeeze(1)],
+                    not_end_mask[not_end_mask.squeeze(1)],
+                    prev_hidden=hidden,
+                )
+            # logits: (num_not_end, 1, num_word)
+            # hidden: (num_not_end, hidden_dim)
+            decoded = torch.tensor(
+                [[self.word_to_id_dict[PAD]]] * batch_size, device=logits.device
+            ).masked_scatter(not_end_mask, logits.argmax(dim=2))
+            # (batch, 1)
+            decoded_seq.append(decoded)
+            end_mask = end_mask.logical_or(decoded == self.word_to_id_dict[EOS])
+
+            if end_mask.all():
+                break
+
+        return torch.cat(decoded_seq, dim=1), torch.cat(decoded_seq_mask, dim=1)
+        # decoded: (batch, decoded_seq_len)
+        # mask: (batch, decoded_seq_len)
 
 
 class RNNGraphEventDecoder(nn.Module):

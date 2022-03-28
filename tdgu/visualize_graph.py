@@ -3,14 +3,10 @@ import torch
 import json
 
 from torch_geometric.data import Data, Batch
-from tdgu.graph import (
-    batch_to_data_list,
-    data_to_networkx,
-    networkx_to_rdf,
-    update_rdf_graph,
-)
+from tdgu.graph import batch_to_data_list, networkx_to_rdf, update_rdf_graph
 from typing import Set, Tuple, List
 from pathlib import Path
+from itertools import count
 
 from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.data import TWCmdGenGraphEventStepInput
@@ -72,17 +68,12 @@ def main(
     ckpt_filename: str,
     graph_filename: str,
     word_vocab_path: str,
-    node_vocab_path: str,
-    relation_vocab_path: str,
     device: str,
     verbose: bool,
 ) -> None:
     # load the model
     lm = TemporalDiscreteGraphUpdater.load_from_checkpoint(
-        ckpt_filename,
-        word_vocab_path=word_vocab_path,
-        node_vocab_path=node_vocab_path,
-        relation_vocab_path=relation_vocab_path,
+        ckpt_filename, word_vocab_path=word_vocab_path
     )
     lm.eval()
     lm = lm.to(device)
@@ -91,16 +82,20 @@ def main(
     obs, admissible_cmds = env.reset()
     action = "restart"
     graph = Data(
-        x=torch.empty(0, dtype=torch.long),
+        x=torch.empty(0, 0, dtype=torch.long),
+        node_label_mask=torch.empty(0, 0).bool(),
         node_last_update=torch.empty(0, 2, dtype=torch.long),
         edge_index=torch.empty(2, 0, dtype=torch.long),
-        edge_attr=torch.empty(0, dtype=torch.long),
+        edge_attr=torch.empty(0, 0).long(),
+        edge_label_mask=torch.empty(0, 0).bool(),
         edge_last_update=torch.empty(0, 2, dtype=torch.long),
     ).to(device)
     rdf_graph: Set[str] = set()
 
     done = False
-    while not done:
+    for step in count():
+        if done:
+            break
         # print the observation
         print(obs)
 
@@ -116,7 +111,7 @@ def main(
                     obs_mask=obs_mask,
                     prev_action_word_ids=prev_action_word_ids,
                     prev_action_mask=prev_action_mask,
-                    timestamps=torch.tensor([0]),
+                    timestamps=torch.tensor([step]),
                 ).to(device),
                 Batch.from_data_list([graph]),
             )
@@ -128,7 +123,8 @@ def main(
                 [results["decoded_event_type_ids"] for results in results_list],
                 [results["decoded_event_src_ids"] for results in results_list],
                 [results["decoded_event_dst_ids"] for results in results_list],
-                [results["decoded_event_label_ids"] for results in results_list],
+                [results["decoded_event_label_word_ids"] for results in results_list],
+                [results["decoded_event_label_mask"] for results in results_list],
                 [results["updated_batched_graph"] for results in results_list],
             )
             graph_cmds = batch_graph_cmds[0]
@@ -138,14 +134,17 @@ def main(
                 print(cmd)
             print("------graph events---------")
             for results in results_list:
-                for event_type_id, event_src_id, event_dst_id, event_label_id in zip(
+                decoded_event_labels = lm.decode_label(
+                    results["decoded_event_label_word_ids"],
+                    results["decoded_event_label_mask"],
+                )
+                for event_type_id, event_src_id, event_dst_id, event_label in zip(
                     results["decoded_event_type_ids"],
                     results["decoded_event_src_ids"],
                     results["decoded_event_dst_ids"],
-                    results["decoded_event_label_ids"],
+                    decoded_event_labels,
                 ):
                     event_type = EVENT_TYPES[event_type_id]
-                    event_label = lm.labels[event_label_id]
                     if event_type == "node-add":
                         print((event_type, event_label))
                     elif event_type == "node-delete":
@@ -160,12 +159,22 @@ def main(
                             )
                         )
                     else:
-                        event_src_label = lm.labels[
-                            results["updated_batched_graph"].x[event_src_id]
-                        ]
-                        event_dst_label = lm.labels[
-                            results["updated_batched_graph"].x[event_dst_id]
-                        ]
+                        event_src_label = lm.decode_label(
+                            results["updated_batched_graph"]
+                            .x[event_src_id]
+                            .unsqueeze(0),
+                            results["updated_batched_graph"]
+                            .node_label_mask[event_src_id]
+                            .unsqueeze(0),
+                        )[0]
+                        event_dst_label = lm.decode_label(
+                            results["updated_batched_graph"]
+                            .x[event_dst_id]
+                            .unsqueeze(0),
+                            results["updated_batched_graph"]
+                            .node_label_mask[event_dst_id]
+                            .unsqueeze(0),
+                        )[0]
                         print(
                             (
                                 event_type,
@@ -176,7 +185,7 @@ def main(
                             )
                         )
             print("------graph event rdfs-----")
-            for rdf in sorted(networkx_to_rdf(data_to_networkx(graph, lm.labels))):
+            for rdf in sorted(networkx_to_rdf(lm.data_to_networkx(graph))):
                 print(rdf)
             print("------graph cmd rdfs------")
             rdf_graph = update_rdf_graph(rdf_graph, graph_cmds)
@@ -186,9 +195,8 @@ def main(
             print()
 
         # visualize the graph
-        nx_graph = data_to_networkx(graph, lm.labels)
+        nx_graph = lm.data_to_networkx(graph)
         draw_graph(nx_graph, graph_filename)
-        input(">> ")
 
         # get the next action
         if env.game_file_type == ".z8":
@@ -210,8 +218,6 @@ if __name__ == "__main__":
     parser.add_argument("ckpt_filename")
     parser.add_argument("graph_filename")
     parser.add_argument("--word-vocab-path", default="vocabs/word_vocab.txt")
-    parser.add_argument("--node-vocab-path", default="vocabs/node_vocab.txt")
-    parser.add_argument("--relation-vocab-path", default="vocabs/relation_vocab.txt")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--verbose", default=False, action="store_true")
     args = parser.parse_args()
@@ -220,8 +226,6 @@ if __name__ == "__main__":
         args.ckpt_filename,
         args.graph_filename,
         args.word_vocab_path,
-        args.node_vocab_path,
-        args.relation_vocab_path,
         args.device,
         args.verbose,
     )

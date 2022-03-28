@@ -14,8 +14,6 @@ data_module:
   test_batch_size: 1024
   test_num_worker: 4
   word_vocab_path: vocabs/word_vocab.txt
-  node_vocab_path: vocabs/node_vocab.txt
-  relation_vocab_path: vocabs/relation_vocab.txt
 
 model:
   _target_: tdgu.nn.graph_updater.TemporalDiscreteGraphUpdater
@@ -35,7 +33,6 @@ model:
   graph_event_decoder_key_query_dim: 16
   graph_event_decoder_num_dec_blocks: 1
   graph_event_decoder_dec_block_num_heads: 1
-  max_decode_len: 100
   dropout: 0.0
   pretrained_word_embedding_path: embedding/crawl-300d-2M.vec
 

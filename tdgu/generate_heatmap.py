@@ -7,11 +7,7 @@ from typing import List
 from torch.utils.data import DataLoader
 
 from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
-from tdgu.data import (
-    TWCmdGenGraphEventDataset,
-    TWCmdGenGraphEventDataCollator,
-    read_label_vocab_files,
-)
+from tdgu.data import TWCmdGenGraphEventDataset, TWCmdGenGraphEventDataCollator
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 from tdgu.nn.utils import calculate_node_id_offsets
@@ -22,28 +18,22 @@ def main(
     ckpt_filename: str,
     num_datapoints: int,
     word_vocab_path: str,
-    node_vocab_path: str,
-    relation_vocab_path: str,
     num_dataloader_worker: int,
     device: str,
 ) -> None:
     dataset = TWCmdGenGraphEventDataset(data_filename)
     preprocessor = SpacyPreprocessor.load_from_file(word_vocab_path)
-    labels, label_id_map = read_label_vocab_files(node_vocab_path, relation_vocab_path)
     sampled_ids = random.sample(range(len(dataset)), num_datapoints)
     dataloader = DataLoader(  # type: ignore
         [dataset[i] for i in sampled_ids],  # type: ignore
         batch_size=num_datapoints,
-        collate_fn=TWCmdGenGraphEventDataCollator(preprocessor, label_id_map),
+        collate_fn=TWCmdGenGraphEventDataCollator(preprocessor),
         pin_memory=True,
         num_workers=num_dataloader_worker,
     )
 
     lm = TemporalDiscreteGraphUpdater.load_from_checkpoint(
-        ckpt_filename,
-        word_vocab_path=word_vocab_path,
-        node_vocab_path=node_vocab_path,
-        relation_vocab_path=relation_vocab_path,
+        ckpt_filename, word_vocab_path=word_vocab_path
     )
     lm.eval()
     lm = lm.to(device)
@@ -58,13 +48,18 @@ def main(
         decoded_event_type_ids_list: List[torch.Tensor] = []
         decoded_event_src_ids_list: List[torch.Tensor] = []
         decoded_event_dst_ids_list: List[torch.Tensor] = []
-        decoded_event_label_ids_list: List[torch.Tensor] = []
+        decoded_event_labels_list: List[List[str]] = []  # (step, batch)
         node_id_offsets_list: List[torch.Tensor] = []
         for results in results_list:
             decoded_event_type_ids_list.append(results["decoded_event_type_ids"])
             decoded_event_src_ids_list.append(results["decoded_event_src_ids"])
             decoded_event_dst_ids_list.append(results["decoded_event_dst_ids"])
-            decoded_event_label_ids_list.append(results["decoded_event_label_ids"])
+            decoded_event_labels_list.append(
+                lm.decode_label(
+                    results["decoded_event_label_word_ids"],
+                    results["decoded_event_label_mask"],
+                )
+            )
             obs_graph_attn_weights_list.append(
                 torch.stack(results["obs_graph_attn_weights"]).mean(dim=0)
                 # (batch, 1, obs_len)
@@ -84,10 +79,9 @@ def main(
         # (batch, num_graph_events)
         batch_decoded_event_dst_ids = torch.stack(decoded_event_dst_ids_list, dim=-1)
         # (batch, num_graph_events)
-        batch_decoded_event_label_ids = torch.stack(
-            decoded_event_label_ids_list, dim=-1
-        )
-        # (batch, num_graph_events)
+        batch_decoded_event_labels: List[List[str]] = list(
+            map(list, zip(*decoded_event_labels_list))
+        )  # (batch, step)
         batch_node_id_offsets = torch.stack(node_id_offsets_list, dim=-1)
 
         for i, (
@@ -95,7 +89,7 @@ def main(
             decoded_event_type_ids,
             decoded_event_src_ids,
             decoded_event_dst_ids,
-            decoded_event_label_ids,
+            decoded_event_labels,
             node_id_offsets,
             obs_word_ids,
             obs_len,
@@ -106,7 +100,7 @@ def main(
                 batch_decoded_event_type_ids,
                 batch_decoded_event_src_ids,
                 batch_decoded_event_dst_ids,
-                batch_decoded_event_label_ids,
+                batch_decoded_event_labels,
                 batch_node_id_offsets,
                 batch.step_input.obs_word_ids,
                 batch.step_input.obs_mask.sum(dim=1),
@@ -132,24 +126,30 @@ def main(
                     [
                         (
                             EVENT_TYPES[event_type],
-                            labels[
-                                results_list[j]["updated_batched_graph"].x[
-                                    src_id + offset
-                                ]
-                            ],
-                            labels[
-                                results_list[j]["updated_batched_graph"].x[
-                                    dst_id + offset
-                                ]
-                            ],
-                            labels[label],
+                            lm.decode_label(
+                                results_list[j]["updated_batched_graph"]
+                                .x[src_id + offset]
+                                .unsqueeze(0),
+                                results_list[j]["updated_batched_graph"]
+                                .node_label_mask[src_id + offset]
+                                .unsqueeze(0),
+                            )[0],
+                            lm.decode_label(
+                                results_list[j]["updated_batched_graph"]
+                                .x[dst_id + offset]
+                                .unsqueeze(0),
+                                results_list[j]["updated_batched_graph"]
+                                .node_label_mask[dst_id + offset]
+                                .unsqueeze(0),
+                            )[0],
+                            label,
                         )
                         if event_type.item()
                         in {
                             EVENT_TYPE_ID_MAP["edge-add"],
                             EVENT_TYPE_ID_MAP["edge-delete"],
                         }
-                        else (EVENT_TYPES[event_type], labels[label])
+                        else (EVENT_TYPES[event_type], label)
                         if event_type.item()
                         in {
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -161,7 +161,7 @@ def main(
                                 decoded_event_type_ids[:decoded_event_seq_len],
                                 decoded_event_src_ids[:decoded_event_seq_len],
                                 decoded_event_dst_ids[:decoded_event_seq_len],
-                                decoded_event_label_ids[:decoded_event_seq_len],
+                                decoded_event_labels[:decoded_event_seq_len],
                                 node_id_offsets[:decoded_event_seq_len],
                             )
                         )
@@ -179,8 +179,6 @@ if __name__ == "__main__":
     parser.add_argument("ckpt_filename")
     parser.add_argument("--num-datapoints", default=1, type=int)
     parser.add_argument("--word-vocab-path", default="vocabs/word_vocab.txt")
-    parser.add_argument("--node-vocab-path", default="vocabs/node_vocab.txt")
-    parser.add_argument("--relation-vocab-path", default="vocabs/relation_vocab.txt")
     parser.add_argument("--num-dataloader-worker", default=0, type=int)
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
@@ -189,8 +187,6 @@ if __name__ == "__main__":
         args.ckpt_filename,
         args.num_datapoints,
         args.word_vocab_path,
-        args.node_vocab_path,
-        args.relation_vocab_path,
         args.num_dataloader_worker,
         args.device,
     )

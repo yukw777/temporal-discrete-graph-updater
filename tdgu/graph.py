@@ -1,4 +1,5 @@
 import networkx as nx
+import torch.nn.functional as F
 
 from dataclasses import dataclass
 from typing import Dict, List, Any, Set
@@ -263,49 +264,6 @@ def process_triplet_cmd(
     raise ValueError(f"Unknown command {cmd}")
 
 
-def data_to_networkx(data: Data, labels: List[str]) -> nx.DiGraph:
-    """
-    Turn torch_geometric.Data into a networkx graph.
-    """
-    # There is a bug in to_networkx() where it turns an attribute that is a list
-    # with one element into a scalar, so we just manually construct a networkx graph.
-    graph = nx.DiGraph()
-    graph.add_nodes_from(
-        [
-            (
-                nid,
-                {
-                    "x": node_label_id,
-                    "node_last_update": node_last_update,
-                    "label": labels[node_label_id],
-                },
-            )
-            for nid, (node_label_id, node_last_update) in enumerate(
-                zip(data.x.tolist(), data.node_last_update.tolist())
-            )
-        ]
-    )
-    graph.add_edges_from(
-        [
-            (
-                src_id,
-                dst_id,
-                {
-                    "edge_attr": edge_label_id,
-                    "edge_last_update": edge_last_update,
-                    "label": labels[edge_label_id],
-                },
-            )
-            for (src_id, dst_id), edge_label_id, edge_last_update in zip(
-                data.edge_index.t().tolist(),
-                data.edge_attr.tolist(),
-                data.edge_last_update.tolist(),
-            )
-        ]
-    )
-    return graph
-
-
 def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
     """
     Split the given batched graph into a list of Data. We have to implement our own
@@ -321,15 +279,65 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
         # mask for all the edges that belong to the i'th subgraph
         # use the source node
         edge_mask = batch.batch[batch.edge_index[0]] == i
+        max_node_label_len = (
+            batch.node_label_mask.sum(dim=1)[node_mask].max() if node_mask.any() else 0
+        )
+        max_edge_label_len = (
+            batch.edge_label_mask.sum(dim=1)[edge_mask].max() if edge_mask.any() else 0
+        )
         subgraph = Data(
-            x=batch.x[node_mask],
-            edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
-            edge_attr=batch.edge_attr[edge_mask],
+            x=F.pad(
+                batch.x[node_mask], (0, max_node_label_len - batch.x[node_mask].size(1))
+            ),
+            node_label_mask=F.pad(
+                batch.node_label_mask[node_mask],
+                (0, max_node_label_len - batch.node_label_mask[node_mask].size(1)),
+            ),
             node_last_update=batch.node_last_update[node_mask],
+            edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
+            edge_attr=F.pad(
+                batch.edge_attr[edge_mask],
+                (0, max_edge_label_len - batch.edge_attr[edge_mask].size(1)),
+            ),
+            edge_label_mask=F.pad(
+                batch.edge_label_mask[edge_mask],
+                (0, max_edge_label_len - batch.edge_label_mask[edge_mask].size(1)),
+            ),
             edge_last_update=batch.edge_last_update[edge_mask],
         )
         data_list.append(subgraph)
     return data_list
+
+
+def data_list_to_batch(data_list: List[Data]) -> Batch:
+    """
+    Inverse of batch_to_data_list(). Can't use Batch.from_data_list() directly due to
+    variable length labels.
+    """
+    max_node_label_len = max(data.x.size(1) for data in data_list)
+    max_edge_label_len = max(data.edge_attr.size(1) for data in data_list)
+    return Batch.from_data_list(
+        [
+            Data(
+                x=F.pad(data.x, (0, max_node_label_len - data.x.size(1))),
+                node_label_mask=F.pad(
+                    data.node_label_mask,
+                    (0, max_node_label_len - data.node_label_mask.size(1)),
+                ),
+                node_last_update=data.node_last_update,
+                edge_index=data.edge_index,
+                edge_attr=F.pad(
+                    data.edge_attr, (0, max_edge_label_len - data.edge_attr.size(1))
+                ),
+                edge_label_mask=F.pad(
+                    data.edge_label_mask,
+                    (0, max_edge_label_len - data.edge_label_mask.size(1)),
+                ),
+                edge_last_update=data.edge_last_update,
+            )
+            for data in data_list
+        ]
+    )
 
 
 def networkx_to_rdf(
