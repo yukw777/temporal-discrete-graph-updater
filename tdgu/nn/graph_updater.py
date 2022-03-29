@@ -9,7 +9,7 @@ import networkx as nx
 from typing import Optional, Dict, List, Sequence, Tuple, Any
 from torch.optim import AdamW, Optimizer
 from hydra.utils import to_absolute_path
-from pathlib import Path
+
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.trainer.states import RunningStage
 from torch_geometric.nn import TransformerConv, GATv2Conv
@@ -18,7 +18,7 @@ from torch_geometric.utils import to_dense_batch
 from torch.utils.data import DataLoader
 from torchmetrics.classification.f_beta import F1Score
 
-from tdgu.nn.text import TextEncoder
+from tdgu.nn.text import CrawlFullEncoder
 from tdgu.nn.rep_aggregator import ReprAggregator
 from tdgu.metrics import F1, ExactMatch
 from tdgu.nn.utils import (
@@ -26,7 +26,6 @@ from tdgu.nn.utils import (
     index_edge_attr,
     masked_log_softmax,
     masked_mean,
-    load_fasttext,
     calculate_node_id_offsets,
     masked_softmax,
     update_batched_graph,
@@ -102,37 +101,16 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 to_absolute_path(word_vocab_path)
             )
 
-        # load pretrained word embedding and freeze it
-        if pretrained_word_embedding_path is not None:
-            abs_pretrained_word_embedding_path = Path(
-                to_absolute_path(pretrained_word_embedding_path)
-            )
-            serialized_path = abs_pretrained_word_embedding_path.parent / (
-                abs_pretrained_word_embedding_path.stem + ".pt"
-            )
-            pretrained_word_embeddings = load_fasttext(
-                str(abs_pretrained_word_embedding_path),
-                serialized_path,
-                self.preprocessor,
-            )
-            assert word_emb_dim == pretrained_word_embeddings.embedding_dim
-        else:
-            pretrained_word_embeddings = nn.Embedding(
-                self.preprocessor.vocab_size, word_emb_dim
-            )
-        pretrained_word_embeddings.weight.requires_grad = False
-        self.word_embeddings = nn.Sequential(
-            pretrained_word_embeddings, nn.Linear(word_emb_dim, hidden_dim)
-        )
-
-        # text encoder
-        self.text_encoder = TextEncoder(
+        self.full_encoder = CrawlFullEncoder(
+            word_emb_dim,
+            hidden_dim,
             text_encoder_num_blocks,
             text_encoder_num_conv_layers,
             text_encoder_kernel_size,
-            hidden_dim,
             text_encoder_num_heads,
-            dropout=dropout,
+            dropout,
+            self.preprocessor,
+            pretrained_word_embedding_path,
         )
 
         # temporal graph network
@@ -193,7 +171,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
             self.preprocessor.word_to_id_dict,
-            pretrained_word_embeddings,
+            self.full_encoder.get_pretrained_embedding,
         )
 
         self.criterion = UncertaintyWeightedLoss()
@@ -346,11 +324,11 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         """
         if encoded_obs is None:
             assert obs_word_ids is not None
-            encoded_obs = self.encode_text(obs_word_ids, obs_mask)
+            encoded_obs = self.full_encoder(obs_word_ids, obs_mask)
             # (batch, obs_len, hidden_dim)
         if encoded_prev_action is None:
             assert prev_action_word_ids is not None
-            encoded_prev_action = self.encode_text(
+            encoded_prev_action = self.full_encoder(
                 prev_action_word_ids, prev_action_mask
             )
             # (batch, prev_action_len, hidden_dim)
@@ -565,7 +543,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
         output: (batch, hidden_dim)
         """
-        return masked_mean(self.word_embeddings(label_word_ids), label_mask)
+        return masked_mean(self.full_encoder(label_word_ids, label_mask), label_mask)
 
     def decode_label(
         self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
@@ -586,17 +564,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 )
             )
         return decoded
-
-    def encode_text(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        word_ids: (batch, seq_len)
-        mask: (batch, seq_len)
-        output: (batch, seq_len, hidden_dim)
-        """
-        word_embs = self.word_embeddings(word_ids)
-        # (batch, seq_len, hidden_dim)
-        return self.text_encoder(word_embs, mask)
-        # (batch, seq_len, hidden_dim)
 
     def teacher_force(
         self,
