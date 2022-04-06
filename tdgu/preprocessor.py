@@ -161,7 +161,7 @@ class SpacyPreprocessor(Preprocessor):
 
 class HuggingFacePreprocessor(Preprocessor):
     def __init__(self, tokenizer_model: str) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_model)
 
     def convert_ids_to_tokens(self, word_ids: List[int]) -> List[str]:
         return self.tokenizer.convert_ids_to_tokens(word_ids)

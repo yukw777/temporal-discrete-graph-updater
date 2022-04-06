@@ -1,3 +1,5 @@
+import os
+
 import hydra
 import pytorch_lightning as pl
 
@@ -52,4 +54,6 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
     main()

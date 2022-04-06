@@ -1,7 +1,12 @@
 import torch
 import torch.nn as nn
 
-from tdgu.nn.utils import PositionalEncoder
+from typing import Optional
+
+from hydra.utils import to_absolute_path
+from pathlib import Path
+from tdgu.nn.utils import PositionalEncoder, load_fasttext
+from tdgu.preprocessor import SpacyPreprocessor
 
 
 class DepthwiseSeparableConv1d(nn.Module):
@@ -132,14 +137,40 @@ class TextEncoderBlock(nn.Module):
 class TextEncoder(nn.Module):
     def __init__(
         self,
+        preprocessor: SpacyPreprocessor,
+        word_emb_dim: int,
         num_enc_blocks: int,
         enc_block_num_conv_layers: int,
         enc_block_kernel_size: int,
         enc_block_hidden_dim: int,
         enc_block_num_heads: int,
         dropout: float = 0.3,
+        embedding_path: Optional[str] = None,
     ) -> None:
         super().__init__()
+        self.enc_block_hidden_dim = enc_block_hidden_dim
+        if embedding_path is not None:
+            abs_pretrained_word_embedding_path = Path(to_absolute_path(embedding_path))
+            serialized_path = abs_pretrained_word_embedding_path.parent / (
+                abs_pretrained_word_embedding_path.stem + ".pt"
+            )
+            self.pretrained_word_embeddings = load_fasttext(
+                str(abs_pretrained_word_embedding_path),
+                serialized_path,
+                preprocessor,
+            )
+            assert word_emb_dim == self.pretrained_word_embeddings.embedding_dim
+        else:
+            self.pretrained_word_embeddings = nn.Embedding(
+                preprocessor.vocab_size, word_emb_dim
+            )
+
+        self.pretrained_word_embeddings.weight.requires_grad = False
+        self.word_embeddings = nn.Sequential(
+            self.pretrained_word_embeddings,
+            nn.Linear(word_emb_dim, enc_block_hidden_dim),
+        )
+
         self.enc_blocks = nn.ModuleList(
             TextEncoderBlock(
                 enc_block_num_conv_layers,
@@ -151,19 +182,28 @@ class TextEncoder(nn.Module):
             for _ in range(num_enc_blocks)
         )
 
-    def forward(
-        self, input_word_embs: torch.Tensor, mask: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
-        input_word_embs: (batch_size, seq_len, enc_block_hidden_dim)
+        word_ids: (batch_size, seq_len)
         mask: (batch_size, seq_len)
         output:
             encoded: (batch_size, seq_len, enc_block_hidden_dim)
         """
-        output = input_word_embs
-        # (batch_size, seq_len, enc_block_hidden_dim)
-        for enc_block in self.enc_blocks:
-            output = enc_block(output, mask)
+
+        if word_ids.size(1) == 0:
+            return torch.empty(
+                word_ids.size(0), 0, self.enc_block_hidden_dim, device=word_ids.device
+            )
+
+        word_embs = self.word_embeddings(word_ids)
         # (batch_size, seq_len, enc_block_hidden_dim)
 
-        return output
+        for enc_block in self.enc_blocks:
+            word_embs = enc_block(word_embs, mask)
+        # (batch_size, seq_len, enc_block_hidden_dim)
+
+        return word_embs
+
+    @property
+    def get_pretrained_embedding(self) -> nn.Embedding:
+        return self.pretrained_word_embeddings

@@ -55,7 +55,7 @@ def test_tdgu_decode_label(tdgu, label_word_ids, label_mask, expected):
 
 @pytest.mark.parametrize("batch,seq_len", [(1, 10), (8, 24)])
 def test_tdgu_encode_text(tdgu, batch, seq_len):
-    assert tdgu.encode_text(
+    assert tdgu.text_encoder(
         torch.randint(13, (batch, seq_len)), torch.randint(2, (batch, seq_len)).float()
     ).size() == (batch, seq_len, tdgu.hparams.hidden_dim)
 
