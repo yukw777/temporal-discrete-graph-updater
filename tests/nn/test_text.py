@@ -1,13 +1,13 @@
 import torch
+import torch.nn as nn
 import pytest
 
 from tdgu.nn.text import (
     DepthwiseSeparableConv1d,
     TextEncoderConvBlock,
     TextEncoderBlock,
-    TextEncoder,
+    QANetTextEncoder,
 )
-from tdgu.preprocessor import SpacyPreprocessor
 from utils import increasing_mask
 
 
@@ -81,19 +81,18 @@ def test_text_enc_block(
 
 
 @pytest.mark.parametrize(
-    "num_enc_blocks,word_emb_dim,enc_block_num_conv_layers,enc_block_kernel_size,"
+    "num_enc_blocks,enc_block_num_conv_layers,enc_block_kernel_size,"
     "enc_block_hidden_dim,enc_block_num_heads,batch_size,seq_len",
     [
-        (1, 5, 1, 3, 8, 1, 1, 1),
-        (1, 6, 1, 3, 8, 1, 2, 5),
-        (3, 42, 5, 5, 10, 5, 3, 7),
+        (1, 1, 3, 8, 1, 1, 1),
+        (1, 1, 3, 8, 1, 2, 5),
+        (3, 5, 5, 10, 5, 3, 7),
     ],
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
 def test_text_encoder(
     dropout,
     num_enc_blocks,
-    word_emb_dim,
     enc_block_num_conv_layers,
     enc_block_kernel_size,
     enc_block_hidden_dim,
@@ -101,12 +100,11 @@ def test_text_encoder(
     batch_size,
     seq_len,
 ):
-    preprocessor = SpacyPreprocessor.load_from_file("tests/data/test_word_vocab.txt")
-
+    vocab_size = 10
+    word_emb_dim = 12
     if dropout is None:
-        text_encoder = TextEncoder(
-            preprocessor,
-            word_emb_dim,
+        text_encoder = QANetTextEncoder(
+            nn.Embedding(vocab_size, word_emb_dim),
             num_enc_blocks,
             enc_block_num_conv_layers,
             enc_block_kernel_size,
@@ -114,9 +112,8 @@ def test_text_encoder(
             enc_block_num_heads,
         )
     else:
-        text_encoder = TextEncoder(
-            preprocessor,
-            word_emb_dim,
+        text_encoder = QANetTextEncoder(
+            nn.Embedding(vocab_size, word_emb_dim),
             num_enc_blocks,
             enc_block_num_conv_layers,
             enc_block_kernel_size,
@@ -126,7 +123,7 @@ def test_text_encoder(
         )
     # random word ids and increasing masks
     assert text_encoder(
-        torch.randint(0, preprocessor.vocab_size, size=(batch_size, seq_len)),
+        torch.randint(0, vocab_size, size=(batch_size, seq_len)),
         torch.tensor(
             [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
         ),
