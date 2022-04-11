@@ -13,7 +13,7 @@ from tdgu.nn.graph_event_decoder import (
     TransformerGraphEventDecoder,
 )
 from tdgu.constants import EVENT_TYPES
-from tdgu.preprocessor import BOS, EOS, PAD
+from tdgu.preprocessor import BOS, EOS, PAD, SpacyPreprocessor
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
@@ -135,15 +135,8 @@ def test_event_static_label_head(
 
 
 @pytest.fixture
-def word_to_id_dict():
-    return {
-        PAD: 0,
-        BOS: 1,
-        EOS: 2,
-        "word0": 3,
-        "word1": 4,
-        "word2": 5,
-    }
+def preprocessor():
+    return SpacyPreprocessor([PAD, BOS, EOS, "word0", "word1", "word2"])
 
 
 @pytest.mark.parametrize("seq_len", [1, 5, 10])
@@ -152,7 +145,7 @@ def word_to_id_dict():
     [(8, 4, 16, 1), (8, 4, 16, 4)],
 )
 def test_event_seq_label_head_forward(
-    word_to_id_dict,
+    preprocessor,
     autoregressive_embedding_dim,
     hidden_dim,
     word_embedding_dim,
@@ -162,15 +155,15 @@ def test_event_seq_label_head_forward(
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         hidden_dim,
-        word_to_id_dict,
+        preprocessor,
         nn.Embedding(
-            len(word_to_id_dict),
+            preprocessor.vocab_size,
             word_embedding_dim,
-            padding_idx=word_to_id_dict["<pad>"],
+            padding_idx=preprocessor.pad_token_id,
         ),
     )
 
-    output_tgt_seq = torch.randint(len(word_to_id_dict), (batch, seq_len))
+    output_tgt_seq = torch.randint(preprocessor.vocab_size, (batch, seq_len))
     seq_mask_list = [[True] * seq_len]
     for _ in range(batch - 1):
         length = random.randrange(1, seq_len) if seq_len > 1 else 1
@@ -197,14 +190,14 @@ def test_event_seq_label_head_forward(
         output_tgt_seq_mask,
         autoregressive_embedding=autoregressive_embedding,
     )
-    assert output_seq_logits.size() == (batch, seq_len, len(word_to_id_dict))
+    assert output_seq_logits.size() == (batch, seq_len, preprocessor.vocab_size)
     assert updated_hidden.size() == (batch, hidden_dim)
 
     # forward pass with prev_hidden
     output_seq_logits, updated_hidden = head(
         output_tgt_seq, output_tgt_seq_mask, prev_hidden=prev_hidden
     )
-    assert output_seq_logits.size() == (batch, seq_len, len(word_to_id_dict))
+    assert output_seq_logits.size() == (batch, seq_len, preprocessor.vocab_size)
     assert updated_hidden.size() == (batch, hidden_dim)
 
 
@@ -279,7 +272,7 @@ def test_event_seq_label_head_forward(
     ],
 )
 def test_event_seq_label_head_greedy_decode(
-    word_to_id_dict,
+    preprocessor,
     batch,
     forward_logits,
     max_decode_len,
@@ -290,11 +283,9 @@ def test_event_seq_label_head_greedy_decode(
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         4,
-        word_to_id_dict,
+        preprocessor,
         nn.Embedding(
-            len(word_to_id_dict),
-            12,
-            padding_idx=word_to_id_dict["<pad>"],
+            preprocessor.vocab_size, 12, padding_idx=preprocessor.pad_token_id
         ),
     )
 
