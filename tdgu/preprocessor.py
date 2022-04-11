@@ -62,6 +62,16 @@ class Preprocessor(ABC):
 
     @property
     @abstractmethod
+    def bos_token_id(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
+    def eos_token_id(self) -> int:
+        pass
+
+    @property
+    @abstractmethod
     def pad_token_id(self) -> int:
         pass
 
@@ -76,14 +86,12 @@ class SpacyPreprocessor(Preprocessor):
         self.tokenizer = English().tokenizer
         self.word_vocab = word_vocab
         self.word_to_id_dict = {w: i for i, w in enumerate(word_vocab)}
-        self.pad_id = self.word_to_id_dict[PAD]
-        self.unk_id = self.word_to_id_dict[UNK]
 
     def convert_ids_to_tokens(self, word_ids: List[int]) -> List[str]:
         return [self.word_vocab[word_id] for word_id in word_ids]
 
     def convert_tokens_to_ids(self, tokens: List[str]) -> List[int]:
-        return [self.word_to_id_dict.get(token, self.unk_id) for token in tokens]
+        return [self.word_to_id_dict.get(token, self.unk_token_id) for token in tokens]
 
     def tokenize(self, s: str) -> List[str]:
         return [t.text.lower() for t in self.tokenizer(s)]
@@ -145,12 +153,20 @@ class SpacyPreprocessor(Preprocessor):
         return self.word_to_id_dict
 
     @property
+    def bos_token_id(self) -> int:
+        return self.word_to_id_dict[BOS]
+
+    @property
+    def eos_token_id(self) -> int:
+        return self.word_to_id_dict[EOS]
+
+    @property
     def pad_token_id(self) -> int:
-        return self.pad_id
+        return self.word_to_id_dict[PAD]
 
     @property
     def unk_token_id(self) -> int:
-        return self.unk_id
+        return self.word_to_id_dict[UNK]
 
     @classmethod
     def load_from_file(cls, word_vocab_path: str) -> "SpacyPreprocessor":
@@ -190,6 +206,14 @@ class HuggingFacePreprocessor(Preprocessor):
 
     def get_vocab(self) -> Dict[str, int]:
         return self.tokenizer.get_vocab()
+
+    @property
+    def bos_token_id(self) -> int:
+        return self.tokenizer.bos_token_id
+
+    @property
+    def eos_token_id(self) -> int:
+        return self.tokenizer.eos_token_id
 
     @property
     def pad_token_id(self) -> int:
