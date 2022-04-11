@@ -2,7 +2,7 @@ import torch
 
 from torch.utils.data import DataLoader
 
-from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
+from tdgu.nn.graph_updater import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventFreeRunDataset, TWCmdGenGraphEventDataCollator
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.metrics.f1 import F1
@@ -23,7 +23,7 @@ def main(
     preprocessor = SpacyPreprocessor.load_from_file(word_vocab_path)
     collator = TWCmdGenGraphEventDataCollator(preprocessor)
 
-    lm = TemporalDiscreteGraphUpdater.load_from_checkpoint(
+    lm = SupervisedTDGU.load_from_checkpoint(
         ckpt_filename, word_vocab_path=word_vocab_path
     )
     lm.eval()

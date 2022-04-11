@@ -5,10 +5,16 @@ import pytorch_lightning as pl
 import wandb
 import tqdm
 import networkx as nx
+import sys
 
-from typing import Optional, Dict, List, Sequence, Tuple, Any
+if sys.version_info >= (3, 8):
+    from typing import Optional, Dict, List, Sequence, Tuple, Any, Protocol
+else:
+    from typing import Optional, Dict, List, Sequence, Tuple, Any
+    from typing_extensions import Protocol
 from torch.optim import AdamW, Optimizer
 from hydra.utils import to_absolute_path
+from pathlib import Path
 
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.trainer.states import RunningStage
@@ -18,12 +24,13 @@ from torch_geometric.utils import to_dense_batch
 from torch.utils.data import DataLoader
 from torchmetrics.classification.f_beta import F1Score
 
-from tdgu.nn.text import TextEncoder
+from tdgu.nn.text import QANetTextEncoder
 from tdgu.nn.rep_aggregator import ReprAggregator
 from tdgu.metrics import F1, ExactMatch
 from tdgu.nn.utils import (
     compute_masks_from_event_type_ids,
     index_edge_attr,
+    load_fasttext,
     masked_log_softmax,
     masked_mean,
     calculate_node_id_offsets,
@@ -37,7 +44,7 @@ from tdgu.nn.graph_event_decoder import (
     EventSequentialLabelHead,
 )
 from tdgu.nn.dynamic_gnn import DynamicGNN
-from tdgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
+from tdgu.preprocessor import Preprocessor, SpacyPreprocessor, PAD, UNK, BOS, EOS
 from tdgu.data import (
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventFreeRunDataset,
@@ -54,7 +61,53 @@ from tdgu.graph import (
 )
 
 
-class TemporalDiscreteGraphUpdater(pl.LightningModule):
+class TextEncoderProto(Protocol):
+    def __call__(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        pass
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        pass
+
+
+class GraphEventDecoder(Protocol):
+    @property
+    def hidden_dim(self) -> int:
+        pass
+
+    def __call__(
+        self,
+        input_event_embedding: torch.Tensor,
+        event_mask: torch.Tensor,
+        aggr_obs_graph: torch.Tensor,
+        obs_mask: torch.Tensor,
+        aggr_prev_action_graph: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+        aggr_graph_obs: torch.Tensor,
+        aggr_graph_prev_action: torch.Tensor,
+        node_mask: torch.Tensor,
+        prev_input_event_emb_seq: Optional[torch.Tensor] = None,
+        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, List[torch.Tensor]]]:
+        pass
+
+
+class EventSequentialLabelHeadProto(Protocol):
+    def __call__(
+        self,
+        output_tgt_seq: torch.Tensor,
+        output_tgt_seq_mask: torch.Tensor,
+        autoregressive_embedding: Optional[torch.Tensor] = None,
+        prev_hidden: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        pass
+
+    def greedy_decode(
+        self, autoregressive_embedding: torch.Tensor, max_decode_len: int = 10
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        pass
+
+
+class TemporalDiscreteGraphUpdater(nn.Module):
     """
     TemporalDiscreteGraphUpdater is essentially a Seq2Seq model which encodes
     a sequence of game steps, each with an observation and a previous action, and
@@ -63,65 +116,32 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
 
     def __init__(
         self,
-        hidden_dim: int = 8,
-        word_emb_dim: int = 300,
-        dgnn_gnn: str = "TransformerConv",
-        dgnn_timestamp_enc_dim: int = 8,
-        dgnn_num_gnn_block: int = 1,
-        dgnn_num_gnn_head: int = 1,
-        dgnn_zero_timestamp_encoder: bool = False,
-        text_encoder_num_blocks: int = 1,
-        text_encoder_num_conv_layers: int = 3,
-        text_encoder_kernel_size: int = 5,
-        text_encoder_num_heads: int = 1,
-        graph_event_decoder_event_type_emb_dim: int = 8,
-        graph_event_decoder_hidden_dim: int = 8,
-        graph_event_decoder_autoregressive_emb_dim: int = 8,
-        graph_event_decoder_key_query_dim: int = 8,
-        graph_event_decoder_num_dec_blocks: int = 1,
-        graph_event_decoder_dec_block_num_heads: int = 1,
-        max_event_decode_len: int = 100,
-        max_label_decode_len: int = 10,
-        learning_rate: float = 5e-4,
-        dropout: float = 0.3,
-        allow_objs_with_same_label: bool = False,
-        pretrained_word_embedding_path: Optional[str] = None,
-        word_vocab_path: Optional[str] = None,
+        text_encoder: TextEncoderProto,
+        preprocessor: Preprocessor,
+        gnn_module: nn.Module,
+        hidden_dim: int,
+        dgnn_timestamp_enc_dim: int,
+        dgnn_num_gnn_block: int,
+        dgnn_num_gnn_head: int,
+        dgnn_zero_timestamp_encoder: bool,
+        graph_event_decoder: GraphEventDecoder,
+        event_label_head: EventSequentialLabelHead,
+        graph_event_decoder_event_type_emb_dim: int,
+        graph_event_decoder_autoregressive_emb_dim: int,
+        graph_event_decoder_key_query_dim: int,
+        dropout: float,
+        max_label_decode_len: int,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(
-            ignore=["pretrained_word_embedding_path", "word_vocab_path"]
-        )
-        # preprocessor
-        if word_vocab_path is None:
-            # just load with special tokens
-            self.preprocessor = SpacyPreprocessor([PAD, UNK, BOS, EOS])
-        else:
-            self.preprocessor = SpacyPreprocessor.load_from_file(
-                to_absolute_path(word_vocab_path)
-            )
+        self.preprocessor = preprocessor
+        self.hidden_dim = hidden_dim
+        self.max_label_decode_len = max_label_decode_len
 
-        self.text_encoder = TextEncoder(
-            self.preprocessor,
-            word_emb_dim,
-            text_encoder_num_blocks,
-            text_encoder_num_conv_layers,
-            text_encoder_kernel_size,
-            hidden_dim,
-            text_encoder_num_heads,
-            dropout,
-            pretrained_word_embedding_path,
-        )
+        # text encoder
+        self.text_encoder = text_encoder
 
-        # temporal graph network
-        gnn_module: nn.Module
-        if dgnn_gnn == "TransformerConv":
-            gnn_module = TransformerConv
-        elif dgnn_gnn == "GATv2Conv":
-            gnn_module = GATv2Conv
-        else:
-            raise ValueError(f"Unknown GNN: {dgnn_gnn}")
-        self.dgnn = DynamicGNN(
+        # dynamic graph neural network
+        self.dynamic_gnn = DynamicGNN(
             gnn_module,
             dgnn_timestamp_enc_dim,
             hidden_dim,
@@ -133,24 +153,19 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         )
 
         # representation aggregator
-        self.repr_aggr = ReprAggregator(hidden_dim)
+        self.repr_aggr = ReprAggregator(self.hidden_dim)
 
-        # graph event seq2seq
+        # graph event decoder
         self.event_type_embeddings = nn.Embedding(
             len(EVENT_TYPE_ID_MAP),
             graph_event_decoder_event_type_emb_dim,
             padding_idx=EVENT_TYPE_ID_MAP["pad"],
         )
-        self.decoder = TransformerGraphEventDecoder(
-            graph_event_decoder_event_type_emb_dim + 3 * hidden_dim,
-            hidden_dim,
-            graph_event_decoder_num_dec_blocks,
-            graph_event_decoder_dec_block_num_heads,
-            graph_event_decoder_hidden_dim,
-            dropout=dropout,
-        )
+        self.graph_event_decoder = graph_event_decoder
+
+        # autoregressive heads
         self.event_type_head = EventTypeHead(
-            graph_event_decoder_hidden_dim,
+            self.graph_event_decoder.hidden_dim,
             hidden_dim,
             graph_event_decoder_autoregressive_emb_dim,
             dropout=dropout,
@@ -170,43 +185,10 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         self.event_label_head = EventSequentialLabelHead(
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
-            self.preprocessor.word_to_id_dict,
-            self.text_encoder.get_pretrained_embedding,
+            self.preprocessor,
+            self.text_encoder.get_input_embeddings(),
         )
-
-        self.criterion = UncertaintyWeightedLoss()
-
-        self.val_event_type_f1 = F1Score()
-        self.val_src_node_f1 = F1Score()
-        self.val_dst_node_f1 = F1Score()
-        self.val_label_f1 = F1Score()
-        self.test_event_type_f1 = F1Score()
-        self.test_src_node_f1 = F1Score()
-        self.test_dst_node_f1 = F1Score()
-        self.test_label_f1 = F1Score()
-
-        self.val_graph_tf_exact_match = ExactMatch()
-        self.val_token_tf_exact_match = ExactMatch()
-        self.val_graph_tf_f1 = F1()
-        self.val_token_tf_f1 = F1()
-        self.test_graph_tf_exact_match = ExactMatch()
-        self.test_token_tf_exact_match = ExactMatch()
-        self.test_graph_tf_f1 = F1()
-        self.test_token_tf_f1 = F1()
-
-        self.val_graph_gd_exact_match = ExactMatch()
-        self.val_token_gd_exact_match = ExactMatch()
-        self.val_graph_gd_f1 = F1()
-        self.val_token_gd_f1 = F1()
-        self.test_graph_gd_exact_match = ExactMatch()
-        self.test_token_gd_exact_match = ExactMatch()
-        self.test_graph_gd_f1 = F1()
-        self.test_token_gd_f1 = F1()
-
-        self.val_free_run_f1 = F1()
-        self.val_free_run_em = ExactMatch()
-        self.test_free_run_f1 = F1()
-        self.test_free_run_em = ExactMatch()
+        self.event_label_head = event_label_head
 
     def forward(  # type: ignore
         self,
@@ -359,13 +341,11 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         )
         if updated_batched_graph.num_nodes == 0:
             node_embeddings = torch.zeros(
-                0,
-                self.hparams.hidden_dim,  # type: ignore
-                device=self.device,
+                0, self.hidden_dim, device=event_type_ids.device
             )
             # (0, hidden_dim)
         else:
-            node_embeddings = self.dgnn(
+            node_embeddings = self.dynamic_gnn(
                 Batch(
                     batch=updated_batched_graph.batch,
                     x=self.embed_label(
@@ -409,7 +389,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         # h_ga: (batch, num_node, hidden_dim)
 
         masks = compute_masks_from_event_type_ids(event_type_ids)
-        decoder_output, decoder_attn_weights = self.decoder(
+        decoder_output, decoder_attn_weights = self.graph_event_decoder(
             self.get_decoder_input(
                 event_type_ids,
                 event_src_ids,
@@ -525,8 +505,7 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 decoded_event_label_word_ids,
                 decoded_event_label_mask,
             ) = self.event_label_head.greedy_decode(
-                autoregressive_emb,
-                max_decode_len=self.hparams.max_label_decode_len,  # type: ignore
+                autoregressive_emb, max_decode_len=self.max_label_decode_len
             )
             # decoded_event_label_word_ids: (batch, decoded_label_len)
             # decoded_event_label_mask: (batch, decoded_label_len)
@@ -544,6 +523,230 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
         output: (batch, hidden_dim)
         """
         return masked_mean(self.text_encoder(label_word_ids, label_mask), label_mask)
+
+    def get_decoder_input(
+        self,
+        event_type_ids: torch.Tensor,
+        event_src_ids: torch.Tensor,
+        event_dst_ids: torch.Tensor,
+        event_label_word_ids: torch.Tensor,
+        event_label_mask: torch.Tensor,
+        batch: torch.Tensor,
+        node_label_word_ids: torch.Tensor,
+        node_label_mask: torch.Tensor,
+        masks: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Turn the graph events into decoder inputs by concatenating their embeddings.
+
+        input:
+            event_type_ids: (batch)
+            event_src_ids: (batch)
+            event_dst_ids: (batch)
+            event_label_word_ids: (batch, event_label_len)
+            event_label_mask: (batch, event_label_len)
+            batch: (num_node)
+            node_label_word_ids: (num_node, node_label_len)
+            node_label_mask: (num_node, node_label_len)
+            masks: masks calculated by compute_masks_from_event_type_ids(event_type_ids)
+
+        output: (batch, decoder_input_dim)
+            where decoder_input_dim = event_type_embedding_dim + 3 * label_embedding_dim
+        """
+        batch_size = event_type_ids.size(0)
+
+        # event type embeddings
+        event_type_embs = self.event_type_embeddings(event_type_ids)
+        # (batch, event_type_embedding_dim)
+
+        # event label embeddings
+        event_label_embs = torch.zeros(
+            batch_size, self.hidden_dim, device=event_type_ids.device
+        )
+        # (batch, label_embedding_dim)
+        event_label_embs[masks["label_mask"]] = self.embed_label(
+            event_label_word_ids[masks["label_mask"]],
+            event_label_mask[masks["label_mask"]],
+        )
+        # (batch, label_embedding_dim)
+
+        # event source/destination node embeddings
+        event_src_embs = torch.zeros(
+            batch_size, self.hidden_dim, device=event_type_ids.device
+        )
+        # (batch, label_embedding_dim)
+        event_dst_embs = torch.zeros(
+            batch_size, self.hidden_dim, device=event_type_ids.device
+        )
+        # (batch, label_embedding_dim)
+        node_id_offsets = calculate_node_id_offsets(batch_size, batch)
+        # (batch)
+        if masks["src_mask"].any():
+            event_src_embs[masks["src_mask"]] = self.embed_label(
+                node_label_word_ids[
+                    (event_src_ids + node_id_offsets)[masks["src_mask"]]
+                ],
+                node_label_mask[(event_src_ids + node_id_offsets)[masks["src_mask"]]],
+            )
+            # (batch, label_embedding_dim)
+
+        if masks["dst_mask"].any():
+            event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                node_label_word_ids[
+                    (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
+                ],
+                node_label_mask[(event_dst_ids + node_id_offsets)[masks["dst_mask"]]],
+            )
+            # (batch, label_embedding_dim)
+
+        return torch.cat(
+            [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
+        )
+        # (batch, event_type_embedding_dim + 3 * label_embedding_dim)
+
+
+class SupervisedTDGU(TemporalDiscreteGraphUpdater, pl.LightningModule):  # type: ignore
+    """
+    A LightningModule for supervised training of the temporal discrete graph updater.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int = 8,
+        word_emb_dim: int = 300,
+        dgnn_gnn: str = "TransformerConv",
+        dgnn_timestamp_enc_dim: int = 8,
+        dgnn_num_gnn_block: int = 1,
+        dgnn_num_gnn_head: int = 1,
+        dgnn_zero_timestamp_encoder: bool = False,
+        text_encoder_num_blocks: int = 1,
+        text_encoder_num_conv_layers: int = 3,
+        text_encoder_kernel_size: int = 5,
+        text_encoder_num_heads: int = 1,
+        graph_event_decoder_event_type_emb_dim: int = 8,
+        graph_event_decoder_hidden_dim: int = 8,
+        graph_event_decoder_autoregressive_emb_dim: int = 8,
+        graph_event_decoder_key_query_dim: int = 8,
+        graph_event_decoder_num_dec_blocks: int = 1,
+        graph_event_decoder_dec_block_num_heads: int = 1,
+        max_event_decode_len: int = 100,
+        max_label_decode_len: int = 10,
+        learning_rate: float = 5e-4,
+        dropout: float = 0.3,
+        allow_objs_with_same_label: bool = False,
+        pretrained_word_embedding_path: Optional[str] = None,
+        word_vocab_path: Optional[str] = None,
+    ) -> None:
+        # preprocessor
+        preprocessor = (
+            SpacyPreprocessor([PAD, UNK, BOS, EOS])
+            if word_vocab_path is None
+            else SpacyPreprocessor.load_from_file(to_absolute_path(word_vocab_path))
+        )
+
+        # pretrained word embeddings
+        if pretrained_word_embedding_path is not None:
+            abs_pretrained_word_embedding_path = Path(
+                to_absolute_path(pretrained_word_embedding_path)
+            )
+            serialized_path = abs_pretrained_word_embedding_path.parent / (
+                abs_pretrained_word_embedding_path.stem + ".pt"
+            )
+            pretrained_word_embeddings = load_fasttext(
+                str(abs_pretrained_word_embedding_path),
+                serialized_path,
+                preprocessor.get_vocab(),
+                preprocessor.pad_token_id,
+            )
+            assert word_emb_dim == pretrained_word_embeddings.embedding_dim
+        else:
+            pretrained_word_embeddings = nn.Embedding(
+                preprocessor.vocab_size, word_emb_dim
+            )
+        # text encoder
+        text_encoder = QANetTextEncoder(
+            pretrained_word_embeddings,
+            text_encoder_num_blocks,
+            text_encoder_num_conv_layers,
+            text_encoder_kernel_size,
+            hidden_dim,
+            text_encoder_num_heads,
+            dropout=dropout,
+        )
+        # temporal graph network
+        gnn_module: nn.Module
+        if dgnn_gnn == "TransformerConv":
+            gnn_module = TransformerConv
+        elif dgnn_gnn == "GATv2Conv":
+            gnn_module = GATv2Conv
+        else:
+            raise ValueError(f"Unknown GNN: {dgnn_gnn}")
+        super().__init__(
+            text_encoder,
+            preprocessor,
+            gnn_module,
+            hidden_dim,
+            dgnn_timestamp_enc_dim,
+            dgnn_num_gnn_block,
+            dgnn_num_gnn_head,
+            dgnn_zero_timestamp_encoder,
+            TransformerGraphEventDecoder(
+                graph_event_decoder_event_type_emb_dim + 3 * hidden_dim,
+                hidden_dim,
+                graph_event_decoder_num_dec_blocks,
+                graph_event_decoder_dec_block_num_heads,
+                graph_event_decoder_hidden_dim,
+                dropout=dropout,
+            ),
+            EventSequentialLabelHead(
+                graph_event_decoder_autoregressive_emb_dim,
+                hidden_dim,
+                preprocessor,
+                text_encoder.get_input_embeddings(),
+            ),
+            graph_event_decoder_event_type_emb_dim,
+            graph_event_decoder_autoregressive_emb_dim,
+            graph_event_decoder_key_query_dim,
+            dropout,
+            max_label_decode_len,
+        )
+        self.save_hyperparameters(
+            ignore=["pretrained_word_embedding_path", "word_vocab_path"]
+        )
+
+        self.criterion = UncertaintyWeightedLoss()
+
+        self.val_event_type_f1 = F1Score()
+        self.val_src_node_f1 = F1Score()
+        self.val_dst_node_f1 = F1Score()
+        self.val_label_f1 = F1Score()
+        self.test_event_type_f1 = F1Score()
+        self.test_src_node_f1 = F1Score()
+        self.test_dst_node_f1 = F1Score()
+        self.test_label_f1 = F1Score()
+
+        self.val_graph_tf_exact_match = ExactMatch()
+        self.val_token_tf_exact_match = ExactMatch()
+        self.val_graph_tf_f1 = F1()
+        self.val_token_tf_f1 = F1()
+        self.test_graph_tf_exact_match = ExactMatch()
+        self.test_token_tf_exact_match = ExactMatch()
+        self.test_graph_tf_f1 = F1()
+        self.test_token_tf_f1 = F1()
+
+        self.val_graph_gd_exact_match = ExactMatch()
+        self.val_token_gd_exact_match = ExactMatch()
+        self.val_graph_gd_f1 = F1()
+        self.val_token_gd_f1 = F1()
+        self.test_graph_gd_exact_match = ExactMatch()
+        self.test_token_gd_exact_match = ExactMatch()
+        self.test_graph_gd_f1 = F1()
+        self.test_token_gd_f1 = F1()
+
+        self.val_free_run_f1 = F1()
+        self.val_free_run_em = ExactMatch()
+        self.test_free_run_f1 = F1()
+        self.test_free_run_em = ExactMatch()
 
     def decode_label(
         self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
@@ -1564,92 +1767,6 @@ class TemporalDiscreteGraphUpdater(pl.LightningModule):
                 *[[" | ".join(cmds) for cmds in batch_cmds] for batch_cmds in args],
             )
         )
-
-    def get_decoder_input(
-        self,
-        event_type_ids: torch.Tensor,
-        event_src_ids: torch.Tensor,
-        event_dst_ids: torch.Tensor,
-        event_label_word_ids: torch.Tensor,
-        event_label_mask: torch.Tensor,
-        batch: torch.Tensor,
-        node_label_word_ids: torch.Tensor,
-        node_label_mask: torch.Tensor,
-        masks: Dict[str, torch.Tensor],
-    ) -> torch.Tensor:
-        """
-        Turn the graph events into decoder inputs by concatenating their embeddings.
-
-        input:
-            event_type_ids: (batch)
-            event_src_ids: (batch)
-            event_dst_ids: (batch)
-            event_label_word_ids: (batch, event_label_len)
-            event_label_mask: (batch, event_label_len)
-            batch: (num_node)
-            node_label_word_ids: (num_node, node_label_len)
-            node_label_mask: (num_node, node_label_len)
-            masks: masks calculated by compute_masks_from_event_type_ids(event_type_ids)
-
-        output: (batch, decoder_input_dim)
-            where decoder_input_dim = event_type_embedding_dim + 3 * label_embedding_dim
-        """
-        batch_size = event_type_ids.size(0)
-
-        # event type embeddings
-        event_type_embs = self.event_type_embeddings(event_type_ids)
-        # (batch, event_type_embedding_dim)
-
-        # event label embeddings
-        event_label_embs = torch.zeros(
-            batch_size,
-            self.hparams.hidden_dim,  # type: ignore
-            device=event_type_ids.device,
-        )
-        # (batch, label_embedding_dim)
-        event_label_embs[masks["label_mask"]] = self.embed_label(
-            event_label_word_ids[masks["label_mask"]],
-            event_label_mask[masks["label_mask"]],
-        )
-        # (batch, label_embedding_dim)
-
-        # event source/destination node embeddings
-        event_src_embs = torch.zeros(
-            batch_size,
-            self.hparams.hidden_dim,  # type: ignore
-            device=event_type_ids.device,
-        )
-        # (batch, label_embedding_dim)
-        event_dst_embs = torch.zeros(
-            batch_size,
-            self.hparams.hidden_dim,  # type: ignore
-            device=event_type_ids.device,
-        )
-        # (batch, label_embedding_dim)
-        node_id_offsets = calculate_node_id_offsets(batch_size, batch)
-        # (batch)
-        if masks["src_mask"].any():
-            event_src_embs[masks["src_mask"]] = self.embed_label(
-                node_label_word_ids[
-                    (event_src_ids + node_id_offsets)[masks["src_mask"]]
-                ],
-                node_label_mask[(event_src_ids + node_id_offsets)[masks["src_mask"]]],
-            )
-            # (batch, label_embedding_dim)
-
-        if masks["dst_mask"].any():
-            event_dst_embs[masks["dst_mask"]] = self.embed_label(
-                node_label_word_ids[
-                    (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
-                ],
-                node_label_mask[(event_dst_ids + node_id_offsets)[masks["dst_mask"]]],
-            )
-            # (batch, label_embedding_dim)
-
-        return torch.cat(
-            [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
-        )
-        # (batch, event_type_embedding_dim + 3 * label_embedding_dim)
 
 
 class UncertaintyWeightedLoss(nn.Module):
