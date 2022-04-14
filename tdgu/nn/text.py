@@ -1,12 +1,8 @@
 import torch
 import torch.nn as nn
 
-from typing import Optional
 
-from hydra.utils import to_absolute_path
-from pathlib import Path
-from tdgu.nn.utils import PositionalEncoder, load_fasttext
-from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.nn.utils import PositionalEncoder
 
 
 class DepthwiseSeparableConv1d(nn.Module):
@@ -134,41 +130,27 @@ class TextEncoderBlock(nn.Module):
         return output
 
 
-class TextEncoder(nn.Module):
+class QANetTextEncoder(nn.Module):
     def __init__(
         self,
-        preprocessor: SpacyPreprocessor,
-        word_emb_dim: int,
+        pretrained_word_embeddings: nn.Embedding,
         num_enc_blocks: int,
         enc_block_num_conv_layers: int,
         enc_block_kernel_size: int,
         enc_block_hidden_dim: int,
         enc_block_num_heads: int,
         dropout: float = 0.3,
-        embedding_path: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.enc_block_hidden_dim = enc_block_hidden_dim
-        if embedding_path is not None:
-            abs_pretrained_word_embedding_path = Path(to_absolute_path(embedding_path))
-            serialized_path = abs_pretrained_word_embedding_path.parent / (
-                abs_pretrained_word_embedding_path.stem + ".pt"
-            )
-            self.pretrained_word_embeddings = load_fasttext(
-                str(abs_pretrained_word_embedding_path),
-                serialized_path,
-                preprocessor,
-            )
-            assert word_emb_dim == self.pretrained_word_embeddings.embedding_dim
-        else:
-            self.pretrained_word_embeddings = nn.Embedding(
-                preprocessor.vocab_size, word_emb_dim
-            )
+        self.pretrained_word_embeddings = pretrained_word_embeddings
 
         self.pretrained_word_embeddings.weight.requires_grad = False
         self.word_embeddings = nn.Sequential(
             self.pretrained_word_embeddings,
-            nn.Linear(word_emb_dim, enc_block_hidden_dim),
+            nn.Linear(
+                self.pretrained_word_embeddings.embedding_dim, enc_block_hidden_dim
+            ),
         )
 
         self.enc_blocks = nn.ModuleList(
@@ -204,6 +186,5 @@ class TextEncoder(nn.Module):
 
         return word_embs
 
-    @property
-    def get_pretrained_embedding(self) -> nn.Embedding:
+    def get_input_embeddings(self) -> nn.Embedding:
         return self.pretrained_word_embeddings

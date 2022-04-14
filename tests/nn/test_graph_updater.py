@@ -5,22 +5,60 @@ import torch.nn as nn
 import random
 
 from torch_geometric.data.batch import Data, Batch
+from torch_geometric.nn import TransformerConv
 
 from tdgu.nn.graph_updater import (
     TemporalDiscreteGraphUpdater,
+    SupervisedTDGU,
     UncertaintyWeightedLoss,
 )
 from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.nn.utils import compute_masks_from_event_type_ids
+from tdgu.nn.text import QANetTextEncoder
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.nn.graph_event_decoder import (
+    TransformerGraphEventDecoder,
+    EventSequentialLabelHead,
+)
 
 from utils import increasing_mask
 
 
 @pytest.fixture()
-def tdgu(tmp_path):
-    shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
+def tdgu():
+    preprocessor = SpacyPreprocessor.load_from_file("tests/data/test_word_vocab.txt")
+    text_encoder = QANetTextEncoder(
+        nn.Embedding(preprocessor.vocab_size, 300), 1, 3, 5, 8, 1
+    )
     return TemporalDiscreteGraphUpdater(
+        text_encoder,
+        preprocessor,
+        TransformerConv,
+        8,
+        8,
+        1,
+        1,
+        False,
+        TransformerGraphEventDecoder(8 + 3 * 8, 8, 1, 1, 8),
+        EventSequentialLabelHead(
+            8,
+            8,
+            preprocessor,
+            text_encoder.get_input_embeddings(),
+        ),
+        8,
+        8,
+        8,
+        0.3,
+        10,
+    )
+
+
+@pytest.fixture()
+def supervised_tdgu(tmp_path):
+    shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
+    return SupervisedTDGU(
         pretrained_word_embedding_path=f"{tmp_path}/test-fasttext.vec",
         word_vocab_path="tests/data/test_word_vocab.txt",
     )
@@ -30,12 +68,9 @@ def tdgu(tmp_path):
 @pytest.mark.parametrize("batch", [1, 8])
 def test_tdgu_embed_label(tdgu, batch, label_len):
     assert tdgu.embed_label(
-        torch.randint(len(tdgu.preprocessor.word_vocab), (batch, label_len)),
+        torch.randint(tdgu.preprocessor.vocab_size, (batch, label_len)),
         torch.randint(2, (batch, label_len)).bool(),
-    ).size() == (
-        batch,
-        tdgu.hparams.hidden_dim,
-    )
+    ).size() == (batch, tdgu.hidden_dim)
 
 
 @pytest.mark.parametrize(
@@ -49,15 +84,10 @@ def test_tdgu_embed_label(tdgu, batch, label_len):
         ),
     ],
 )
-def test_tdgu_decode_label(tdgu, label_word_ids, label_mask, expected):
-    assert tdgu.decode_label(label_word_ids, label_mask) == expected
-
-
-@pytest.mark.parametrize("batch,seq_len", [(1, 10), (8, 24)])
-def test_tdgu_encode_text(tdgu, batch, seq_len):
-    assert tdgu.text_encoder(
-        torch.randint(13, (batch, seq_len)), torch.randint(2, (batch, seq_len)).float()
-    ).size() == (batch, seq_len, tdgu.hparams.hidden_dim)
+def test_supervised_tdgu_decode_label(
+    supervised_tdgu, label_word_ids, label_mask, expected
+):
+    assert supervised_tdgu.decode_label(label_word_ids, label_mask) == expected
 
 
 @pytest.mark.parametrize(
@@ -379,12 +409,12 @@ def test_tdgu_forward(
     expected_num_edge,
 ):
     encoded_obs = (
-        torch.rand(batch_size, obs_len, tdgu.hparams.hidden_dim)
+        torch.rand(batch_size, obs_len, tdgu.hidden_dim)
         if encoded_textual_input
         else None
     )
     encoded_prev_action = (
-        torch.rand(batch_size, prev_action_len, tdgu.hparams.hidden_dim)
+        torch.rand(batch_size, prev_action_len, tdgu.hidden_dim)
         if encoded_textual_input
         else None
     )
@@ -419,7 +449,7 @@ def test_tdgu_forward(
         event_type_ids,
         event_src_ids,
         event_dst_ids,
-        torch.randint(len(tdgu.preprocessor.word_vocab), (batch_size, event_label_len)),
+        torch.randint(tdgu.preprocessor.vocab_size, (batch_size, event_label_len)),
         increasing_mask(batch_size, event_label_len).bool(),
         batched_graph,
         obs_mask,
@@ -436,10 +466,10 @@ def test_tdgu_forward(
         prev_input_event_emb_seq=None
         if prev_input_seq_len == 0
         else torch.rand(
-            tdgu.hparams.graph_event_decoder_num_dec_blocks,
+            len(tdgu.graph_event_decoder.dec_blocks),
             batch_size,
             prev_input_seq_len,
-            tdgu.hparams.graph_event_decoder_hidden_dim,
+            tdgu.graph_event_decoder.hidden_dim,
         ),
         prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
         groundtruth_event=groundtruth_event,
@@ -463,10 +493,10 @@ def test_tdgu_forward(
             "groundtruth_event_label_tgt_word_ids"
         ].size() + (len(tdgu.preprocessor.word_vocab),)
     assert results["updated_prev_input_event_emb_seq"].size() == (
-        tdgu.hparams.graph_event_decoder_num_dec_blocks,
+        len(tdgu.graph_event_decoder.dec_blocks),
         batch_size,
         prev_input_seq_len + 1,
-        tdgu.hparams.graph_event_decoder_hidden_dim,
+        tdgu.graph_event_decoder.hidden_dim,
     )
     assert results["updated_prev_input_event_emb_seq_mask"].size() == (
         batch_size,
@@ -476,15 +506,11 @@ def test_tdgu_forward(
         assert results["encoded_obs"].equal(encoded_obs)
         assert results["encoded_prev_action"].equal(encoded_prev_action)
     else:
-        assert results["encoded_obs"].size() == (
-            batch_size,
-            obs_len,
-            tdgu.hparams.hidden_dim,
-        )
+        assert results["encoded_obs"].size() == (batch_size, obs_len, tdgu.hidden_dim)
         assert results["encoded_prev_action"].size() == (
             batch_size,
             prev_action_len,
-            tdgu.hparams.hidden_dim,
+            tdgu.hidden_dim,
         )
     assert results["updated_batched_graph"].batch.size() == (expected_num_node,)
     assert results["updated_batched_graph"].x.dim() == 2
@@ -503,22 +529,26 @@ def test_tdgu_forward(
         2,
     )
     assert results["batch_node_mask"].size() == (batch_size, max_sub_graph_num_node)
-    assert len(results["self_attn_weights"]) == len(tdgu.decoder.dec_blocks)
+    assert len(results["self_attn_weights"]) == len(tdgu.graph_event_decoder.dec_blocks)
     for self_attn_weights in results["self_attn_weights"]:
         assert self_attn_weights.size() == (batch_size, 1, prev_input_seq_len + 1)
-    assert len(results["obs_graph_attn_weights"]) == len(tdgu.decoder.dec_blocks)
+    assert len(results["obs_graph_attn_weights"]) == len(
+        tdgu.graph_event_decoder.dec_blocks
+    )
     for obs_graph_attn_weights in results["obs_graph_attn_weights"]:
         assert obs_graph_attn_weights.size() == (batch_size, 1, obs_len)
     assert len(results["prev_action_graph_attn_weights"]) == len(
-        tdgu.decoder.dec_blocks
+        tdgu.graph_event_decoder.dec_blocks
     )
     for prev_action_graph_attn_weights in results["prev_action_graph_attn_weights"]:
         assert prev_action_graph_attn_weights.size() == (batch_size, 1, prev_action_len)
-    assert len(results["graph_obs_attn_weights"]) == len(tdgu.decoder.dec_blocks)
+    assert len(results["graph_obs_attn_weights"]) == len(
+        tdgu.graph_event_decoder.dec_blocks
+    )
     for graph_obs_attn_weights in results["graph_obs_attn_weights"]:
         assert graph_obs_attn_weights.size() == (batch_size, 1, max_sub_graph_num_node)
     assert len(results["graph_prev_action_attn_weights"]) == len(
-        tdgu.decoder.dec_blocks
+        tdgu.graph_event_decoder.dec_blocks
     )
     for graph_prev_action_attn_weights in results["graph_prev_action_attn_weights"]:
         assert graph_prev_action_attn_weights.size() == (
@@ -968,8 +998,8 @@ def test_uncertainty_weighted_loss(
     ],
 )
 @pytest.mark.parametrize("log_prefix", ["val", "test"])
-def test_tdgu_calculate_f1s(
-    tdgu,
+def test_supervised_tdgu_calculate_f1s(
+    supervised_tdgu,
     log_prefix,
     event_type_logits,
     groundtruth_event_type_ids,
@@ -990,7 +1020,7 @@ def test_tdgu_calculate_f1s(
     expected_dst_node_f1,
     expected_label_f1,
 ):
-    tdgu.calculate_f1s(
+    supervised_tdgu.calculate_f1s(
         event_type_logits,
         groundtruth_event_type_ids,
         event_src_logits,
@@ -1008,18 +1038,24 @@ def test_tdgu_calculate_f1s(
         log_prefix,
     )
     assert (
-        getattr(tdgu, log_prefix + "_event_type_f1").compute() == expected_event_type_f1
+        getattr(supervised_tdgu, log_prefix + "_event_type_f1").compute()
+        == expected_event_type_f1
     )
     if groundtruth_event_src_mask.any():
         assert (
-            getattr(tdgu, log_prefix + "_src_node_f1").compute() == expected_src_node_f1
+            getattr(supervised_tdgu, log_prefix + "_src_node_f1").compute()
+            == expected_src_node_f1
         )
     if groundtruth_event_dst_mask.any():
         assert (
-            getattr(tdgu, log_prefix + "_dst_node_f1").compute() == expected_dst_node_f1
+            getattr(supervised_tdgu, log_prefix + "_dst_node_f1").compute()
+            == expected_dst_node_f1
         )
     if groundtruth_event_label_mask.any():
-        assert getattr(tdgu, log_prefix + "_label_f1").compute() == expected_label_f1
+        assert (
+            getattr(supervised_tdgu, log_prefix + "_label_f1").compute()
+            == expected_label_f1
+        )
 
 
 @pytest.mark.parametrize(
@@ -1187,8 +1223,8 @@ def test_tdgu_calculate_f1s(
         ),
     ],
 )
-def test_tdgu_generate_graph_triples(
-    tdgu,
+def test_supervised_tdgu_generate_graph_triples(
+    supervised_tdgu,
     event_type_ids,
     src_ids,
     dst_ids,
@@ -1198,7 +1234,7 @@ def test_tdgu_generate_graph_triples(
     expected,
 ):
     assert (
-        tdgu.generate_graph_triples(
+        supervised_tdgu.generate_graph_triples(
             event_type_ids,
             src_ids,
             dst_ids,
@@ -1436,8 +1472,8 @@ def test_tdgu_generate_graph_triples(
         ),
     ],
 )
-def test_tdgu_generate_batch_graph_triples_seq(
-    tdgu,
+def test_supervised_tdgu_generate_batch_graph_triples_seq(
+    supervised_tdgu,
     event_type_id_seq,
     src_id_seq,
     dst_id_seq,
@@ -1447,7 +1483,7 @@ def test_tdgu_generate_batch_graph_triples_seq(
     expected,
 ):
     assert (
-        tdgu.generate_batch_graph_triples_seq(
+        supervised_tdgu.generate_batch_graph_triples_seq(
             event_type_id_seq,
             src_id_seq,
             dst_id_seq,
@@ -1527,7 +1563,7 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
     groundtruth_cmd_seq, expected
 ):
     assert (
-        TemporalDiscreteGraphUpdater.generate_batch_groundtruth_graph_triple_tokens(
+        SupervisedTDGU.generate_batch_groundtruth_graph_triple_tokens(
             groundtruth_cmd_seq
         )
         == expected
@@ -1650,10 +1686,10 @@ def test_tdgu_generate_batch_groundtruth_graph_triple_tokens(
         ),
     ],
 )
-def test_tdgu_filter_invalid_events(
-    tdgu, event_type_ids, src_ids, dst_ids, batch, edge_index, expected
+def test_supervised_tdgu_filter_invalid_events(
+    supervised_tdgu, event_type_ids, src_ids, dst_ids, batch, edge_index, expected
 ):
-    assert tdgu.filter_invalid_events(
+    assert supervised_tdgu.filter_invalid_events(
         event_type_ids, src_ids, dst_ids, batch, edge_index
     ).equal(expected)
 
@@ -3222,9 +3258,9 @@ def test_tdgu_filter_invalid_events(
         ),
     ],
 )
-def test_tdgu_greedy_decode(
+def test_supervised_tdgu_greedy_decode(
     monkeypatch,
-    tdgu,
+    supervised_tdgu,
     max_event_decode_len,
     batch,
     obs_len,
@@ -3239,21 +3275,27 @@ def test_tdgu_greedy_decode(
 
         def __call__(self, *args, **kwargs):
             decoded = forward_results[self.num_calls]
-            decoded["encoded_obs"] = torch.rand(batch, obs_len, tdgu.hparams.hidden_dim)
+            decoded["encoded_obs"] = torch.rand(
+                batch, obs_len, supervised_tdgu.hparams.hidden_dim
+            )
             decoded["encoded_prev_action"] = torch.rand(
-                batch, prev_action_len, tdgu.hparams.hidden_dim
+                batch, prev_action_len, supervised_tdgu.hparams.hidden_dim
             )
             self.num_calls += 1
             return decoded
 
-    monkeypatch.setattr(tdgu, "forward", MockForward())
-    monkeypatch.setattr(tdgu.hparams, "max_event_decode_len", max_event_decode_len)
-    decoded_list = tdgu.greedy_decode(
+    monkeypatch.setattr(supervised_tdgu, "forward", MockForward())
+    monkeypatch.setattr(
+        supervised_tdgu.hparams, "max_event_decode_len", max_event_decode_len
+    )
+    decoded_list = supervised_tdgu.greedy_decode(
         TWCmdGenGraphEventStepInput(
-            obs_word_ids=torch.randint(tdgu.preprocessor.vocab_size, (batch, obs_len)),
+            obs_word_ids=torch.randint(
+                supervised_tdgu.preprocessor.vocab_size, (batch, obs_len)
+            ),
             obs_mask=torch.randint(2, (batch, obs_len)).float(),
             prev_action_word_ids=torch.randint(
-                tdgu.preprocessor.vocab_size, (batch, prev_action_len)
+                supervised_tdgu.preprocessor.vocab_size, (batch, prev_action_len)
             ),
             prev_action_mask=torch.randint(2, (batch, prev_action_len)).float(),
             timestamps=torch.tensor([4.0] * batch),
@@ -3353,10 +3395,7 @@ def test_tdgu_greedy_decode(
     ],
 )
 def test_tdgu_generate_predict_table_rows(ids, batch_cmds, expected):
-    assert (
-        TemporalDiscreteGraphUpdater.generate_predict_table_rows(ids, *batch_cmds)
-        == expected
-    )
+    assert SupervisedTDGU.generate_predict_table_rows(ids, *batch_cmds) == expected
 
 
 @pytest.mark.parametrize(
@@ -3562,7 +3601,7 @@ def test_tdgu_get_decoder_input(
         )
     )
     tdgu.embed_label = (
-        lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hparams.hidden_dim).float()
+        lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hidden_dim).float()
     )
     assert tdgu.get_decoder_input(
         event_type_ids,
@@ -3664,7 +3703,9 @@ def test_tdgu_get_decoder_input(
         ),
     ],
 )
-def test_tdgu_data_to_networkx(tdgu, data, expected_node_attrs, expected_edge_attrs):
-    nx_graph = tdgu.data_to_networkx(data)
+def test_supervised_tdgu_data_to_networkx(
+    supervised_tdgu, data, expected_node_attrs, expected_edge_attrs
+):
+    nx_graph = supervised_tdgu.data_to_networkx(data)
     assert dict(nx_graph.nodes.data()) == expected_node_attrs
     assert list(nx_graph.edges.data()) == expected_edge_attrs

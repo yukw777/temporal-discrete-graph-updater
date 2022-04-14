@@ -21,7 +21,7 @@ from tdgu.nn.utils import (
     PositionalEncoder,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.preprocessor import PAD, UNK, SpacyPreprocessor
+from tdgu.preprocessor import PAD, UNK
 
 
 @pytest.mark.parametrize(
@@ -248,18 +248,25 @@ def test_compute_masks_from_event_type_ids(
 def test_load_fasttext(tmpdir):
     serialized_path = Path(tmpdir / "word-emb.pt")
     assert not serialized_path.exists()
-    preprocessor = SpacyPreprocessor([PAD, UNK, "my", "name", "is", "peter"])
-    emb = load_fasttext("tests/data/test-fasttext.vec", serialized_path, preprocessor)
-    word_ids, _ = preprocessor.preprocess_tokenized(
+    vocab = {
+        token: i for i, token in enumerate([PAD, UNK, "my", "name", "is", "peter"])
+    }
+    emb = load_fasttext(
+        "tests/data/test-fasttext.vec", serialized_path, vocab, vocab[PAD]
+    )
+    word_ids = torch.tensor(
         [
-            ["hi", "there", "what's", "your", "name"],
-            ["my", "name", "is", "peter"],
+            [
+                vocab.get(w, vocab[UNK])
+                for w in ["hi", "there", "what's", "your", "name"]
+            ],
+            [vocab.get(w, vocab[UNK]) for w in ["my", "name", "is", "peter", PAD]],
         ]
     )
     embedded = emb(word_ids)
     # OOVs
     assert embedded[0, :4].equal(
-        emb(torch.tensor(preprocessor.unk_token_id)).unsqueeze(0).expand(4, -1)
+        emb(torch.tensor(vocab[UNK])).unsqueeze(0).expand(4, -1)
     )
     # name
     assert embedded[0, 4].equal(emb(torch.tensor(3)))

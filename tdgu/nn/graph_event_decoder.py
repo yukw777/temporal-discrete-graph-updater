@@ -7,7 +7,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from tdgu.nn.utils import masked_mean, PositionalEncoder
 from tdgu.constants import EVENT_TYPES
-from tdgu.preprocessor import BOS, PAD, EOS
+from tdgu.preprocessor import Preprocessor
 
 
 class EventTypeHead(nn.Module):
@@ -211,18 +211,18 @@ class EventSequentialLabelHead(nn.Module):
         self,
         autoregressive_embedding_dim: int,
         hidden_dim: int,
-        word_to_id_dict: Dict[str, int],
+        preprocessor: Preprocessor,
         pretrained_word_embeddings: nn.Embedding,
     ) -> None:
         super().__init__()
-        self.word_to_id_dict = word_to_id_dict
+        self.preprocessor = preprocessor
         self.word_embeddings = nn.Sequential(
             pretrained_word_embeddings,
             nn.Linear(pretrained_word_embeddings.embedding_dim, hidden_dim),
         )
         self.linear_hidden = nn.Linear(autoregressive_embedding_dim, hidden_dim)
         self.gru = nn.GRU(hidden_dim, hidden_dim, batch_first=True)
-        self.linear_output = nn.Linear(hidden_dim, len(self.word_to_id_dict))
+        self.linear_output = nn.Linear(hidden_dim, self.preprocessor.vocab_size)
 
     def forward(
         self,
@@ -289,7 +289,7 @@ class EventSequentialLabelHead(nn.Module):
         """
         batch_size = autoregressive_embedding.size(0)
         decoded = torch.tensor(
-            [[self.word_to_id_dict[BOS]]] * batch_size,
+            [[self.preprocessor.bos_token_id]] * batch_size,
             device=autoregressive_embedding.device,
         )
         # (batch, 1)
@@ -319,11 +319,11 @@ class EventSequentialLabelHead(nn.Module):
             # logits: (num_not_end, 1, num_word)
             # hidden: (num_not_end, hidden_dim)
             decoded = torch.tensor(
-                [[self.word_to_id_dict[PAD]]] * batch_size, device=logits.device
+                [[self.preprocessor.pad_token_id]] * batch_size, device=logits.device
             ).masked_scatter(not_end_mask, logits.argmax(dim=2))
             # (batch, 1)
             decoded_seq.append(decoded)
-            end_mask = end_mask.logical_or(decoded == self.word_to_id_dict[EOS])
+            end_mask = end_mask.logical_or(decoded == self.preprocessor.eos_token_id)
 
             if end_mask.all():
                 break

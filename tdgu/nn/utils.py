@@ -10,7 +10,6 @@ from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
 
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.preprocessor import SpacyPreprocessor
 
 
 def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -107,7 +106,7 @@ def compute_masks_from_event_type_ids(
 
 
 def load_fasttext(
-    fname: str, serialized_path: Path, preprocessor: SpacyPreprocessor
+    fname: str, serialized_path: Path, vocab: Dict[str, int], pad_token_id: int
 ) -> nn.Embedding:
     # check if we have already serialized it
     if serialized_path.exists():
@@ -123,12 +122,8 @@ def load_fasttext(
             data[parts[0]] = parts[1]
     # embedding for pad is initalized to 0
     # embeddings for OOVs are randomly initialized from N(0, 1)
-    emb = nn.Embedding(
-        preprocessor.vocab_size, emb_dim, padding_idx=preprocessor.pad_token_id
-    )
-    for word, i in tqdm(
-        preprocessor.get_vocab().items(), desc="constructing word embeddings"
-    ):
+    emb = nn.Embedding(len(vocab), emb_dim, padding_idx=pad_token_id)
+    for word, i in tqdm(vocab.items(), desc="constructing word embeddings"):
         if word in data:
             with torch.no_grad():
                 emb.weight[i] = torch.tensor(list(map(float, data[word].split())))

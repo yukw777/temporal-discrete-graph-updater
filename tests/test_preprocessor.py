@@ -203,6 +203,14 @@ def test_mock_clean_and_preprocess(batch, expected_preprocessed, expected_mask):
             return {}
 
         @property
+        def bos_token_id(self) -> int:
+            return -1
+
+        @property
+        def eos_token_id(self) -> int:
+            return -1
+
+        @property
         def pad_token_id(self) -> int:
             return -1
 
