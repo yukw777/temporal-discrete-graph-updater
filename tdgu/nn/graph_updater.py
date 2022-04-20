@@ -125,7 +125,6 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         dgnn_num_gnn_head: int,
         dgnn_zero_timestamp_encoder: bool,
         graph_event_decoder: GraphEventDecoder,
-        event_label_head: EventSequentialLabelHead,
         graph_event_decoder_event_type_emb_dim: int,
         graph_event_decoder_autoregressive_emb_dim: int,
         graph_event_decoder_key_query_dim: int,
@@ -188,7 +187,6 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             self.preprocessor,
             self.text_encoder.get_input_embeddings(),
         )
-        self.event_label_head = event_label_head
 
     def forward(  # type: ignore
         self,
@@ -697,12 +695,6 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater, pl.LightningModule):  # type:
                 graph_event_decoder_dec_block_num_heads,
                 graph_event_decoder_hidden_dim,
                 dropout=dropout,
-            ),
-            EventSequentialLabelHead(
-                graph_event_decoder_autoregressive_emb_dim,
-                hidden_dim,
-                preprocessor,
-                text_encoder.get_input_embeddings(),
             ),
             graph_event_decoder_event_type_emb_dim,
             graph_event_decoder_autoregressive_emb_dim,

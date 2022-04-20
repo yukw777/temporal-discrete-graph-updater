@@ -17,10 +17,7 @@ from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.nn.utils import compute_masks_from_event_type_ids
 from tdgu.nn.text import QANetTextEncoder
 from tdgu.preprocessor import SpacyPreprocessor
-from tdgu.nn.graph_event_decoder import (
-    TransformerGraphEventDecoder,
-    EventSequentialLabelHead,
-)
+from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
 
 from utils import increasing_mask
 
@@ -41,12 +38,6 @@ def tdgu():
         1,
         False,
         TransformerGraphEventDecoder(8 + 3 * 8, 8, 1, 1, 8),
-        EventSequentialLabelHead(
-            8,
-            8,
-            preprocessor,
-            text_encoder.get_input_embeddings(),
-        ),
         8,
         8,
         8,
