@@ -91,22 +91,6 @@ class GraphEventDecoder(Protocol):
         pass
 
 
-class EventSequentialLabelHeadProto(Protocol):
-    def __call__(
-        self,
-        output_tgt_seq: torch.Tensor,
-        output_tgt_seq_mask: torch.Tensor,
-        autoregressive_embedding: Optional[torch.Tensor] = None,
-        prev_hidden: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pass
-
-    def greedy_decode(
-        self, autoregressive_embedding: torch.Tensor, max_decode_len: int = 10
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        pass
-
-
 class TemporalDiscreteGraphUpdater(nn.Module):
     """
     TemporalDiscreteGraphUpdater is essentially a Seq2Seq model which encodes
