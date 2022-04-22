@@ -6,7 +6,7 @@ import random
 from typing import List
 from torch.utils.data import DataLoader
 
-from tdgu.nn.graph_updater import SupervisedTDGU
+from tdgu.train.supervised import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventDataset, TWCmdGenGraphEventDataCollator
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES

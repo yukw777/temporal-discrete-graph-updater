@@ -1,7 +1,7 @@
 import shutil
 import pytest
 
-from tdgu.train_tdgu import main
+from tdgu.supervised_train_tdgu import main
 from hydra import initialize, compose
 
 
@@ -9,7 +9,7 @@ from hydra import initialize, compose
 def test_main(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
 
-    with initialize(config_path="../tdgu/train_tdgu_conf"):
+    with initialize(config_path="../tdgu/supervised_train_tdgu_conf"):
         cfg = compose(
             config_name="config",
             overrides=[
@@ -36,7 +36,7 @@ def test_main(tmp_path):
 
 @pytest.mark.slow
 def test_main_test_only(tmp_path):
-    with initialize(config_path="../tdgu/train_tdgu_conf"):
+    with initialize(config_path="../tdgu/supervised_train_tdgu_conf"):
         cfg = compose(
             config_name="config",
             overrides=[

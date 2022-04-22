@@ -2,7 +2,7 @@ import torch
 
 from torch.utils.data import DataLoader
 
-from tdgu.nn.graph_updater import SupervisedTDGU
+from tdgu.train.supervised import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventFreeRunDataset, TWCmdGenGraphEventDataCollator
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.metrics.f1 import F1

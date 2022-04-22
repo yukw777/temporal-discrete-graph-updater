@@ -16,7 +16,7 @@ data_module:
   word_vocab_path: vocabs/word_vocab.txt
 
 model:
-  _target_: tdgu.nn.graph_updater.SupervisedTDGU
+  _target_: tdgu.train.supervised.SupervisedTDGU
   hidden_dim: 64
   word_emb_dim: 300
   dgnn_gnn: TransformerConv

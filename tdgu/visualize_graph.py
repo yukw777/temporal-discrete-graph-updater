@@ -8,7 +8,7 @@ from typing import Set, Tuple, List
 from pathlib import Path
 from itertools import count
 
-from tdgu.nn.graph_updater import SupervisedTDGU
+from tdgu.train.supervised import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
 from tdgu.utils import draw_graph
