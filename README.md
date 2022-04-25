@@ -29,7 +29,7 @@ Install dependencies.
 git clone https://github.com/yukw777/temporal-discrete-graph-updater
 cd temporal-discrete-graph-updater
 
-# TDGU supports python 3.6-3.8.
+# TDGU supports python 3.8.
 # Install CUDA dependencies
 python install_cuda_deps.py
 # Install the tdgu module in the editable mode
@@ -83,7 +83,7 @@ virtualenv -p python3.8 venv
 source venv/bin/activate
 
 # Install dependencies
-# TDGU supports python 3.6-3.8.
+# TDGU supports python 3.8.
 # For CUDA 10.2:
 pip install torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-1.10.0+cu102.html
 # For CUDA 11.3
