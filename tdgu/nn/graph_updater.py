@@ -1105,7 +1105,10 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater, pl.LightningModule):  # type:
                 )
             ]
         ).mean()
-        self.log(log_prefix + "_loss", loss)
+        # TODO: Remove batch_size when
+        # https://github.com/PyTorchLightning/pytorch-lightning/pull/12573
+        # is released.
+        self.log(log_prefix + "_loss", loss, batch_size=len(batch.ids))
 
         # log classification F1s from teacher forcing
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
@@ -1448,14 +1451,14 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater, pl.LightningModule):  # type:
         self, outputs: List[List[Tuple[str, str, str, str]]], table_title: str
     ) -> None:
         eval_table_artifact = wandb.Artifact(
-            table_title + f"_{self.logger.experiment.id}", "predictions"
+            table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
         )
         eval_table = wandb.Table(
             columns=["id", "truth", "tf", "gd"],
             data=[item for sublist in outputs for item in sublist],
         )
         eval_table_artifact.add(eval_table, "predictions")
-        self.logger.experiment.log_artifact(eval_table_artifact)
+        self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
 
     def validation_epoch_end(  # type: ignore
         self,

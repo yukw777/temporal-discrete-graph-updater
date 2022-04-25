@@ -10,19 +10,17 @@ manually installs them.
 """
 
 PYTORCH_INSTALL_CMD_MAP = {
-    "cpu": "torch==1.10.2+cpu "
-    "-f https://download.pytorch.org/whl/cpu/torch_stable.html",
-    "11.3": "torch==1.10.2+cu113 "
-    "-f https://download.pytorch.org/whl/cu113/torch_stable.html",
-    "10.2": "torch==1.10.2",
+    "cpu": "torch~=1.11.0 --extra-index-url https://download.pytorch.org/whl/cpu -U",
+    "11.3": "torch~=1.11.0 --extra-index-url https://download.pytorch.org/whl/cu113 -U",
+    "10.2": "torch~=1.11.0 -U",
 }
 PYTORCH_GEOMETRIC_INSTALL_CMD_MAP = {
     "cpu": "torch-geometric~=2.0.3 torch-scatter~=2.0.9 torch-sparse~=0.6.12 "
-    "-f https://data.pyg.org/whl/torch-1.10.0+cpu.html",
+    "-f https://data.pyg.org/whl/torch-1.11.0+cpu.html -U",
     "11.3": "torch-geometric~=2.0.3 torch-scatter~=2.0.9 torch-sparse~=0.6.12 "
-    "-f https://data.pyg.org/whl/torch-1.10.0+cu113.html",
+    "-f https://data.pyg.org/whl/torch-1.11.0+cu113.html -U",
     "10.2": "torch-geometric~=2.0.3 torch-scatter~=2.0.9 torch-sparse~=0.6.12 "
-    "-f https://data.pyg.org/whl/torch-1.10.0+cu102.html",
+    "-f https://data.pyg.org/whl/torch-1.11.0+cu102.html -U",
 }
 
 
