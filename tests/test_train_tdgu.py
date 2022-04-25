@@ -6,21 +6,9 @@ from hydra import initialize, compose
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("sort_commands", [True, False])
-@pytest.mark.parametrize("allow_objs_with_same_label", [True, False])
-@pytest.mark.parametrize("zero_timestamp_encoder", [True, False])
-def test_main(
-    tmp_path, zero_timestamp_encoder, allow_objs_with_same_label, sort_commands
-):
+def test_main(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
 
-    extra_overrides = []
-    if zero_timestamp_encoder:
-        extra_overrides.append("+model.dgnn_zero_timestamp_encoder=true")
-    if allow_objs_with_same_label:
-        extra_overrides.append("objs_with_same_label=allow")
-    if sort_commands:
-        extra_overrides.append("+data_module.sort_commands=true")
     with initialize(config_path="../tdgu/train_tdgu_conf"):
         cfg = compose(
             config_name="config",
@@ -41,8 +29,7 @@ def test_main(
                 f"model.pretrained_word_embedding_path={tmp_path}/test-fasttext.vec",
                 f"+trainer.default_root_dir={tmp_path}",
                 "+trainer.max_epochs=2",
-            ]
-            + extra_overrides,
+            ],
         )
         main(cfg)
 
