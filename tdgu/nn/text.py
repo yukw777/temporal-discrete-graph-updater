@@ -203,7 +203,9 @@ class HugginfaceTextEncoder(nn.Module):
         # fine tuning the transformer
         # self.pretrained_word_embeddings.weight.requires_grad = False
 
-        self.linear_layer = nn.Linear(self.pretrained_word_embeddings.config.dim, hidden_dim)
+        self.linear_layer = nn.Linear(
+            self.pretrained_word_embeddings.config.dim, hidden_dim
+        )
 
     def forward(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """

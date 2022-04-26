@@ -135,6 +135,7 @@ def test_text_encoder(
         enc_block_hidden_dim,
     )
 
+
 @pytest.mark.parametrize(
     "hidden_dim,batch_size,seq_len",
     [
@@ -143,8 +144,10 @@ def test_text_encoder(
         (10, 3, 7),
     ],
 )
-@pytest.mark.parametrize("pretrained", [AutoModel.from_pretrained("distilbert-base-uncased")])
-def test_text_encoder(
+@pytest.mark.parametrize(
+    "pretrained", [AutoModel.from_pretrained("distilbert-base-uncased")]
+)
+def test_text_encoder_hf(
     pretrained,
     hidden_dim,
     batch_size,
