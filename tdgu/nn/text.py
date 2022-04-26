@@ -200,8 +200,8 @@ class HugginfaceTextEncoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.pretrained_word_embeddings = pretrained_word_embeddings
 
-        # fine tuning the transformer
-        # self.pretrained_word_embeddings.weight.requires_grad = False
+        for param in self.pretrained_word_embeddings.parameters():
+            param.requires_grad = False
 
         self.linear_layer = nn.Linear(
             self.pretrained_word_embeddings.config.dim, hidden_dim
