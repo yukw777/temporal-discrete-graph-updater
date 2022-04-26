@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from transformers import PreTrainedModel
 
 from tdgu.nn.utils import PositionalEncoder
 
@@ -188,3 +188,46 @@ class QANetTextEncoder(nn.Module):
 
     def get_input_embeddings(self) -> nn.Embedding:
         return self.pretrained_word_embeddings
+
+
+class HugginfaceTextEncoder(nn.Module):
+    def __init__(
+        self,
+        pretrained_word_embeddings: PreTrainedModel,
+        hidden_dim: int,
+    ) -> None:
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.pretrained_word_embeddings = pretrained_word_embeddings
+
+        # fine tuning the transformer
+        # self.pretrained_word_embeddings.weight.requires_grad = False
+
+        self.linear_layer = nn.Linear(self.pretrained_word_embeddings.config.dim, hidden_dim)
+
+    def forward(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        word_ids: (batch_size, seq_len)
+        mask: (batch_size, seq_len)
+        output:
+            encoded: (batch_size, seq_len, enc_block_hidden_dim)
+        """
+
+        if word_ids.size(0) == 0 or word_ids.size(1) == 0:
+            return torch.empty(
+                word_ids.size(0),
+                word_ids.size(1),
+                self.hidden_dim,
+                device=word_ids.device,
+            )
+
+        word_embs = self.pretrained_word_embeddings(word_ids, mask).last_hidden_state
+        # (batch_size, seq_len, enc_block_hidden_dim)
+
+        word_embs = self.linear_layer(word_embs)
+        # (batch_size, seq_len, enc_block_hidden_dim)
+
+        return word_embs
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.pretrained_word_embeddings.get_input_embeddings()  # type: ignore

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from transformers import AutoModel
 import pytest
 
 from tdgu.nn.text import (
@@ -7,6 +8,7 @@ from tdgu.nn.text import (
     TextEncoderConvBlock,
     TextEncoderBlock,
     QANetTextEncoder,
+    HugginfaceTextEncoder,
 )
 from utils import increasing_mask
 
@@ -131,4 +133,34 @@ def test_text_encoder(
         batch_size,
         seq_len,
         enc_block_hidden_dim,
+    )
+
+@pytest.mark.parametrize(
+    "hidden_dim,batch_size,seq_len",
+    [
+        (8, 1, 1),
+        (8, 2, 5),
+        (10, 3, 7),
+    ],
+)
+@pytest.mark.parametrize("pretrained", [AutoModel.from_pretrained("distilbert-base-uncased")])
+def test_text_encoder(
+    pretrained,
+    hidden_dim,
+    batch_size,
+    seq_len,
+):
+    vocab_size = 10
+
+    text_encoder = HugginfaceTextEncoder(pretrained, hidden_dim)
+    # random word ids and increasing masks
+    assert text_encoder(
+        torch.randint(0, vocab_size, size=(batch_size, seq_len)),
+        torch.tensor(
+            [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+        ),
+    ).size() == (
+        batch_size,
+        seq_len,
+        hidden_dim,
     )
