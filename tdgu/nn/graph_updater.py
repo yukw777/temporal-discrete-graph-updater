@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from transformers import AutoModel
 import wandb
 import tqdm
 import networkx as nx
@@ -24,7 +25,7 @@ from torch_geometric.utils import to_dense_batch
 from torch.utils.data import DataLoader
 from torchmetrics.classification.f_beta import F1Score
 
-from tdgu.nn.text import QANetTextEncoder
+from tdgu.nn.text import HugginfaceTextEncoder, QANetTextEncoder
 from tdgu.nn.rep_aggregator import ReprAggregator
 from tdgu.metrics import F1, ExactMatch
 from tdgu.nn.utils import (
@@ -44,7 +45,15 @@ from tdgu.nn.graph_event_decoder import (
     EventSequentialLabelHead,
 )
 from tdgu.nn.dynamic_gnn import DynamicGNN
-from tdgu.preprocessor import Preprocessor, SpacyPreprocessor, PAD, UNK, BOS, EOS
+from tdgu.preprocessor import (
+    HuggingFacePreprocessor,
+    Preprocessor,
+    SpacyPreprocessor,
+    PAD,
+    UNK,
+    BOS,
+    EOS,
+)
 from tdgu.data import (
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventFreeRunDataset,
@@ -618,43 +627,56 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater, pl.LightningModule):  # type:
         allow_objs_with_same_label: bool = False,
         pretrained_word_embedding_path: Optional[str] = None,
         word_vocab_path: Optional[str] = None,
+        encoder_scheme: Optional[str] = None,
     ) -> None:
-        # preprocessor
-        preprocessor = (
-            SpacyPreprocessor([PAD, UNK, BOS, EOS])
-            if word_vocab_path is None
-            else SpacyPreprocessor.load_from_file(to_absolute_path(word_vocab_path))
-        )
 
-        # pretrained word embeddings
-        if pretrained_word_embedding_path is not None:
-            abs_pretrained_word_embedding_path = Path(
-                to_absolute_path(pretrained_word_embedding_path)
+        if encoder_scheme is None or encoder_scheme == "QANet":
+            # preprocessor
+            preprocessor = (
+                SpacyPreprocessor([PAD, UNK, BOS, EOS])
+                if word_vocab_path is None
+                else SpacyPreprocessor.load_from_file(to_absolute_path(word_vocab_path))
             )
-            serialized_path = abs_pretrained_word_embedding_path.parent / (
-                abs_pretrained_word_embedding_path.stem + ".pt"
+
+            # pretrained word embeddings
+            if pretrained_word_embedding_path is not None:
+                abs_pretrained_word_embedding_path = Path(
+                    to_absolute_path(pretrained_word_embedding_path)
+                )
+                serialized_path = abs_pretrained_word_embedding_path.parent / (
+                    abs_pretrained_word_embedding_path.stem + ".pt"
+                )
+                pretrained_word_embeddings = load_fasttext(
+                    str(abs_pretrained_word_embedding_path),
+                    serialized_path,
+                    preprocessor.get_vocab(),
+                    preprocessor.pad_token_id,
+                )
+                assert word_emb_dim == pretrained_word_embeddings.embedding_dim
+            else:
+                pretrained_word_embeddings = nn.Embedding(
+                    preprocessor.vocab_size, word_emb_dim
+                )
+            # text encoder
+            text_encoder = QANetTextEncoder(
+                pretrained_word_embeddings,
+                text_encoder_num_blocks,
+                text_encoder_num_conv_layers,
+                text_encoder_kernel_size,
+                hidden_dim,
+                text_encoder_num_heads,
+                dropout=dropout,
             )
-            pretrained_word_embeddings = load_fasttext(
-                str(abs_pretrained_word_embedding_path),
-                serialized_path,
-                preprocessor.get_vocab(),
-                preprocessor.pad_token_id,
+        elif encoder_scheme == "DistilBert":
+            preprocessor = HuggingFacePreprocessor("distilbert-base-uncased")
+
+            pretrained_word_embeddings = AutoModel.from_pretrained(
+                "distilbert-base-uncased"
             )
-            assert word_emb_dim == pretrained_word_embeddings.embedding_dim
+
+            text_encoder = HugginfaceTextEncoder(pretrained_word_embeddings, hidden_dim)
         else:
-            pretrained_word_embeddings = nn.Embedding(
-                preprocessor.vocab_size, word_emb_dim
-            )
-        # text encoder
-        text_encoder = QANetTextEncoder(
-            pretrained_word_embeddings,
-            text_encoder_num_blocks,
-            text_encoder_num_conv_layers,
-            text_encoder_kernel_size,
-            hidden_dim,
-            text_encoder_num_heads,
-            dropout=dropout,
-        )
+            assert False
         # temporal graph network
         gnn_module: nn.Module
         if dgnn_gnn == "TransformerConv":

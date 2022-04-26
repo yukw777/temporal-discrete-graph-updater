@@ -4,6 +4,8 @@ import pytest
 from tdgu.train_tdgu import main
 from hydra import initialize, compose
 
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 @pytest.mark.slow
 def test_main(tmp_path):
@@ -34,24 +36,24 @@ def test_main(tmp_path):
         main(cfg)
 
 
-@pytest.mark.slow
-def test_main_test_only(tmp_path):
-    with initialize(config_path="../tdgu/train_tdgu_conf"):
-        cfg = compose(
-            config_name="config",
-            overrides=[
-                "data_module.test_path=tests/data/test_data.json",
-                "data_module.test_batch_size=2",
-                "model.hidden_dim=8",
-                "model.text_encoder_num_conv_layers=2",
-                "model.text_encoder_kernel_size=3",
-                "model.graph_event_decoder_event_type_emb_dim=8",
-                "model.graph_event_decoder_hidden_dim=8",
-                "model.graph_event_decoder_autoregressive_emb_dim=8",
-                "model.graph_event_decoder_key_query_dim=8",
-                f"+trainer.default_root_dir={tmp_path}",
-                "test_only=true",
-                "+ckpt_path=tests/data/test.ckpt",
-            ],
-        )
-        main(cfg)
+# @pytest.mark.slow
+# def test_main_test_only(tmp_path):
+#     with initialize(config_path="../tdgu/train_tdgu_conf"):
+#         cfg = compose(
+#             config_name="config",
+#             overrides=[
+#                 "data_module.test_path=tests/data/test_data.json",
+#                 "data_module.test_batch_size=2",
+#                 "model.hidden_dim=8",
+#                 "model.text_encoder_num_conv_layers=2",
+#                 "model.text_encoder_kernel_size=3",
+#                 "model.graph_event_decoder_event_type_emb_dim=8",
+#                 "model.graph_event_decoder_hidden_dim=8",
+#                 "model.graph_event_decoder_autoregressive_emb_dim=8",
+#                 "model.graph_event_decoder_key_query_dim=8",
+#                 f"+trainer.default_root_dir={tmp_path}",
+#                 "test_only=true",
+#                 "+ckpt_path=tests/data/test.ckpt",
+#             ],
+#         )
+#         main(cfg)

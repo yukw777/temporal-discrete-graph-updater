@@ -207,13 +207,14 @@ class HuggingFacePreprocessor(Preprocessor):
     def get_vocab(self) -> Dict[str, int]:
         return self.tokenizer.get_vocab()
 
+    # TODO: Currently aliasing BOS and EOS with CLS and SEP, respectively
     @property
     def bos_token_id(self) -> int:
-        return self.tokenizer.bos_token_id
+        return self.tokenizer.cls_token_id
 
     @property
     def eos_token_id(self) -> int:
-        return self.tokenizer.eos_token_id
+        return self.tokenizer.sep_token_id
 
     @property
     def pad_token_id(self) -> int:
