@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import random
 
 from tdgu.nn.graph_event_decoder import (
@@ -42,6 +43,7 @@ def test_event_type_head(
     assert logits.size() == (batch, len(EVENT_TYPES))
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
     "graph_event_embedding_dim,hidden_dim,autoregressive_embedding_dim,batch",
@@ -51,7 +53,12 @@ def test_event_type_head(
     ],
 )
 def test_event_type_head_get_autoregressive_embedding(
-    graph_event_embedding_dim, hidden_dim, autoregressive_embedding_dim, batch, dropout
+    graph_event_embedding_dim,
+    hidden_dim,
+    autoregressive_embedding_dim,
+    batch,
+    dropout,
+    one_hot,
 ):
     if dropout == 0.0:
         head = EventTypeHead(
@@ -64,9 +71,12 @@ def test_event_type_head_get_autoregressive_embedding(
             autoregressive_embedding_dim,
             dropout=dropout,
         )
+    event_type_ids = torch.randint(len(EVENT_TYPES), (batch,))
+    if one_hot:
+        event_type_ids = F.one_hot(event_type_ids, num_classes=len(EVENT_TYPES)).float()
     autoregressive_embedding = head.get_autoregressive_embedding(
         torch.rand(batch, graph_event_embedding_dim),
-        torch.randint(len(EVENT_TYPES), (batch,)),
+        event_type_ids,
         torch.randint(2, (batch,)).bool(),
     )
     assert autoregressive_embedding.size() == (batch, autoregressive_embedding_dim)

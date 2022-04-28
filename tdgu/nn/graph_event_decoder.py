@@ -57,17 +57,23 @@ class EventTypeHead(nn.Module):
     ) -> torch.Tensor:
         """
         graph_event_embeddings: (batch, graph_event_embedding_dim)
-        event_type_ids: (batch)
+        event_type_ids: (batch) or one-hot encoded (batch, num_event_type)
         event_mask: (batch)
 
         output: autoregressive_embedding, (batch, autoregressive_embedding_dim)
         """
         # autoregressive embedding
-        # get the one hot encoding of event
-        one_hot_event_type = F.one_hot(
-            event_type_ids, num_classes=len(EVENT_TYPES)
-        ).float()
+        if event_type_ids.dim() == 2:
+            # event_type_ids is a one-hot encoded tensor
+            one_hot_event_type = event_type_ids
+        else:
+            # event_type_ids is not a one-hot encoded tensor
+            # get the one hot encoding of event
+            one_hot_event_type = F.one_hot(
+                event_type_ids, num_classes=len(EVENT_TYPES)
+            ).float()
         # (batch, num_event_type)
+
         # pass it through the linear layers
         encoded_event_type = self.autoregressive_linear(one_hot_event_type)
         # (batch, autoregressive_embedding_dim)
