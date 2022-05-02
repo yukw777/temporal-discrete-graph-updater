@@ -82,6 +82,7 @@ def test_event_type_head_get_autoregressive_embedding(
     assert autoregressive_embedding.size() == (batch, autoregressive_embedding_dim)
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "node_embedding_dim,autoregressive_embedding_dim,hidden_dim,"
     "key_query_dim,batch,num_node",
@@ -99,6 +100,7 @@ def test_event_node_head(
     key_query_dim,
     batch,
     num_node,
+    one_hot,
 ):
     head = EventNodeHead(
         node_embedding_dim, autoregressive_embedding_dim, hidden_dim, key_query_dim
@@ -107,11 +109,17 @@ def test_event_node_head(
         torch.rand(batch, autoregressive_embedding_dim),
         torch.rand(batch, num_node, node_embedding_dim),
     )
+    node_ids = (
+        torch.randint(num_node, (batch,)) if num_node > 0 else torch.zeros(batch).long()
+    )
+    if one_hot:
+        if num_node > 0:
+            node_ids = F.one_hot(node_ids, num_classes=num_node).float()
+        else:
+            node_ids = torch.zeros(batch, 0)
     autoregressive_embedding = head.update_autoregressive_embedding(
         torch.rand(batch, autoregressive_embedding_dim),
-        torch.randint(num_node, (batch,))
-        if num_node > 0
-        else torch.zeros(batch).long(),
+        node_ids,
         torch.rand(batch, num_node, node_embedding_dim),
         torch.randint(2, (batch, num_node)).bool(),
         torch.randint(2, (batch,)).bool(),

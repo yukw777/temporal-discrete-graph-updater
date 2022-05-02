@@ -145,7 +145,7 @@ class EventNodeHead(nn.Module):
     ) -> torch.Tensor:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
-        node_ids: (batch)
+        node_ids: (batch) or one-hot encoded (batch, num_node)
         node_embeddings: (batch, num_node, node_embedding_dim)
         node_mask: (batch, num_node)
         event_node_mask: (batch)
@@ -157,10 +157,16 @@ class EventNodeHead(nn.Module):
         if node_embeddings.size(1) == 0:
             # if there are no nodes, just return without updating
             return autoregressive_embedding
-        # get the one hot encoding of the selected nodes
-        one_hot_selected_node = (
-            F.one_hot(node_ids, num_classes=node_embeddings.size(1)).float() * node_mask
-        )
+        if node_ids.dim() == 2:
+            # node_ids is a one-hot encoded tensor
+            one_hot_selected_node = node_ids
+        else:
+            # node_ids is not a one-hot encoded tensor
+            # get the one hot encoding of the selected nodes
+            one_hot_selected_node = (
+                F.one_hot(node_ids, num_classes=node_embeddings.size(1)).float()
+                * node_mask
+            )
         # (batch, num_node)
         # multiply by the key
         selected_keys = torch.bmm(one_hot_selected_node.unsqueeze(1), key).squeeze(1)
