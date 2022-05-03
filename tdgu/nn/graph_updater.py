@@ -493,10 +493,12 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             event_type_ids: (batch)
             event_src_ids: (batch)
             event_dst_ids: (batch)
-            event_label_word_ids: (batch, event_label_len)
+            event_label_word_ids: (batch, event_label_len) or
+                one-hot encoded (batch, event_label_len, num_word)
             event_label_mask: (batch, event_label_len)
             batch: (num_node)
-            node_label_word_ids: (num_node, node_label_len)
+            node_label_word_ids: (num_node, node_label_len) or
+                one-hot encoded (num_node, node_label_len, num_word)
             node_label_mask: (num_node, node_label_len)
             masks: masks calculated by compute_masks_from_event_type_ids(event_type_ids)
 

@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from torch_geometric.data.batch import Batch
 from torch_geometric.nn import TransformerConv
@@ -516,6 +517,7 @@ def test_tdgu_forward(
         )
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "event_type_ids,event_src_ids,event_dst_ids,event_label_word_ids,event_label_mask,"
     "batch,node_label_word_ids,node_label_mask,expected",
@@ -704,6 +706,7 @@ def test_tdgu_get_decoder_input(
     node_label_word_ids,
     node_label_mask,
     expected,
+    one_hot,
 ):
     tdgu.event_type_embeddings = nn.Embedding.from_pretrained(
         torch.tensor(
@@ -718,9 +721,24 @@ def test_tdgu_get_decoder_input(
             ]
         )
     )
-    tdgu.embed_label = (
-        lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hidden_dim).float()
-    )
+    if one_hot:
+        tdgu.embed_label = (
+            lambda x, y: x.argmax(-1)[:, 0]
+            .unsqueeze(-1)
+            .expand(-1, tdgu.hidden_dim)
+            .float()
+        )
+        event_label_word_ids = F.one_hot(event_label_word_ids)
+        if node_label_word_ids.size(0) == 0:
+            node_label_word_ids = torch.empty(
+                0, node_label_word_ids.size(1), event_label_word_ids.size(2)
+            )
+        else:
+            node_label_word_ids = F.one_hot(node_label_word_ids)
+    else:
+        tdgu.embed_label = (
+            lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hidden_dim).float()
+        )
     assert tdgu.get_decoder_input(
         event_type_ids,
         event_src_ids,
