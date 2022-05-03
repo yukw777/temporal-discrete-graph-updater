@@ -251,18 +251,21 @@ def update_batched_graph(
 
     batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
         batch: (num_node)
-        x: (num_node, node_label_len)
+        x: (num_node, node_label_len) or
+            one-hot encoded (num_node, node_label_len, num_word)
         node_label_mask: (num_node, node_label_len)
         node_last_update: (num_node, 2)
         edge_index: (2, num_edge)
-        edge_attr: (num_edge, edge_label_len)
+        edge_attr: (num_edge, edge_label_len) or
+            one-hot encoded (num_edge, edge_label_len, num_word)
         edge_label_mask: (num_edge, edge_label_len)
         edge_last_update: (num_edge, 2)
     )
     event_type_ids: (batch)
     event_src_ids: (batch)
     event_dst_ids: (batch)
-    event_label_word_ids: (batch, label_len)
+    event_label_word_ids: (batch, event_label_len) or
+        one-hot encoded (batch, event_label_len, num_word)
     event_label_mask: (batch, label_len)
     event_timestamps: (batch, 2)
 
@@ -281,7 +284,7 @@ def update_batched_graph(
     node_add_event_mask = event_type_ids == EVENT_TYPE_ID_MAP["node-add"]
     # (batch)
     added_node_label_word_ids = event_label_word_ids[node_add_event_mask]
-    # (num_added_node, label_len)
+    # (num_added_node, label_len) or (num_added_node, label_len, num_word)
     added_node_label_mask = event_label_mask[node_add_event_mask]
     # (num_added_node, label_len)
     added_node_batch = node_add_event_mask.nonzero().squeeze(-1)
@@ -322,18 +325,26 @@ def update_batched_graph(
             else 0,
         ]
     )
+    batched_graph_x_pad = (
+        (0, new_node_label_len - batched_graph.x.size(1))
+        if batched_graph.x.dim() == 2
+        else (0, 0, 0, new_node_label_len - batched_graph.x.size(1))
+    )
+    added_node_label_word_ids_pad = (
+        (0, new_node_label_len - added_node_label_word_ids.size(1))
+        if added_node_label_word_ids.dim() == 2
+        else (0, 0, 0, new_node_label_len - added_node_label_word_ids.size(1))
+    )
     new_x = update_node_features(
-        F.pad(batched_graph.x, (0, new_node_label_len - batched_graph.x.size(1))),
+        F.pad(batched_graph.x, batched_graph_x_pad),
         batched_graph.batch,
         delete_node_mask,
-        F.pad(
-            added_node_label_word_ids,
-            (0, new_node_label_len - added_node_label_word_ids.size(1)),
-        ),
+        F.pad(added_node_label_word_ids, added_node_label_word_ids_pad),
         added_node_batch,
         batch_size,
     )
-    # (num_node-num_deleted_node+num_added_node, new_node_label_len)
+    # (num_node-num_deleted_node+num_added_node, new_node_label_len) or
+    # (num_node-num_deleted_node+num_added_node, new_node_label_len, num_word)
     new_node_label_mask = update_node_features(
         F.pad(
             batched_graph.node_label_mask,
@@ -454,19 +465,26 @@ def update_batched_graph(
             else 0,
         ]
     )
+    batched_graph_edge_attr_pad = (
+        (0, new_edge_label_len - batched_graph.edge_attr.size(1))
+        if batched_graph.edge_attr.dim() == 2
+        else (0, 0, 0, new_edge_label_len - batched_graph.edge_attr.size(1))
+    )
+    added_edge_label_word_ids_pad = (
+        (0, new_edge_label_len - added_edge_label_word_ids.size(1))
+        if added_edge_label_word_ids.dim() == 2
+        else (0, 0, 0, new_edge_label_len - added_edge_label_word_ids.size(1))
+    )
     new_edge_attr = torch.cat(
         [
-            F.pad(
-                batched_graph.edge_attr,
-                (0, new_edge_label_len - batched_graph.edge_attr.size(1)),
-            )[deleted_edge_mask],
-            F.pad(
-                added_edge_label_word_ids,
-                (0, new_edge_label_len - added_edge_label_word_ids.size(1)),
-            ),
+            F.pad(batched_graph.edge_attr, batched_graph_edge_attr_pad)[
+                deleted_edge_mask
+            ],
+            F.pad(added_edge_label_word_ids, added_edge_label_word_ids_pad),
         ]
     )
-    # (num_edge-num_deleted_edge+num_added_edge, new_edge_label_len)
+    # (num_edge-num_deleted_edge+num_added_edge, new_edge_label_len) or
+    # (num_edge-num_deleted_edge+num_added_edge, new_edge_label_len, num_word)
     new_edge_label_mask = torch.cat(
         [
             F.pad(
