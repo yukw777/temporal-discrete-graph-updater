@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import pytest
 
 from tdgu.nn.text import (
@@ -80,6 +81,7 @@ def test_text_enc_block(
     )
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "num_enc_blocks,enc_block_num_conv_layers,enc_block_kernel_size,"
     "enc_block_hidden_dim,enc_block_num_heads,batch_size,seq_len",
@@ -90,7 +92,7 @@ def test_text_enc_block(
     ],
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
-def test_text_encoder(
+def test_qanet_text_encoder(
     dropout,
     num_enc_blocks,
     enc_block_num_conv_layers,
@@ -99,6 +101,7 @@ def test_text_encoder(
     enc_block_num_heads,
     batch_size,
     seq_len,
+    one_hot,
 ):
     vocab_size = 10
     word_emb_dim = 12
@@ -121,13 +124,15 @@ def test_text_encoder(
             enc_block_num_heads,
             dropout=dropout,
         )
-    # random word ids and increasing masks
-    assert text_encoder(
-        torch.randint(0, vocab_size, size=(batch_size, seq_len)),
-        torch.tensor(
-            [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
-        ),
-    ).size() == (
+    # random word ids
+    word_ids = torch.randint(0, vocab_size, size=(batch_size, seq_len))
+    if one_hot:
+        word_ids = F.one_hot(word_ids, num_classes=vocab_size).float()
+    # increasing masks
+    mask = torch.tensor(
+        [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+    )
+    assert text_encoder(word_ids, mask).size() == (
         batch_size,
         seq_len,
         enc_block_hidden_dim,

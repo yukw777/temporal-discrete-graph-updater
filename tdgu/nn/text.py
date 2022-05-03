@@ -144,13 +144,10 @@ class QANetTextEncoder(nn.Module):
         super().__init__()
         self.enc_block_hidden_dim = enc_block_hidden_dim
         self.pretrained_word_embeddings = pretrained_word_embeddings
-
         self.pretrained_word_embeddings.weight.requires_grad = False
-        self.word_embeddings = nn.Sequential(
-            self.pretrained_word_embeddings,
-            nn.Linear(
-                self.pretrained_word_embeddings.embedding_dim, enc_block_hidden_dim
-            ),
+
+        self.word_embedding_linear = nn.Linear(
+            self.pretrained_word_embeddings.embedding_dim, enc_block_hidden_dim
         )
 
         self.enc_blocks = nn.ModuleList(
@@ -166,18 +163,24 @@ class QANetTextEncoder(nn.Module):
 
     def forward(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
-        word_ids: (batch_size, seq_len)
+        word_ids: (batch_size, seq_len) or
+            one-hot encoded (batch_size, seq_len, num_word)
         mask: (batch_size, seq_len)
         output:
             encoded: (batch_size, seq_len, enc_block_hidden_dim)
         """
-
         if word_ids.size(1) == 0:
             return torch.empty(
                 word_ids.size(0), 0, self.enc_block_hidden_dim, device=word_ids.device
             )
-
-        word_embs = self.word_embeddings(word_ids)
+        if word_ids.dim() == 3:
+            # word_ids are one-hot encoded
+            word_embs = word_ids.matmul(self.pretrained_word_embeddings.weight)
+        else:
+            # word_ids are not one-hot encoded, so use word_embeddings directly
+            word_embs = self.pretrained_word_embeddings(word_ids)
+        # (batch_size, seq_len, word_embedding_dim)
+        word_embs = self.word_embedding_linear(word_embs)
         # (batch_size, seq_len, enc_block_hidden_dim)
 
         for enc_block in self.enc_blocks:
