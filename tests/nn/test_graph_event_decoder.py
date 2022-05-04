@@ -157,6 +157,7 @@ def preprocessor():
     return SpacyPreprocessor([PAD, BOS, EOS, "word0", "word1", "word2"])
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize("seq_len", [1, 5, 10])
 @pytest.mark.parametrize(
     "autoregressive_embedding_dim,hidden_dim,word_embedding_dim,batch",
@@ -169,6 +170,7 @@ def test_event_seq_label_head_forward(
     word_embedding_dim,
     batch,
     seq_len,
+    one_hot,
 ):
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
@@ -182,6 +184,10 @@ def test_event_seq_label_head_forward(
     )
 
     output_tgt_seq = torch.randint(preprocessor.vocab_size, (batch, seq_len))
+    if one_hot:
+        output_tgt_seq = F.one_hot(
+            output_tgt_seq, num_classes=preprocessor.vocab_size
+        ).float()
     seq_mask_list = [[True] * seq_len]
     for _ in range(batch - 1):
         length = random.randrange(1, seq_len) if seq_len > 1 else 1

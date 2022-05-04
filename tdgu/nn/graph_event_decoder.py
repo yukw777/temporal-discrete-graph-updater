@@ -228,9 +228,9 @@ class EventSequentialLabelHead(nn.Module):
     ) -> None:
         super().__init__()
         self.preprocessor = preprocessor
-        self.word_embeddings = nn.Sequential(
-            pretrained_word_embeddings,
-            nn.Linear(pretrained_word_embeddings.embedding_dim, hidden_dim),
+        self.pretrained_word_embeddings = pretrained_word_embeddings
+        self.word_embedding_linear = nn.Linear(
+            self.pretrained_word_embeddings.embedding_dim, hidden_dim
         )
         self.linear_hidden = nn.Linear(autoregressive_embedding_dim, hidden_dim)
         self.gru = nn.GRU(hidden_dim, hidden_dim, batch_first=True)
@@ -244,7 +244,8 @@ class EventSequentialLabelHead(nn.Module):
         prev_hidden: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        output_tgt_seq: (batch, seq_len)
+        output_tgt_seq: (batch, seq_len) or
+            one-hot encoded (batch, seq_len, num_word)
         output_tgt_seq_mask: (batch, seq_len)
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         prev_hidden: (batch, hidden_dim)
@@ -268,7 +269,14 @@ class EventSequentialLabelHead(nn.Module):
         # (1, batch, hidden_dim)
 
         # embed the output target sequence
-        embedded_output_tgt_seq = self.word_embeddings(output_tgt_seq)
+        if output_tgt_seq.dim() == 3:
+            # one-hot encoded
+            embedded_output_tgt_seq = output_tgt_seq.matmul(
+                self.pretrained_word_embeddings.weight
+            )
+        else:
+            embedded_output_tgt_seq = self.pretrained_word_embeddings(output_tgt_seq)
+        embedded_output_tgt_seq = self.word_embedding_linear(embedded_output_tgt_seq)
         # (batch, seq_len, hidden_dim)
 
         # pack it
