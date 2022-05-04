@@ -225,7 +225,6 @@ def test_event_seq_label_head_forward(
     assert updated_hidden.size() == (batch, hidden_dim)
 
 
-# @pytest.mark.parametrize("max_decode_len", [None, 5, 15])
 @pytest.mark.parametrize("autoregressive_embedding_dim", [4, 16])
 @pytest.mark.parametrize(
     "batch,forward_logits,max_decode_len,expected_decoded,expected_mask",

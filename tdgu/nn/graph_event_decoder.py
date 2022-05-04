@@ -308,13 +308,15 @@ class EventSequentialLabelHead(nn.Module):
         )
         """
         batch_size = autoregressive_embedding.size(0)
-        decoded = torch.tensor(
-            [[self.preprocessor.bos_token_id]] * batch_size,
+        decoded = torch.full(
+            (batch_size, 1),
+            self.preprocessor.bos_token_id,
+            dtype=torch.long,
             device=autoregressive_embedding.device,
         )
         # (batch, 1)
-        end_mask = torch.tensor(
-            [[False]] * batch_size, device=autoregressive_embedding.device
+        end_mask = torch.full(
+            (batch_size, 1), False, device=autoregressive_embedding.device
         )
         # (batch, 1)
         decoded_seq: List[torch.Tensor] = []
@@ -338,8 +340,11 @@ class EventSequentialLabelHead(nn.Module):
                 )
             # logits: (num_not_end, 1, num_word)
             # hidden: (num_not_end, hidden_dim)
-            decoded = torch.tensor(
-                [[self.preprocessor.pad_token_id]] * batch_size, device=logits.device
+            decoded = torch.full(
+                (batch_size, 1),
+                self.preprocessor.pad_token_id,
+                dtype=torch.long,
+                device=logits.device,
             ).masked_scatter(not_end_mask, logits.argmax(dim=2))
             # (batch, 1)
             decoded_seq.append(decoded)
