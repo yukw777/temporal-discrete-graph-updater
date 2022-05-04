@@ -9,6 +9,7 @@ from tdgu.nn.utils import (
     masked_mean,
     masked_softmax,
     masked_log_softmax,
+    masked_gumbel_softmax,
     compute_masks_from_event_type_ids,
     load_fasttext,
     find_indices,
@@ -94,6 +95,46 @@ def test_masked_softmax(batched_input, batched_mask):
     # 0 if all the items are masked out.
     assert batched_output.sum(dim=1).equal(
         torch.any(batched_mask.float() == 1, dim=1).float()
+    )
+    # multiplying the output by the mask shouldn't change the values now.
+    assert (batched_output * batched_mask).equal(batched_output)
+
+
+@pytest.mark.parametrize("hard", [True, False])
+@pytest.mark.parametrize("tau", [0.1, 0.5, 1])
+@pytest.mark.parametrize(
+    "batched_input,batched_mask",
+    [
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float(),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor(
+                [[True, True, False], [False, True, True], [True, True, True]]
+            ),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3).bool(),
+        ),
+    ],
+)
+def test_masked_gumbel_softmax(batched_input, batched_mask, tau, hard):
+    batched_output = masked_gumbel_softmax(
+        batched_input, batched_mask, tau=tau, hard=hard
+    )
+    # ensure that softmax outputs add up to 1 if at least one item is not maksed out
+    # 0 if all the items are masked out.
+    assert (
+        batched_output.sum(dim=1)
+        .isclose(torch.any(batched_mask.float() == 1, dim=1).float())
+        .all()
     )
     # multiplying the output by the mask shouldn't change the values now.
     assert (batched_output * batched_mask).equal(batched_output)

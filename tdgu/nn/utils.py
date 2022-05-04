@@ -44,6 +44,24 @@ def masked_softmax(
     )
 
 
+def masked_gumbel_softmax(
+    input: torch.Tensor, mask: torch.Tensor, **kwargs
+) -> torch.Tensor:
+    """
+    input, mask and output all have the same dimensions
+    """
+    # replace the values to be ignored with a small number -1e20
+    # can't use torch.finfo(input.dtype).min since it's too small
+    # and results in nan's.
+    return (
+        F.gumbel_softmax(
+            input.masked_fill(~mask if mask.dtype == torch.bool else mask == 0, -1e20),
+            **kwargs
+        )
+        * mask
+    )
+
+
 def masked_log_softmax(
     input: torch.Tensor, mask: torch.Tensor, dim: Optional[int] = None
 ) -> torch.Tensor:
