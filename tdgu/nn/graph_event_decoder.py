@@ -357,6 +357,80 @@ class EventSequentialLabelHead(nn.Module):
         # decoded: (batch, decoded_seq_len)
         # mask: (batch, decoded_seq_len)
 
+    def gumbel_greedy_decode(
+        self,
+        autoregressive_embedding: torch.Tensor,
+        max_decode_len: int = 10,
+        tau: float = 1,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        autoregressive_embedding: (batch, autoregressive_embedding_dim)
+        max_decode_len: max decode length, default 10
+        tau: temperature for gumbel softmax
+
+        output: (
+            decoded: one-hot encoded (batch, decoded_seq_len, num_word)
+            mask: (batch, decoded_seq_len)
+        )
+        """
+        batch_size = autoregressive_embedding.size(0)
+        decoded = F.one_hot(
+            torch.full(
+                (batch_size, 1),
+                self.preprocessor.bos_token_id,
+                dtype=torch.long,
+                device=autoregressive_embedding.device,
+            ),
+            num_classes=self.preprocessor.vocab_size,
+        ).float()
+        # (batch, 1, num_word)
+        end_mask = torch.full(
+            (batch_size, 1), False, device=autoregressive_embedding.device
+        )
+        # (batch, 1)
+        decoded_seq: List[torch.Tensor] = []
+        decoded_seq_mask: List[torch.Tensor] = []
+        for i in range(max_decode_len):
+            # we have to slice decoded and not_end_mask and deselect empty
+            # sequences b/c no sequence in the batch can be empty when packing.
+            not_end_mask = ~end_mask
+            decoded_seq_mask.append(not_end_mask)
+            if i == 0:
+                logits, hidden = self(
+                    decoded[not_end_mask.squeeze(1)],
+                    not_end_mask[not_end_mask.squeeze(1)],
+                    autoregressive_embedding=autoregressive_embedding,
+                )
+            else:
+                logits, hidden = self(
+                    decoded[not_end_mask.squeeze(1)],
+                    not_end_mask[not_end_mask.squeeze(1)],
+                    prev_hidden=hidden,
+                )
+            # logits: (num_not_end, 1, num_word)
+            # hidden: (num_not_end, hidden_dim)
+            decoded = torch.full(
+                (batch_size, 1, self.preprocessor.vocab_size),
+                self.preprocessor.pad_token_id,
+                dtype=torch.float,
+                device=logits.device,
+            )
+            # (batch, 1, num_word)
+            decoded[not_end_mask] = F.gumbel_softmax(
+                logits, tau=tau, hard=True
+            ).squeeze(1)
+            decoded_seq.append(decoded)
+            end_mask = end_mask.logical_or(
+                decoded.argmax(-1) == self.preprocessor.eos_token_id
+            )
+
+            if end_mask.all():
+                break
+
+        return torch.cat(decoded_seq, dim=1), torch.cat(decoded_seq_mask, dim=1)
+        # decoded: one-hot encoded (batch, decoded_seq_len, num_word)
+        # mask: (batch, decoded_seq_len)
+
 
 class RNNGraphEventDecoder(nn.Module):
     def __init__(
