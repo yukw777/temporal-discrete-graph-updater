@@ -2,6 +2,7 @@ import json
 import pytorch_lightning as pl
 import torch
 import networkx as nx
+import random
 
 from typing import List, Dict, Any, Optional, Tuple, Iterator
 from collections import defaultdict
@@ -167,8 +168,10 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
         batch_size: int,
         allow_objs_with_same_label: bool = False,
         sort_commands: bool = False,
+        shuffle: bool = False,
     ) -> None:
         self.allow_objs_with_same_label = allow_objs_with_same_label
+        self.shuffle = shuffle
         self.batch_size = batch_size
         with open(path, "r") as f:
             raw_data = json.load(f)
@@ -195,6 +198,8 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
                 self.random_examples[(game, walkthrough_step)].append(example)
 
     def __iter__(self) -> Iterator[List[Tuple[int, Dict[str, Any]]]]:
+        if self.shuffle:
+            random.shuffle(self.walkthrough_example_ids)
         walkthrough_id_to_step: Dict[int, Tuple[int, List[Dict[str, Any]]]] = {}
         last_added_walkthrough_id = 0
         while (

@@ -3,6 +3,7 @@ import json
 import torch
 
 from torch_geometric.data import Batch
+from unittest.mock import Mock
 
 from tdgu.data import (
     TWCmdGenGraphEventDataset,
@@ -80,6 +81,20 @@ def test_tw_cmd_gen_free_run_dataset_init(batch_size, sort_cmds):
     assert len(generated_dataset) == len(expected_dataset)
     for data, expected_data in zip(generated_dataset, expected_dataset):
         assert data == list(map(tuple, expected_data))
+
+
+@pytest.mark.parametrize("shuffle", [True, False])
+def test_tw_cmd_gen_free_run_dataset_shuffle(monkeypatch, shuffle):
+    mock_shuffle = Mock()
+    monkeypatch.setattr("random.shuffle", mock_shuffle)
+    dataset = TWCmdGenGraphEventFreeRunDataset(
+        "tests/data/test_data.json", 3, shuffle=shuffle
+    )
+    list(iter(dataset))
+    if shuffle:
+        mock_shuffle.assert_called_once_with(dataset.walkthrough_example_ids)
+    else:
+        mock_shuffle.assert_not_called()
 
 
 @pytest.mark.parametrize(
