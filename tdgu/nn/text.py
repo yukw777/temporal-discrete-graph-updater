@@ -144,7 +144,6 @@ class QANetTextEncoder(nn.Module):
         super().__init__()
         self.enc_block_hidden_dim = enc_block_hidden_dim
         self.pretrained_word_embeddings = pretrained_word_embeddings
-        self.pretrained_word_embeddings.weight.requires_grad = False
 
         self.word_embedding_linear = nn.Linear(
             self.pretrained_word_embeddings.embedding_dim, enc_block_hidden_dim

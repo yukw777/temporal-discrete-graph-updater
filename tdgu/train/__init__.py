@@ -68,6 +68,7 @@ class TDGULightningModule(  # type: ignore
                 preprocessor.get_vocab(),
                 preprocessor.pad_token_id,
             )
+            pretrained_word_embeddings.requires_grad_(requires_grad=False)
             assert word_emb_dim == pretrained_word_embeddings.embedding_dim
         else:
             pretrained_word_embeddings = nn.Embedding(
