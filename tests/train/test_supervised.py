@@ -2763,9 +2763,6 @@ def test_supervised_tdgu_greedy_decode(
             return decoded
 
     monkeypatch.setattr(supervised_tdgu, "forward", MockForward())
-    monkeypatch.setattr(
-        supervised_tdgu.hparams, "max_event_decode_len", max_event_decode_len
-    )
     decoded_list = supervised_tdgu.greedy_decode(
         TWCmdGenGraphEventStepInput(
             obs_word_ids=torch.randint(
@@ -2779,6 +2776,7 @@ def test_supervised_tdgu_greedy_decode(
             timestamps=torch.tensor([4.0] * batch),
         ),
         prev_batched_graph,
+        max_event_decode_len=max_event_decode_len,
     )
 
     assert len(decoded_list) == len(expected_decoded_list)

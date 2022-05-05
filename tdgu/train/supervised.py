@@ -585,7 +585,9 @@ class SupervisedTDGU(TDGULightningModule):
 
         # greedy decoding
         gd_results_list = self.greedy_decode(
-            batch.step_input, batch.initial_batched_graph
+            batch.step_input,
+            batch.initial_batched_graph,
+            max_event_decode_len=self.hparams.max_event_decode_len,  # type: ignore
         )
 
         # calculate graph tuples from greedy decoded graph events
@@ -852,11 +854,15 @@ class SupervisedTDGU(TDGULightningModule):
         return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
 
     def greedy_decode(
-        self, step_input: TWCmdGenGraphEventStepInput, prev_batched_graph: Batch
+        self,
+        step_input: TWCmdGenGraphEventStepInput,
+        prev_batched_graph: Batch,
+        max_event_decode_len: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         step_input: the current step input
         prev_batch_graph: diagonally stacked batch of current graphs
+        max_event_decode_len: max length of decoded event sequence
 
         output:
         len([{
@@ -901,7 +907,7 @@ class SupervisedTDGU(TDGULightningModule):
         encoded_obs: Optional[torch.Tensor] = None
         encoded_prev_action: Optional[torch.Tensor] = None
         results_list: List[Dict[str, Any]] = []
-        for _ in range(self.hparams.max_event_decode_len):  # type: ignore
+        for _ in range(max_event_decode_len):
             results = self(
                 decoded_event_type_ids,
                 decoded_src_ids,
