@@ -517,6 +517,219 @@ def test_tdgu_forward(
         )
 
 
+@pytest.mark.parametrize("tau", [0.1, 0.5, 1])
+@pytest.mark.parametrize(
+    "batch_size,event_type_ids,event_src_ids,event_dst_ids,event_label_len,obs_len,"
+    "prev_action_len,batched_graph,expected_num_node,"
+    "expected_num_edge",
+    [
+        (
+            4,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.tensor([0, 0, 3, 1]),
+            torch.tensor([2, 0, 0, 0]),
+            5,
+            12,
+            8,
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
+                x=F.one_hot(torch.randint(6, (12, 3)), num_classes=17).float(),
+                node_label_mask=torch.randint(2, (12, 3)).bool(),
+                node_last_update=torch.randint(10, (12, 2)),
+                edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
+                edge_attr=F.one_hot(torch.randint(6, (4, 3)), num_classes=17).float(),
+                edge_label_mask=torch.randint(2, (4, 3)).bool(),
+                edge_last_update=torch.randint(10, (4, 2)),
+            ),
+            12,
+            4,
+        ),
+        (
+            4,
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                ]
+            ),
+            torch.tensor([0, 0, 3, 1]),
+            torch.tensor([2, 0, 0, 0]),
+            5,
+            12,
+            8,
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
+                x=F.one_hot(torch.randint(6, (12, 3)), num_classes=17).float(),
+                node_label_mask=torch.randint(2, (12, 3)).bool(),
+                node_last_update=torch.randint(10, (12, 2)),
+                edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
+                edge_attr=F.one_hot(torch.randint(6, (4, 3)), num_classes=17).float(),
+                edge_label_mask=torch.randint(2, (4, 3)).bool(),
+                edge_last_update=torch.randint(10, (4, 2)),
+            ),
+            12,
+            4,
+        ),
+    ],
+)
+def test_tdgu_gumbel_forward(
+    tdgu,
+    batch_size,
+    event_type_ids,
+    event_src_ids,
+    event_dst_ids,
+    event_label_len,
+    obs_len,
+    prev_action_len,
+    batched_graph,
+    expected_num_node,
+    expected_num_edge,
+    tau,
+):
+    prev_input_seq_len = 8
+
+    # need to have at least one unmasked token, otherwise pack_padded_sequence
+    # raises an exception
+    obs_mask = torch.cat(
+        [
+            torch.ones(batch_size, 1).bool(),
+            torch.randint(2, (batch_size, obs_len - 1)).bool(),
+        ],
+        dim=1,
+    )
+    prev_action_mask = torch.cat(
+        [
+            torch.ones(batch_size, 1).bool(),
+            torch.randint(2, (batch_size, prev_action_len - 1)).bool(),
+        ],
+        dim=1,
+    )
+    prev_input_event_emb_seq_mask = torch.cat(
+        [
+            torch.ones(batch_size, 1).bool(),
+            torch.randint(2, (batch_size, prev_input_seq_len - 1)).bool(),
+        ],
+        dim=1,
+    )
+    results = tdgu(
+        event_type_ids,
+        event_src_ids,
+        event_dst_ids,
+        F.one_hot(
+            torch.randint(tdgu.preprocessor.vocab_size, (batch_size, event_label_len)),
+            num_classes=tdgu.preprocessor.vocab_size,
+        ).float(),
+        increasing_mask(batch_size, event_label_len).bool(),
+        batched_graph,
+        obs_mask,
+        prev_action_mask,
+        torch.randint(10, (batch_size,)),
+        obs_word_ids=torch.randint(tdgu.preprocessor.vocab_size, (batch_size, obs_len)),
+        prev_action_word_ids=torch.randint(
+            tdgu.preprocessor.vocab_size, (batch_size, prev_action_len)
+        ),
+        prev_input_event_emb_seq=torch.rand(
+            len(tdgu.graph_event_decoder.dec_blocks),
+            batch_size,
+            prev_input_seq_len,
+            tdgu.graph_event_decoder.hidden_dim,
+        ),
+        prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
+        gumbel_greedy_decode_labels=True,
+        gumbel_tau=tau,
+    )
+    assert results["event_type_logits"].size() == (batch_size, len(EVENT_TYPES))
+    if results["updated_batched_graph"].batch.numel() > 0:
+        max_sub_graph_num_node = (
+            results["updated_batched_graph"].batch.bincount().max().item()
+        )
+    else:
+        max_sub_graph_num_node = 0
+    assert results["event_src_logits"].size() == (batch_size, max_sub_graph_num_node)
+    assert results["event_dst_logits"].size() == (batch_size, max_sub_graph_num_node)
+    assert results["decoded_event_label_word_ids"].dim() == 3
+    assert results["decoded_event_label_word_ids"].size(0) == batch_size
+    assert (
+        results["decoded_event_label_word_ids"].size(2) == tdgu.preprocessor.vocab_size
+    )
+    assert results["decoded_event_label_mask"].dim() == 2
+    assert results["decoded_event_label_mask"].size(0) == batch_size
+    assert results["updated_prev_input_event_emb_seq"].size() == (
+        len(tdgu.graph_event_decoder.dec_blocks),
+        batch_size,
+        prev_input_seq_len + 1,
+        tdgu.graph_event_decoder.hidden_dim,
+    )
+    assert results["updated_prev_input_event_emb_seq_mask"].size() == (
+        batch_size,
+        prev_input_seq_len + 1,
+    )
+    assert results["encoded_obs"].size() == (batch_size, obs_len, tdgu.hidden_dim)
+    assert results["encoded_prev_action"].size() == (
+        batch_size,
+        prev_action_len,
+        tdgu.hidden_dim,
+    )
+    assert results["updated_batched_graph"].batch.size() == (expected_num_node,)
+    assert results["updated_batched_graph"].x.dim() == 3
+    assert results["updated_batched_graph"].x.size(0) == expected_num_node
+    assert results["updated_batched_graph"].x.size(2) == tdgu.preprocessor.vocab_size
+    assert results["updated_batched_graph"].node_label_mask.dim() == 2
+    assert results["updated_batched_graph"].node_label_mask.size(0) == expected_num_node
+    assert results["updated_batched_graph"].node_last_update.size() == (
+        expected_num_node,
+        2,
+    )
+    assert results["updated_batched_graph"].edge_index.size() == (2, expected_num_edge)
+    assert results["updated_batched_graph"].edge_attr.dim() == 3
+    assert results["updated_batched_graph"].edge_attr.size(0) == expected_num_edge
+    assert (
+        results["updated_batched_graph"].edge_attr.size(2)
+        == tdgu.preprocessor.vocab_size
+    )
+    assert results["updated_batched_graph"].edge_last_update.size() == (
+        expected_num_edge,
+        2,
+    )
+    assert results["batch_node_mask"].size() == (batch_size, max_sub_graph_num_node)
+    assert len(results["self_attn_weights"]) == len(tdgu.graph_event_decoder.dec_blocks)
+    for self_attn_weights in results["self_attn_weights"]:
+        assert self_attn_weights.size() == (batch_size, 1, prev_input_seq_len + 1)
+    assert len(results["obs_graph_attn_weights"]) == len(
+        tdgu.graph_event_decoder.dec_blocks
+    )
+    for obs_graph_attn_weights in results["obs_graph_attn_weights"]:
+        assert obs_graph_attn_weights.size() == (batch_size, 1, obs_len)
+    assert len(results["prev_action_graph_attn_weights"]) == len(
+        tdgu.graph_event_decoder.dec_blocks
+    )
+    for prev_action_graph_attn_weights in results["prev_action_graph_attn_weights"]:
+        assert prev_action_graph_attn_weights.size() == (batch_size, 1, prev_action_len)
+    assert len(results["graph_obs_attn_weights"]) == len(
+        tdgu.graph_event_decoder.dec_blocks
+    )
+    for graph_obs_attn_weights in results["graph_obs_attn_weights"]:
+        assert graph_obs_attn_weights.size() == (batch_size, 1, max_sub_graph_num_node)
+    assert len(results["graph_prev_action_attn_weights"]) == len(
+        tdgu.graph_event_decoder.dec_blocks
+    )
+    for graph_prev_action_attn_weights in results["graph_prev_action_attn_weights"]:
+        assert graph_prev_action_attn_weights.size() == (
+            batch_size,
+            1,
+            max_sub_graph_num_node,
+        )
+
+
 @pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "event_type_ids,event_src_ids,event_dst_ids,event_label_word_ids,event_label_mask,"

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import sys
 
 if sys.version_info >= (3, 8):
@@ -17,6 +18,7 @@ from tdgu.nn.utils import (
     masked_mean,
     calculate_node_id_offsets,
     masked_softmax,
+    masked_gumbel_softmax,
     update_batched_graph,
 )
 from tdgu.nn.graph_event_decoder import (
@@ -163,23 +165,28 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
         # groundtruth events for decoder teacher-force training
         groundtruth_event: Optional[Dict[str, torch.Tensor]] = None,
+        gumbel_greedy_decode_labels: bool = False,
+        gumbel_tau: float = 0.5,
     ) -> Dict[str, torch.Tensor]:
         """
         graph events: {
             event_type_ids: (batch)
             event_src_ids: (batch)
             event_dst_ids: (batch)
-            event_label_word_ids: (batch, event_label_len)
+            event_label_word_ids: (batch, event_label_len) or
+                one-hot encoded (batch, event_label_len, num_word)
             event_label_mask: (batch, event_label_len)
         }
         prev_batched_graph: diagonally stacked graph BEFORE the given graph events:
             Batch(
                 batch: (prev_num_node)
-                x: node label IDs, (prev_num_node, prev_node_label_len)
+                x: node label word IDs, (prev_num_node, prev_node_label_len) or
+                    one-hot encoded (prev_num_node, prev_node_label_len, num_word)
                 node_label_mask: (prev_num_node, prev_node_label_len)
                 node_last_update: (prev_num_node)
                 edge_index: (2, prev_num_edge)
-                edge_attr: edge label IDs, (prev_num_edge, prev_edge_label_len)
+                edge_attr: edge label word IDs, (prev_num_edge, prev_edge_label_len) or
+                    one-hot encoded (prev_num_edge, prev_edge_label_len, num_word)
                 edge_label_mask: (prev_num_edge, prev_edge_label_len)
                 edge_last_update: (prev_num_edge)
             )
@@ -214,6 +221,9 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         }
         Ground-truth graph events used for teacher forcing of the decoder
 
+        gumbel_greedy_decode_labels: whether to perform gumbel greedy decoding or not
+        gumbel_tau: gumbel greedy decoding temperature
+
         output:
         {
             event_type_logits: (batch, num_event_type)
@@ -221,7 +231,8 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             event_dst_logits: (batch, max_sub_graph_num_node)
             event_label_logits: (batch, groundtruth_event_label_len, num_word),
                 returned only if groundtruth event is given
-            decoded_event_label_word_ids: (batch, decoded_label_len)
+            decoded_event_label_word_ids: (batch, decoded_label_len) or
+                one-hot encoded (batch, decoded_label_len, num_word)
                 returned only if groundtruth event is not given
             decoded_event_label_mask: (batch, decoded_label_len)
                 returned only if groundtruth event is not given
@@ -233,11 +244,13 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             encoded_prev_action: (batch, prev_action_len, hidden_dim)
             updated_batched_graph: Batch(
                 batch: (num_node)
-                x: (num_node, node_label_len)
+                x: (num_node, node_label_len) or
+                    one-hot encoded (num_node, node_label_len, num_word)
                 node_label_mask: (num_node, node_label_len)
                 node_last_update: (num_node, 2)
                 edge_index: (2, num_edge)
-                edge_attr: (num_edge, edge_label_len)
+                edge_attr: (num_edge, edge_label_len) or
+                    one-hot encoded (num_edge, edge_label_len, num_word)
                 edge_label_mask: (num_edge, edge_label_len)
                 edge_last_update: (num_edge, 2)
             )
@@ -373,9 +386,12 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             )
             # (batch, hidden_dim)
         else:
-            event_type_ids = event_type_logits.argmax(dim=1)
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
-                decoder_output["output"], event_type_ids, masks["event_mask"]
+                decoder_output["output"],
+                F.gumbel_softmax(event_type_logits, hard=True, tau=gumbel_tau)
+                if gumbel_greedy_decode_labels
+                else event_type_logits.argmax(dim=1),
+                masks["event_mask"],
             )
             # (batch, hidden_dim)
         event_src_logits, event_src_key = self.event_src_head(
@@ -396,7 +412,13 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         elif event_src_logits.size(1) > 0:
             autoregressive_emb = self.event_src_head.update_autoregressive_embedding(
                 autoregressive_emb,
-                masked_softmax(event_src_logits, batch_node_mask, dim=1).argmax(dim=1),
+                masked_gumbel_softmax(
+                    event_src_logits, batch_node_mask, hard=True, tau=gumbel_tau
+                )
+                if gumbel_greedy_decode_labels
+                else masked_softmax(event_src_logits, batch_node_mask, dim=1).argmax(
+                    dim=1
+                ),
                 batch_node_embeddings,
                 batch_node_mask,
                 masks["src_mask"],
@@ -420,7 +442,13 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         elif event_dst_logits.size(1) > 0:
             autoregressive_emb = self.event_dst_head.update_autoregressive_embedding(
                 autoregressive_emb,
-                masked_softmax(event_dst_logits, batch_node_mask, dim=1).argmax(dim=1),
+                masked_gumbel_softmax(
+                    event_dst_logits, batch_node_mask, hard=True, tau=gumbel_tau
+                )
+                if gumbel_greedy_decode_labels
+                else masked_softmax(event_dst_logits, batch_node_mask, dim=1).argmax(
+                    dim=1
+                ),
                 batch_node_embeddings,
                 batch_node_mask,
                 masks["dst_mask"],
@@ -451,14 +479,27 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             # (batch, groundtruth_event_label_len, num_word)
             output["event_label_logits"] = event_label_logits
         else:
-            (
-                decoded_event_label_word_ids,
-                decoded_event_label_mask,
-            ) = self.event_label_head.greedy_decode(
-                autoregressive_emb, max_decode_len=self.max_label_decode_len
-            )
-            # decoded_event_label_word_ids: (batch, decoded_label_len)
-            # decoded_event_label_mask: (batch, decoded_label_len)
+            if gumbel_greedy_decode_labels:
+                (
+                    decoded_event_label_word_ids,
+                    decoded_event_label_mask,
+                ) = self.event_label_head.gumbel_greedy_decode(
+                    autoregressive_emb,
+                    max_decode_len=self.max_label_decode_len,
+                    tau=gumbel_tau,
+                )
+                # decoded_event_label_word_ids: one-hot encoded
+                # (batch, decoded_label_len, num_word)
+                # decoded_event_label_mask: (batch, decoded_label_len)
+            else:
+                (
+                    decoded_event_label_word_ids,
+                    decoded_event_label_mask,
+                ) = self.event_label_head.greedy_decode(
+                    autoregressive_emb, max_decode_len=self.max_label_decode_len
+                )
+                # decoded_event_label_word_ids: (batch, decoded_label_len)
+                # decoded_event_label_mask: (batch, decoded_label_len)
             output["decoded_event_label_word_ids"] = decoded_event_label_word_ids
             output["decoded_event_label_mask"] = decoded_event_label_mask
         return output
