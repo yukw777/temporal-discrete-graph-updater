@@ -962,3 +962,127 @@ def test_tdgu_get_decoder_input(
         node_label_mask,
         compute_masks_from_event_type_ids(event_type_ids),
     ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "event_type_ids,src_ids,dst_ids,batch,edge_index,expected",
+    [
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["pad"],
+                    EVENT_TYPE_ID_MAP["start"],
+                    EVENT_TYPE_ID_MAP["end"],
+                ]
+            ),
+            torch.tensor([0, 0, 0]),
+            torch.tensor([0, 0, 0]),
+            torch.empty(0).long(),
+            torch.empty(2, 0).long(),
+            torch.tensor([False, False, False]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                ]
+            ),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0, 1, 1]),
+            torch.empty(2, 0).long(),
+            torch.tensor([False, False]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([2, 0]),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0, 0, 1, 1]),
+            torch.empty(2, 0).long(),
+            torch.tensor([False, False]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([2, 0]),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0, 0, 1, 1]),
+            torch.tensor([[1], [2]]),
+            torch.tensor([True, False]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([2, 0]),
+            torch.tensor([0, 1]),
+            torch.tensor([0, 0, 0, 1, 1]),
+            torch.tensor([[2], [1]]),
+            torch.tensor([True, False]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([3, 5, 2, 0]),
+            torch.tensor([0, 0, 4, 1]),
+            torch.empty(0).long(),
+            torch.empty(2, 0).long(),
+            torch.tensor([True, True, True, True]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([3, 5, 2, 0]),
+            torch.tensor([0, 0, 4, 1]),
+            torch.tensor([3, 3]),
+            torch.empty(2, 0).long(),
+            torch.tensor([True, True, True, False]),
+        ),
+        (
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["node-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                ]
+            ),
+            torch.tensor([0, 1, 0, 0]),
+            torch.tensor([0, 0, 1, 1]),
+            torch.tensor([0, 1, 1, 2, 3, 3, 3]),
+            torch.tensor([[1], [2]]),
+            torch.tensor([False, True, False, False]),
+        ),
+    ],
+)
+def test_tdgu_filter_invalid_events(
+    event_type_ids, src_ids, dst_ids, batch, edge_index, expected
+):
+    assert TemporalDiscreteGraphUpdater.filter_invalid_events(
+        event_type_ids, src_ids, dst_ids, batch, edge_index
+    ).equal(expected)

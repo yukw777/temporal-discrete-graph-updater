@@ -597,3 +597,77 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
         )
         # (batch, event_type_embedding_dim + 3 * label_embedding_dim)
+
+    @staticmethod
+    def filter_invalid_events(
+        event_type_ids: torch.Tensor,
+        src_ids: torch.Tensor,
+        dst_ids: torch.Tensor,
+        batch: torch.Tensor,
+        edge_index: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Return a mask for invalid events. False for valid events and
+        True for invalid events.
+
+        node-add: all are valid
+        node-delete:
+            - nodes should exist
+            - nodes cannot have edges
+        edge-add:
+            - nodes should exist
+        edge-delete:
+            - nodes should exist
+
+        event_type_ids: (batch)
+        src_ids: (batch)
+        dst_ids: (batch)
+        batch: (num_node)
+        edge_index: (2, num_edge)
+
+        output: invalid event mask (batch)
+        """
+        batch_size = event_type_ids.size(0)
+        batch_bincount = batch.bincount()
+        subgraph_num_node = F.pad(
+            batch_bincount, (0, batch_size - batch_bincount.size(0))
+        )
+        # (batch)
+
+        invalid_src_mask = src_ids >= subgraph_num_node
+        # (batch)
+        invalid_dst_mask = dst_ids >= subgraph_num_node
+        # (batch)
+
+        # node-delete
+        node_id_offsets = calculate_node_id_offsets(event_type_ids.size(0), batch)
+        # (batch)
+        batch_src_ids = src_ids + node_id_offsets
+        # (batch)
+        nodes_with_edges = torch.any(
+            batch_src_ids.unsqueeze(-1) == edge_index.flatten(), dim=1
+        )
+        # (batch)
+        invalid_node_delete_event_mask = invalid_src_mask.logical_or(
+            nodes_with_edges
+        ).logical_and(event_type_ids == EVENT_TYPE_ID_MAP["node-delete"])
+        # (batch)
+
+        invalid_edge_mask = invalid_src_mask.logical_or(invalid_dst_mask)
+        # (batch)
+        invalid_edge_add_event_mask = invalid_edge_mask.logical_and(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-add"]
+        )
+        # (batch)
+
+        # if the edge doesn't exist, we still output it as was done
+        # in the original GATA paper
+        invalid_edge_delete_event_mask = invalid_edge_mask.logical_and(
+            event_type_ids == EVENT_TYPE_ID_MAP["edge-delete"]
+        )
+        # (batch)
+
+        return invalid_node_delete_event_mask.logical_or(
+            invalid_edge_add_event_mask
+        ).logical_or(invalid_edge_delete_event_mask)
+        # (batch)
