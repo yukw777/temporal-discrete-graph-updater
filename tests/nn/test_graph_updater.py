@@ -486,6 +486,11 @@ def test_tdgu_forward(
         expected_num_edge,
         2,
     )
+    assert results["batch_node_embeddings"].size() == (
+        batch_size,
+        max_sub_graph_num_node,
+        tdgu.hidden_dim,
+    )
     assert results["batch_node_mask"].size() == (batch_size, max_sub_graph_num_node)
     assert len(results["self_attn_weights"]) == len(tdgu.graph_event_decoder.dec_blocks)
     for self_attn_weights in results["self_attn_weights"]:
@@ -698,6 +703,11 @@ def test_tdgu_gumbel_forward(
     assert results["updated_batched_graph"].edge_last_update.size() == (
         expected_num_edge,
         2,
+    )
+    assert results["batch_node_embeddings"].size() == (
+        batch_size,
+        max_sub_graph_num_node,
+        tdgu.hidden_dim,
     )
     assert results["batch_node_mask"].size() == (batch_size, max_sub_graph_num_node)
     assert len(results["self_attn_weights"]) == len(tdgu.graph_event_decoder.dec_blocks)

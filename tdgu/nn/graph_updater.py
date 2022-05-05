@@ -255,6 +255,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                 edge_label_mask: (num_edge, edge_label_len)
                 edge_last_update: (num_edge, 2)
             )
+            batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
             batch_node_mask: (batch, max_sub_graph_num_node)
             self_attn_weights:
                 len([(batch, 1, input_seq_len), ...]) == num_decoder_block,
@@ -468,6 +469,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             "encoded_obs": encoded_obs,
             "encoded_prev_action": encoded_prev_action,
             "updated_batched_graph": updated_batched_graph,
+            "batch_node_embeddings": batch_node_embeddings,
             "batch_node_mask": batch_node_mask,
             **decoder_attn_weights,
         }
