@@ -113,7 +113,6 @@ class TDGULightningModule(  # type: ignore
             graph_event_decoder_autoregressive_emb_dim,
             graph_event_decoder_key_query_dim,
             dropout,
-            max_label_decode_len,
         )
         self.save_hyperparameters(
             ignore=["pretrained_word_embedding_path", "word_vocab_path"]

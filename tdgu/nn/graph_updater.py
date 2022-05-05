@@ -83,12 +83,10 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         graph_event_decoder_autoregressive_emb_dim: int,
         graph_event_decoder_key_query_dim: int,
         dropout: float,
-        max_label_decode_len: int,
     ) -> None:
         super().__init__()
         self.preprocessor = preprocessor
         self.hidden_dim = hidden_dim
-        self.max_label_decode_len = max_label_decode_len
 
         # text encoder
         self.text_encoder = text_encoder
@@ -165,6 +163,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
         # groundtruth events for decoder teacher-force training
         groundtruth_event: Optional[Dict[str, torch.Tensor]] = None,
+        max_label_decode_len: int = 10,
         gumbel_greedy_decode_labels: bool = False,
         gumbel_tau: float = 0.5,
     ) -> Dict[str, torch.Tensor]:
@@ -220,6 +219,8 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             groundtruth_event_label_tgt_mask: (batch, groundtruth_event_label_len)
         }
         Ground-truth graph events used for teacher forcing of the decoder
+
+        max_label_decode_len: max length of labels to decode
 
         gumbel_greedy_decode_labels: whether to perform gumbel greedy decoding or not
         gumbel_tau: gumbel greedy decoding temperature
@@ -485,7 +486,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                     decoded_event_label_mask,
                 ) = self.event_label_head.gumbel_greedy_decode(
                     autoregressive_emb,
-                    max_decode_len=self.max_label_decode_len,
+                    max_decode_len=max_label_decode_len,
                     tau=gumbel_tau,
                 )
                 # decoded_event_label_word_ids: one-hot encoded
@@ -496,7 +497,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                     decoded_event_label_word_ids,
                     decoded_event_label_mask,
                 ) = self.event_label_head.greedy_decode(
-                    autoregressive_emb, max_decode_len=self.max_label_decode_len
+                    autoregressive_emb, max_decode_len=max_label_decode_len
                 )
                 # decoded_event_label_word_ids: (batch, decoded_label_len)
                 # decoded_event_label_mask: (batch, decoded_label_len)

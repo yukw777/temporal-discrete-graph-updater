@@ -158,6 +158,7 @@ class SupervisedTDGU(TDGULightningModule):
                         graphical_input.groundtruth_event_label_tgt_mask
                     ),
                 },
+                max_label_decode_len=self.hparams.max_label_decode_len,  # type: ignore
             )
 
             # add results to the list
