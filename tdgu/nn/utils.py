@@ -655,3 +655,17 @@ class PositionalEncoder(nn.Module):
         output: (*, channels)
         """
         return self.pe[positions]  # type: ignore
+
+
+def generate_square_subsequent_mask(
+    size: int, device: Optional[torch.device] = None
+) -> torch.Tensor:
+    """
+    Generate a square subsequent mask of the given size.
+    Useful for attn_mask in MultiheadAttention.
+    For example, if size == 3:
+    [[False,  True,  True],
+     [False, False,  True],
+     [False, False, False]]
+    """
+    return torch.triu(torch.full((size, size), True, device=device), diagonal=1)

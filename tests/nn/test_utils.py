@@ -21,6 +21,7 @@ from tdgu.nn.utils import (
     update_node_features,
     update_edge_index,
     PositionalEncoder,
+    generate_square_subsequent_mask,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.preprocessor import PAD, UNK
@@ -1941,3 +1942,10 @@ def test_pos_encoder(channels, max_len, position_size):
     flat_positions = positions.flatten()
     assert flat_encoding[:, 0].equal(torch.sin(flat_positions.float()))
     assert flat_encoding[:, channels // 2].equal(torch.cos(flat_positions.float()))
+
+
+@pytest.mark.parametrize("size", [1, 3, 5, 7])
+def test_generate_subsequent_mask(size):
+    mask = generate_square_subsequent_mask(size)
+    # assert that the sum of tril and triu is the original mask
+    assert mask.equal(torch.tril(mask) + torch.triu(mask, diagonal=1))
