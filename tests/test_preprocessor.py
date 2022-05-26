@@ -14,23 +14,25 @@ from tdgu.preprocessor import (
     [
         (
             ["My name is Peter"],
-            torch.tensor([[2, 3, 4, 5]]),
-            torch.tensor([[True] * 4]),
+            torch.tensor([[6, 2, 3, 4, 5, 7]]),
+            torch.tensor([[True] * 6]),
         ),
         (
             ["my name is peter"],
-            torch.tensor([[2, 3, 4, 5]]),
-            torch.tensor([[True] * 4]),
+            torch.tensor([[6, 2, 3, 4, 5, 7]]),
+            torch.tensor([[True] * 6]),
         ),
         (
             ["My name is Peter", "Is my name David?"],
-            torch.tensor([[2, 3, 4, 5, 0], [4, 2, 3, 1, 1]]),
-            torch.tensor([[True, True, True, True, False], [True] * 5]),
+            torch.tensor([[6, 2, 3, 4, 5, 7, 0], [6, 4, 2, 3, 1, 1, 7]]),
+            torch.tensor([[True, True, True, True, True, True, False], [True] * 7]),
         ),
     ],
 )
 def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_mask):
-    sp = SpacyPreprocessor(["<pad>", "<unk>", "my", "name", "is", "peter"])
+    sp = SpacyPreprocessor(
+        ["<pad>", "<unk>", "my", "name", "is", "peter", "<bos>", "<eos>"]
+    )
     preprocessed, mask = sp.preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
     assert mask.equal(expected_mask)
@@ -74,9 +76,13 @@ def test_spacy_preprocessor_load_from_file():
 
 
 def test_spacy_preprocessor_load():
-    sp = SpacyPreprocessor(["<pad>", "<unk>", "my", "name", "is", "peter"])
+    sp = SpacyPreprocessor(
+        ["<pad>", "<unk>", "my", "name", "is", "peter", "<bos>", "<eos>"]
+    )
     assert sp.pad_token_id == 0
     assert sp.unk_token_id == 1
+    assert sp.bos_token_id == 6
+    assert sp.eos_token_id == 7
 
 
 def test_hf_preprocessor_load():
