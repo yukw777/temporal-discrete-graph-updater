@@ -10,7 +10,6 @@ from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
 from tdgu.nn.utils import compute_masks_from_event_type_ids
 from tdgu.nn.text import QANetTextEncoder
-from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
 
 from utils import increasing_mask
@@ -18,13 +17,9 @@ from utils import increasing_mask
 
 @pytest.fixture()
 def tdgu():
-    preprocessor = SpacyPreprocessor.load_from_file("tests/data/test_word_vocab.txt")
-    text_encoder = QANetTextEncoder(
-        nn.Embedding(preprocessor.vocab_size, 300), 1, 3, 5, 8, 1
-    )
+    text_encoder = QANetTextEncoder(nn.Embedding(17, 300), 1, 3, 5, 8, 1)
     return TemporalDiscreteGraphUpdater(
         text_encoder,
-        preprocessor,
         TransformerConv,
         8,
         8,
@@ -35,6 +30,9 @@ def tdgu():
         8,
         8,
         8,
+        2,
+        3,
+        0,
         0.3,
     )
 
@@ -43,7 +41,10 @@ def tdgu():
 @pytest.mark.parametrize("batch", [1, 8])
 def test_tdgu_embed_label(tdgu, batch, label_len):
     assert tdgu.embed_label(
-        torch.randint(tdgu.preprocessor.vocab_size, (batch, label_len)),
+        torch.randint(
+            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+            (batch, label_len),
+        ),
         torch.randint(2, (batch, label_len)).bool(),
     ).size() == (batch, tdgu.hidden_dim)
 
@@ -407,7 +408,10 @@ def test_tdgu_forward(
         event_type_ids,
         event_src_ids,
         event_dst_ids,
-        torch.randint(tdgu.preprocessor.vocab_size, (batch_size, event_label_len)),
+        torch.randint(
+            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+            (batch_size, event_label_len),
+        ),
         increasing_mask(batch_size, event_label_len).bool(),
         batched_graph,
         obs_mask,
@@ -415,10 +419,16 @@ def test_tdgu_forward(
         torch.randint(10, (batch_size,)),
         obs_word_ids=None
         if encoded_textual_input
-        else torch.randint(tdgu.preprocessor.vocab_size, (batch_size, obs_len)),
+        else torch.randint(
+            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+            (batch_size, obs_len),
+        ),
         prev_action_word_ids=None
         if encoded_textual_input
-        else torch.randint(tdgu.preprocessor.vocab_size, (batch_size, prev_action_len)),
+        else torch.randint(
+            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+            (batch_size, prev_action_len),
+        ),
         encoded_obs=encoded_obs,
         encoded_prev_action=encoded_prev_action,
         prev_input_event_emb_seq=None
@@ -449,7 +459,7 @@ def test_tdgu_forward(
     else:
         assert results["event_label_logits"].size() == groundtruth_event[
             "groundtruth_event_label_tgt_word_ids"
-        ].size() + (len(tdgu.preprocessor.word_vocab),)
+        ].size() + (tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,)
     assert results["updated_prev_input_event_emb_seq"].size() == (
         len(tdgu.graph_event_decoder.dec_blocks),
         batch_size,
@@ -629,17 +639,24 @@ def test_tdgu_gumbel_forward(
         event_src_ids,
         event_dst_ids,
         F.one_hot(
-            torch.randint(tdgu.preprocessor.vocab_size, (batch_size, event_label_len)),
-            num_classes=tdgu.preprocessor.vocab_size,
+            torch.randint(
+                tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+                (batch_size, event_label_len),
+            ),
+            num_classes=tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
         ).float(),
         increasing_mask(batch_size, event_label_len).bool(),
         batched_graph,
         obs_mask,
         prev_action_mask,
         torch.randint(10, (batch_size,)),
-        obs_word_ids=torch.randint(tdgu.preprocessor.vocab_size, (batch_size, obs_len)),
+        obs_word_ids=torch.randint(
+            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+            (batch_size, obs_len),
+        ),
         prev_action_word_ids=torch.randint(
-            tdgu.preprocessor.vocab_size, (batch_size, prev_action_len)
+            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
+            (batch_size, prev_action_len),
         ),
         prev_input_event_emb_seq=torch.rand(
             len(tdgu.graph_event_decoder.dec_blocks),
@@ -663,7 +680,8 @@ def test_tdgu_gumbel_forward(
     assert results["decoded_event_label_word_ids"].dim() == 3
     assert results["decoded_event_label_word_ids"].size(0) == batch_size
     assert (
-        results["decoded_event_label_word_ids"].size(2) == tdgu.preprocessor.vocab_size
+        results["decoded_event_label_word_ids"].size(2)
+        == tdgu.event_label_head.pretrained_word_embeddings.num_embeddings
     )
     assert results["decoded_event_label_mask"].dim() == 2
     assert results["decoded_event_label_mask"].size(0) == batch_size
@@ -686,7 +704,10 @@ def test_tdgu_gumbel_forward(
     assert results["updated_batched_graph"].batch.size() == (expected_num_node,)
     assert results["updated_batched_graph"].x.dim() == 3
     assert results["updated_batched_graph"].x.size(0) == expected_num_node
-    assert results["updated_batched_graph"].x.size(2) == tdgu.preprocessor.vocab_size
+    assert (
+        results["updated_batched_graph"].x.size(2)
+        == tdgu.event_label_head.pretrained_word_embeddings.num_embeddings
+    )
     assert results["updated_batched_graph"].node_label_mask.dim() == 2
     assert results["updated_batched_graph"].node_label_mask.size(0) == expected_num_node
     assert results["updated_batched_graph"].node_last_update.size() == (
@@ -698,7 +719,7 @@ def test_tdgu_gumbel_forward(
     assert results["updated_batched_graph"].edge_attr.size(0) == expected_num_edge
     assert (
         results["updated_batched_graph"].edge_attr.size(2)
-        == tdgu.preprocessor.vocab_size
+        == tdgu.event_label_head.pretrained_word_embeddings.num_embeddings
     )
     assert results["updated_batched_graph"].edge_last_update.size() == (
         expected_num_edge,

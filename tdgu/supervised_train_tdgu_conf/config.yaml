@@ -18,11 +18,11 @@ data_module:
 model:
   _target_: tdgu.train.supervised.SupervisedTDGU
   hidden_dim: 64
-  word_emb_dim: 300
   dgnn_gnn: TransformerConv
   dgnn_timestamp_enc_dim: 16
   dgnn_num_gnn_block: 1
   dgnn_num_gnn_head: 1
+  text_encoder_word_emb_dim: 300
   text_encoder_num_blocks: 1
   text_encoder_num_conv_layers: 5
   text_encoder_kernel_size: 5

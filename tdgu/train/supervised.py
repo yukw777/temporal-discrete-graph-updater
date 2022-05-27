@@ -7,6 +7,8 @@ import networkx as nx
 from typing import Optional, Dict, List, Sequence, Tuple, Any
 from torch.optim import AdamW, Optimizer
 
+from pathlib import Path
+from hydra.utils import to_absolute_path
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.trainer.states import RunningStage
 from torch_geometric.data import Batch, Data
@@ -19,6 +21,7 @@ from tdgu.nn.utils import (
     masked_log_softmax,
     calculate_node_id_offsets,
     masked_softmax,
+    load_fasttext,
 )
 from tdgu.data import (
     TWCmdGenGraphEventBatch,
@@ -34,6 +37,7 @@ from tdgu.graph import (
     networkx_to_rdf,
     update_rdf_graph,
 )
+from tdgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 from tdgu.train import TDGULightningModule
 
 
@@ -42,8 +46,46 @@ class SupervisedTDGU(TDGULightningModule):
     A LightningModule for supervised training of the temporal discrete graph updater.
     """
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        word_vocab_path: Optional[str] = None,
+        pretrained_word_embedding_path: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        # preprocessor
+        self.preprocessor = (
+            SpacyPreprocessor([PAD, UNK, BOS, EOS])
+            if word_vocab_path is None
+            else SpacyPreprocessor.load_from_file(to_absolute_path(word_vocab_path))
+        )
+
+        # pretrained word embeddings
+        pretrained_word_embeddings: Optional[nn.Embedding]
+        if pretrained_word_embedding_path is None:
+            pretrained_word_embeddings = None
+        else:
+            abs_pretrained_word_embedding_path = Path(
+                to_absolute_path(pretrained_word_embedding_path)
+            )
+            serialized_path = abs_pretrained_word_embedding_path.parent / (
+                abs_pretrained_word_embedding_path.stem + ".pt"
+            )
+            pretrained_word_embeddings = load_fasttext(
+                str(abs_pretrained_word_embedding_path),
+                serialized_path,
+                self.preprocessor.get_vocab(),
+                self.preprocessor.pad_token_id,
+            )
+            pretrained_word_embeddings.requires_grad_(requires_grad=False)
+
+        super().__init__(
+            text_encoder_vocab_size=self.preprocessor.vocab_size,
+            label_head_bos_token_id=self.preprocessor.bos_token_id,
+            label_head_eos_token_id=self.preprocessor.eos_token_id,
+            label_head_pad_token_id=self.preprocessor.pad_token_id,
+            pretrained_word_embeddings=pretrained_word_embeddings,
+            **kwargs,
+        )
         self.criterion = UncertaintyWeightedLoss()
 
         self.val_event_type_f1 = F1Score()

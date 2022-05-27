@@ -27,7 +27,6 @@ from tdgu.nn.graph_event_decoder import (
     EventSequentialLabelHead,
 )
 from tdgu.nn.dynamic_gnn import DynamicGNN
-from tdgu.preprocessor import Preprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP
 
 
@@ -71,7 +70,6 @@ class TemporalDiscreteGraphUpdater(nn.Module):
     def __init__(
         self,
         text_encoder: TextEncoderProto,
-        preprocessor: Preprocessor,
         gnn_module: nn.Module,
         hidden_dim: int,
         dgnn_timestamp_enc_dim: int,
@@ -82,10 +80,12 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         graph_event_decoder_event_type_emb_dim: int,
         graph_event_decoder_autoregressive_emb_dim: int,
         graph_event_decoder_key_query_dim: int,
+        label_head_bos_token_id: int,
+        label_head_eos_token_id: int,
+        label_head_pad_token_id: int,
         dropout: float,
     ) -> None:
         super().__init__()
-        self.preprocessor = preprocessor
         self.hidden_dim = hidden_dim
 
         # text encoder
@@ -136,8 +136,10 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         self.event_label_head = EventSequentialLabelHead(
             graph_event_decoder_autoregressive_emb_dim,
             hidden_dim,
-            self.preprocessor,
             self.text_encoder.get_input_embeddings(),
+            label_head_bos_token_id,
+            label_head_eos_token_id,
+            label_head_pad_token_id,
         )
 
     def forward(  # type: ignore
