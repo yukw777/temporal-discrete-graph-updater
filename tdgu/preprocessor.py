@@ -94,7 +94,7 @@ class SpacyPreprocessor(Preprocessor):
         return [self.word_to_id_dict.get(token, self.unk_token_id) for token in tokens]
 
     def tokenize(self, s: str) -> List[str]:
-        return [t.text.lower() for t in self.tokenizer(s)]
+        return [BOS] + [t.text.lower() for t in self.tokenizer(s)] + [EOS]
 
     def pad(
         self, unpadded_batch: List[List[int]], device: Optional[torch.device] = None
