@@ -14,7 +14,6 @@ from tdgu.nn.graph_event_decoder import (
     TransformerGraphEventDecoder,
 )
 from tdgu.constants import EVENT_TYPES
-from tdgu.preprocessor import BOS, EOS, PAD, SpacyPreprocessor
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
@@ -152,11 +151,6 @@ def test_event_static_label_head(
     assert label_logits.size() == (batch, num_label)
 
 
-@pytest.fixture
-def preprocessor():
-    return SpacyPreprocessor([PAD, BOS, EOS, "word0", "word1", "word2"])
-
-
 @pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize("seq_len", [1, 5, 10])
 @pytest.mark.parametrize(
@@ -164,7 +158,6 @@ def preprocessor():
     [(8, 4, 16, 1), (8, 4, 16, 4)],
 )
 def test_event_seq_label_head_forward(
-    preprocessor,
     autoregressive_embedding_dim,
     hidden_dim,
     word_embedding_dim,
@@ -172,22 +165,22 @@ def test_event_seq_label_head_forward(
     seq_len,
     one_hot,
 ):
+    vocab_size = 6
+    bos_token_id = 1
+    eos_token_id = 2
+    pad_token_id = 0
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         hidden_dim,
-        preprocessor,
-        nn.Embedding(
-            preprocessor.vocab_size,
-            word_embedding_dim,
-            padding_idx=preprocessor.pad_token_id,
-        ),
+        nn.Embedding(vocab_size, word_embedding_dim, padding_idx=pad_token_id),
+        bos_token_id,
+        eos_token_id,
+        pad_token_id,
     )
 
-    output_tgt_seq = torch.randint(preprocessor.vocab_size, (batch, seq_len))
+    output_tgt_seq = torch.randint(vocab_size, (batch, seq_len))
     if one_hot:
-        output_tgt_seq = F.one_hot(
-            output_tgt_seq, num_classes=preprocessor.vocab_size
-        ).float()
+        output_tgt_seq = F.one_hot(output_tgt_seq, num_classes=vocab_size).float()
     seq_mask_list = [[True] * seq_len]
     for _ in range(batch - 1):
         length = random.randrange(1, seq_len) if seq_len > 1 else 1
@@ -214,14 +207,14 @@ def test_event_seq_label_head_forward(
         output_tgt_seq_mask,
         autoregressive_embedding=autoregressive_embedding,
     )
-    assert output_seq_logits.size() == (batch, seq_len, preprocessor.vocab_size)
+    assert output_seq_logits.size() == (batch, seq_len, vocab_size)
     assert updated_hidden.size() == (batch, hidden_dim)
 
     # forward pass with prev_hidden
     output_seq_logits, updated_hidden = head(
         output_tgt_seq, output_tgt_seq_mask, prev_hidden=prev_hidden
     )
-    assert output_seq_logits.size() == (batch, seq_len, preprocessor.vocab_size)
+    assert output_seq_logits.size() == (batch, seq_len, vocab_size)
     assert updated_hidden.size() == (batch, hidden_dim)
 
 
@@ -293,7 +286,6 @@ def test_event_seq_label_head_forward(
     ],
 )
 def test_event_seq_label_head_greedy_decode(
-    preprocessor,
     batch,
     forward_logits,
     max_decode_len,
@@ -301,13 +293,17 @@ def test_event_seq_label_head_greedy_decode(
     expected_mask,
     autoregressive_embedding_dim,
 ):
+    vocab_size = 6
+    bos_token_id = 1
+    eos_token_id = 2
+    pad_token_id = 0
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         4,
-        preprocessor,
-        nn.Embedding(
-            preprocessor.vocab_size, 12, padding_idx=preprocessor.pad_token_id
-        ),
+        nn.Embedding(vocab_size, 12, padding_idx=pad_token_id),
+        bos_token_id,
+        eos_token_id,
+        pad_token_id,
     )
 
     class MockForward:
@@ -414,7 +410,6 @@ def test_event_seq_label_head_greedy_decode(
 )
 def test_event_seq_label_head_gumbel_greedy_decode(
     monkeypatch,
-    preprocessor,
     batch,
     forward_logits,
     max_decode_len,
@@ -423,10 +418,15 @@ def test_event_seq_label_head_gumbel_greedy_decode(
     autoregressive_embedding_dim,
     tau,
 ):
+    vocab_size = 6
+    bos_token_id = 1
+    eos_token_id = 2
+    pad_token_id = 0
+
     # monkeypatch gumbel_softmax to argmax() + F.one_hot()
     # to remove randomness for tests
     def mock_gumbel_softmax(logits, **kwargs):
-        return F.one_hot(logits.argmax(-1), num_classes=preprocessor.vocab_size).float()
+        return F.one_hot(logits.argmax(-1), num_classes=vocab_size).float()
 
     monkeypatch.setattr(
         "tdgu.nn.graph_event_decoder.F.gumbel_softmax", mock_gumbel_softmax
@@ -434,10 +434,10 @@ def test_event_seq_label_head_gumbel_greedy_decode(
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         4,
-        preprocessor,
-        nn.Embedding(
-            preprocessor.vocab_size, 12, padding_idx=preprocessor.pad_token_id
-        ),
+        nn.Embedding(vocab_size, 12, padding_idx=pad_token_id),
+        bos_token_id,
+        eos_token_id,
+        pad_token_id,
     )
 
     class MockForward:
