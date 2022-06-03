@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-from tdgu.nn.utils import PositionalEncoder
+from tdgu.nn.utils import PositionalEncoder, generate_square_subsequent_mask
 
 
 class DepthwiseSeparableConv1d(nn.Module):
@@ -190,3 +190,170 @@ class QANetTextEncoder(nn.Module):
 
     def get_input_embeddings(self) -> nn.Embedding:
         return self.pretrained_word_embeddings
+
+
+class TextDecoderBlock(nn.Module):
+    def __init__(self, hidden_dim: int, num_heads: int) -> None:
+        super().__init__()
+        assert hidden_dim % 2 == 0, "hidden_dim has to be even for positional encoding"
+        self.pos_encoder = PositionalEncoder(hidden_dim, 512)
+        self.self_attn = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
+        self.self_attn_layer_norm = nn.LayerNorm(hidden_dim)
+        self.node_attn = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
+        self.prev_action_attn = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True
+        )
+        self.combine_node_prev_action = nn.Sequential(
+            nn.Linear(2 * hidden_dim, hidden_dim), nn.ReLU()
+        )
+        self.linear_layer_norm = nn.LayerNorm(hidden_dim)
+        self.linear_layers = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        input_mask: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
+        prev_action_hidden: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        input: (batch, input_seq_len, hidden_dim)
+        input_mask: (batch, input_seq_len)
+        node_embeddings: (batch, num_node, hidden_dim)
+        node_mask: (batch, num_node)
+        prev_action_hidden: (batch, prev_action_len, hidden_dim)
+        prev_action_mask: (batch, prev_action_len)
+        output: (batch, input_seq_len, hidden_dim)
+        """
+        # calculate attention mask for decoding
+        # this is the mask that prevents MultiheadAttention
+        # from attending to future values
+        input_seq_len = input.size(1)
+        attn_mask = generate_square_subsequent_mask(input_seq_len, device=input.device)
+        # (input_seq_len, input_seq_len)
+
+        # add the positional encodings
+        pos_encoded_input = input + self.pos_encoder(
+            torch.arange(input_seq_len, device=input.device)
+        )
+        # (batch, input_seq_len, hidden_dim)
+
+        # self attention layer
+        input_residual = pos_encoded_input
+        input_attn, _ = self.self_attn(
+            pos_encoded_input,
+            pos_encoded_input,
+            pos_encoded_input,
+            key_padding_mask=input_mask.logical_not(),
+            attn_mask=attn_mask,
+        )
+        input_attn += input_residual
+        # (batch, input_seq_len, hidden_dim)
+
+        # apply layer norm to the input self attention output to calculate the query
+        query = self.self_attn_layer_norm(input_attn)
+        # (batch, input_seq_len, hidden_dim)
+
+        # multihead attention for the nodes
+        node_attn, _ = self.node_attn(
+            query,
+            node_embeddings,
+            node_embeddings,
+            key_padding_mask=node_mask.logical_not(),
+        )
+        # (batch, input_seq_len, hidden_dim)
+
+        # multihead attention for the previous action
+        prev_action_attn, _ = self.prev_action_attn(
+            query,
+            prev_action_hidden,
+            prev_action_hidden,
+            key_padding_mask=prev_action_mask.logical_not(),
+        )
+        # (batch, input_seq_len, hidden_dim)
+
+        # combine self attention for the previous action and nodes with
+        # input self attention
+        combined_node_prev_attn = (
+            self.combine_node_prev_action(
+                torch.cat([prev_action_attn, node_attn], dim=-1)
+            )
+            + input_attn
+        )
+        # (batch, input_seq_len, hidden_dim)
+
+        # linear layer
+        output = self.linear_layer_norm(combined_node_prev_attn)
+        output = self.linear_layers(output)
+        output += combined_node_prev_attn
+        # (batch, input_seq_len, hidden_dim)
+
+        return output
+
+
+class TextDecoder(nn.Module):
+    def __init__(
+        self,
+        pretrained_word_embeddings: nn.Embedding,
+        num_dec_blocks: int,
+        dec_block_num_heads: int,
+        dec_block_hidden_dim: int,
+    ) -> None:
+        super().__init__()
+        self.pretrained_word_embeddings = pretrained_word_embeddings
+        self.word_embedding_linear = nn.Linear(
+            self.pretrained_word_embeddings.embedding_dim, dec_block_hidden_dim
+        )
+        self.dec_blocks = nn.ModuleList(
+            TextDecoderBlock(dec_block_hidden_dim, dec_block_num_heads)
+            for _ in range(num_dec_blocks)
+        )
+        self.output_linear = nn.Linear(
+            dec_block_hidden_dim, self.pretrained_word_embeddings.num_embeddings
+        )
+
+    def forward(
+        self,
+        input_word_ids: torch.Tensor,
+        input_mask: torch.Tensor,
+        node_embeddings: torch.Tensor,
+        node_mask: torch.Tensor,
+        prev_action_word_ids: torch.Tensor,
+        prev_action_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        input_word_ids: (batch, input_seq_len)
+        input_mask: (batch, input_seq_len)
+        node_embeddings: (batch, num_node, hidden_dim)
+        node_mask: (batch, num_node)
+        prev_action_word_ids: (batch, prev_action_len)
+        prev_action_mask: (batch, prev_action_len)
+
+        output: (batch, input_seq_len, vocab_size)
+        """
+        output = self.word_embedding_linear(
+            self.pretrained_word_embeddings(input_word_ids)
+        )
+        # (batch, input_seq_len, hidden_dim)
+        prev_action_hidden = self.word_embedding_linear(
+            self.pretrained_word_embeddings(prev_action_word_ids)
+        )
+        # (batch, prev_action_len, hidden_dim)
+        for dec_block in self.dec_blocks:
+            output = dec_block(
+                output,
+                input_mask,
+                node_embeddings,
+                node_mask,
+                prev_action_hidden,
+                prev_action_mask,
+            )
+        # (batch_size, input_seq_len, hidden_dim)
+
+        return self.output_linear(output)
