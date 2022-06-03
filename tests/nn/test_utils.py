@@ -22,6 +22,7 @@ from tdgu.nn.utils import (
     update_edge_index,
     PositionalEncoder,
     generate_square_subsequent_mask,
+    shift_tokens_right,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.preprocessor import PAD, UNK
@@ -1949,3 +1950,14 @@ def test_generate_subsequent_mask(size):
     mask = generate_square_subsequent_mask(size)
     # assert that the sum of tril and triu is the original mask
     assert mask.equal(torch.tril(mask) + torch.triu(mask, diagonal=1))
+
+
+@pytest.mark.parametrize(
+    "input_ids,decoder_start_token_id,expected",
+    [
+        (torch.tensor([[1, 2, 3]]), 5, torch.tensor([[5, 1, 2]])),
+        (torch.tensor([[1, 2, 3], [2, 3, 0]]), 9, torch.tensor([[9, 1, 2], [9, 2, 3]])),
+    ],
+)
+def test_shift_tokens_right(input_ids, decoder_start_token_id, expected):
+    assert shift_tokens_right(input_ids, decoder_start_token_id).equal(expected)

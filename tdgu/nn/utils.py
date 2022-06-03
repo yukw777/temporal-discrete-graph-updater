@@ -669,3 +669,19 @@ def generate_square_subsequent_mask(
      [False, False, False]]
     """
     return torch.triu(torch.full((size, size), True, device=device), diagonal=1)
+
+
+def shift_tokens_right(
+    input_ids: torch.Tensor, decoder_start_token_id: int
+) -> torch.Tensor:
+    """
+    Shift input ids one token to the right. Based on Hugging Face Transformers.
+
+    input_ids: (batch, input_seq_len)
+    output: (batch, input_seq_len)
+    """
+    shifted_input_ids = input_ids.new_zeros(input_ids.size())
+    shifted_input_ids[:, 1:] = input_ids[:, :-1].clone()
+    shifted_input_ids[:, 0] = decoder_start_token_id
+
+    return shifted_input_ids
