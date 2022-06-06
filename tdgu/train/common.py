@@ -1,0 +1,295 @@
+import torch
+import torch.nn as nn
+import pytorch_lightning as pl
+
+from typing import Optional, List, Dict, Any
+from torch_geometric.nn import TransformerConv, GATv2Conv
+from torch_geometric.data import Batch
+
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
+from tdgu.nn.text import QANetTextEncoder
+from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
+from tdgu.data import TWCmdGenGraphEventStepInput
+from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.nn.utils import masked_softmax
+
+
+class TDGULightningModule(  # type: ignore
+    TemporalDiscreteGraphUpdater, pl.LightningModule
+):
+    """
+    Base LightningModule class for TDGU.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int = 8,
+        dgnn_gnn: str = "TransformerConv",
+        dgnn_timestamp_enc_dim: int = 8,
+        dgnn_num_gnn_block: int = 1,
+        dgnn_num_gnn_head: int = 1,
+        dgnn_zero_timestamp_encoder: bool = False,
+        text_encoder_vocab_size: int = 4,
+        text_encoder_word_emb_dim: int = 300,
+        text_encoder_num_blocks: int = 1,
+        text_encoder_num_conv_layers: int = 3,
+        text_encoder_kernel_size: int = 5,
+        text_encoder_num_heads: int = 1,
+        graph_event_decoder_event_type_emb_dim: int = 8,
+        graph_event_decoder_hidden_dim: int = 8,
+        graph_event_decoder_autoregressive_emb_dim: int = 8,
+        graph_event_decoder_key_query_dim: int = 8,
+        graph_event_decoder_num_dec_blocks: int = 1,
+        graph_event_decoder_dec_block_num_heads: int = 1,
+        label_head_bos_token_id: int = 2,
+        label_head_eos_token_id: int = 3,
+        label_head_pad_token_id: int = 0,
+        max_event_decode_len: int = 100,
+        max_label_decode_len: int = 10,
+        learning_rate: float = 5e-4,
+        dropout: float = 0.3,
+        allow_objs_with_same_label: bool = False,
+        pretrained_word_embeddings: Optional[nn.Embedding] = None,
+    ) -> None:
+        if pretrained_word_embeddings is None:
+            pretrained_word_embeddings = nn.Embedding(
+                text_encoder_vocab_size, text_encoder_word_emb_dim
+            )
+        else:
+            assert pretrained_word_embeddings.num_embeddings == text_encoder_vocab_size
+            assert pretrained_word_embeddings.embedding_dim == text_encoder_word_emb_dim
+        # text encoder
+        text_encoder = QANetTextEncoder(
+            pretrained_word_embeddings,
+            text_encoder_num_blocks,
+            text_encoder_num_conv_layers,
+            text_encoder_kernel_size,
+            hidden_dim,
+            text_encoder_num_heads,
+            dropout=dropout,
+        )
+        # temporal graph network
+        gnn_module: nn.Module
+        if dgnn_gnn == "TransformerConv":
+            gnn_module = TransformerConv
+        elif dgnn_gnn == "GATv2Conv":
+            gnn_module = GATv2Conv
+        else:
+            raise ValueError(f"Unknown GNN: {dgnn_gnn}")
+        super().__init__(
+            text_encoder,
+            gnn_module,
+            hidden_dim,
+            dgnn_timestamp_enc_dim,
+            dgnn_num_gnn_block,
+            dgnn_num_gnn_head,
+            dgnn_zero_timestamp_encoder,
+            TransformerGraphEventDecoder(
+                graph_event_decoder_event_type_emb_dim + 3 * hidden_dim,
+                hidden_dim,
+                graph_event_decoder_num_dec_blocks,
+                graph_event_decoder_dec_block_num_heads,
+                graph_event_decoder_hidden_dim,
+                dropout=dropout,
+            ),
+            graph_event_decoder_event_type_emb_dim,
+            graph_event_decoder_autoregressive_emb_dim,
+            graph_event_decoder_key_query_dim,
+            label_head_bos_token_id,
+            label_head_eos_token_id,
+            label_head_pad_token_id,
+            dropout,
+        )
+        self.save_hyperparameters(ignore=["pretrained_word_embeddings"])
+
+    def greedy_decode(
+        self,
+        step_input: TWCmdGenGraphEventStepInput,
+        prev_batched_graph: Batch,
+        max_event_decode_len: int = 100,
+        max_label_decode_len: int = 10,
+        one_hot: bool = False,
+        gumbel_tau: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """
+        step_input: the current step input
+        prev_batch_graph: diagonally stacked batch of current graphs
+        max_event_decode_len: max length of decoded event sequence
+        max_label_decode_len: max length of decoded labels
+        one_hot: use one-hot encoded label word IDs
+        gumbel_tau: gumbel temperature, only used if one_hot is True
+
+        output:
+        len([{
+            decoded_event_type_ids: (batch)
+            decoded_event_src_ids: (batch)
+            decoded_event_dst_ids: (batch)
+            decoded_event_label_word_ids: one-hot encoded
+                (batch, decoded_label_len, num_word) if one_hot is True
+                (batch, decoded_label_len) otherwise
+            decoded_event_label_mask: (batch, decoded_label_len)
+            updated_batched_graph: diagonally stacked batch of updated graphs.
+                these are the graphs used to decode the graph events above
+            batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
+            batch_node_mask: (batch, max_sub_graph_num_node)
+            self_attn_weights:
+                len([(batch, 1, input_seq_len), ...]) == num_decoder_block,
+            obs_graph_attn_weights:
+                len([(batch, 1, obs_len), ...]) == num_decoder_block,
+            prev_action_graph_attn_weights:
+                len([(batch, 1, prev_action_len), ...]) == num_decoder_block,
+            graph_obs_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+            graph_prev_action_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+        }, ...]) == decode_len <= max_event_decode_len
+        """
+        # initialize the initial inputs
+        batch_size = step_input.obs_word_ids.size(0)
+        decoded_event_type_ids = torch.full(
+            (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
+        )
+        # (batch)
+        decoded_src_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
+        # (batch)
+        decoded_dst_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
+        # (batch)
+        if one_hot:
+            decoded_label_word_ids = torch.empty(
+                batch_size,
+                0,
+                self.text_encoder.get_input_embeddings().num_embeddings,
+                device=self.device,
+            )
+            # (batch, 0, num_word)
+        else:
+            decoded_label_word_ids = torch.empty(
+                batch_size, 0, device=self.device, dtype=torch.long
+            )
+            # (batch, 0)
+        decoded_label_mask = torch.empty(
+            batch_size, 0, device=self.device, dtype=torch.bool
+        )
+        # (batch, 0)
+
+        end_event_mask = torch.full((batch_size,), False, device=self.device)
+        # (batch)
+
+        prev_input_event_emb_seq: Optional[torch.Tensor] = None
+        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None
+        encoded_obs: Optional[torch.Tensor] = None
+        encoded_prev_action: Optional[torch.Tensor] = None
+        results_list: List[Dict[str, Any]] = []
+        for _ in range(max_event_decode_len):
+            results = self(
+                decoded_event_type_ids,
+                decoded_src_ids,
+                decoded_dst_ids,
+                decoded_label_word_ids,
+                decoded_label_mask,
+                prev_batched_graph,
+                step_input.obs_mask,
+                step_input.prev_action_mask,
+                step_input.timestamps,
+                obs_word_ids=step_input.obs_word_ids,
+                prev_action_word_ids=step_input.prev_action_word_ids,
+                encoded_obs=encoded_obs,
+                encoded_prev_action=encoded_prev_action,
+                prev_input_event_emb_seq=prev_input_event_emb_seq,
+                prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
+                max_label_decode_len=max_label_decode_len,
+                gumbel_greedy_decode_labels=one_hot,
+                gumbel_tau=gumbel_tau,
+            )
+
+            # process the decoded result for the next iteration
+            decoded_event_type_ids = (
+                results["event_type_logits"]
+                .argmax(dim=1)
+                .masked_fill(end_event_mask, EVENT_TYPE_ID_MAP["pad"])
+            )
+            # (batch)
+
+            if results["event_src_logits"].size(1) == 0:
+                decoded_src_ids = torch.zeros(
+                    batch_size, dtype=torch.long, device=self.device
+                )
+            else:
+                decoded_src_ids = masked_softmax(
+                    results["event_src_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
+            # (batch)
+            if results["event_dst_logits"].size(1) == 0:
+                decoded_dst_ids = torch.zeros(
+                    batch_size, dtype=torch.long, device=self.device
+                )
+            else:
+                decoded_dst_ids = masked_softmax(
+                    results["event_dst_logits"], results["batch_node_mask"], dim=1
+                ).argmax(dim=1)
+            # (batch)
+            decoded_label_word_ids = results["decoded_event_label_word_ids"]
+            # (batch, decoded_label_len, num_word) if one_hot is True
+            # (batch, decoded_label_len) otherwise
+            decoded_label_mask = results["decoded_event_label_mask"]
+            # (batch, decoded_label_len)
+
+            # filter out invalid decoded events
+            invalid_event_mask = self.filter_invalid_events(
+                decoded_event_type_ids,
+                decoded_src_ids,
+                decoded_dst_ids,
+                results["updated_batched_graph"].batch,
+                results["updated_batched_graph"].edge_index,
+            )
+            # (batch)
+            decoded_event_type_ids = decoded_event_type_ids.masked_fill(
+                invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
+            )
+
+            # collect the results
+            results_list.append(
+                {
+                    "decoded_event_type_ids": decoded_event_type_ids,
+                    "decoded_event_src_ids": decoded_src_ids,
+                    "decoded_event_dst_ids": decoded_dst_ids,
+                    "decoded_event_label_word_ids": decoded_label_word_ids,
+                    "decoded_event_label_mask": decoded_label_mask,
+                    "updated_batched_graph": results["updated_batched_graph"],
+                    "batch_node_embeddings": results["batch_node_embeddings"],
+                    "batch_node_mask": results["batch_node_mask"],
+                    "self_attn_weights": results["self_attn_weights"],
+                    "obs_graph_attn_weights": results["obs_graph_attn_weights"],
+                    "prev_action_graph_attn_weights": results[
+                        "prev_action_graph_attn_weights"
+                    ],
+                    "graph_obs_attn_weights": results["graph_obs_attn_weights"],
+                    "graph_prev_action_attn_weights": results[
+                        "graph_prev_action_attn_weights"
+                    ],
+                }
+            )
+
+            # update the batched graph
+            prev_batched_graph = results["updated_batched_graph"]
+
+            # update previous input event embedding sequence
+            prev_input_event_emb_seq = results["updated_prev_input_event_emb_seq"]
+            prev_input_event_emb_seq_mask = results[
+                "updated_prev_input_event_emb_seq_mask"
+            ]
+
+            # save update the encoded observation and previous action
+            encoded_obs = results["encoded_obs"]
+            encoded_prev_action = results["encoded_prev_action"]
+
+            # update end_event_mask
+            end_event_mask = end_event_mask.logical_or(
+                decoded_event_type_ids == EVENT_TYPE_ID_MAP["end"]
+            )
+
+            # if everything in the batch is done, break
+            if end_event_mask.all():
+                break
+
+        return results_list
