@@ -119,30 +119,11 @@ class SpacyPreprocessor(Preprocessor):
             ),
         )
 
-    def preprocess_tokenized(
-        self,
-        tokenized_batch: List[List[str]],
-        device: Optional[torch.device] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        NOTE: Assumes the batch has already been tokenized by a preprocessor with the
-        similar vocab mapping
-        """
-
-        return self.pad(
-            [self.convert_tokens_to_ids(tokenized) for tokenized in tokenized_batch],
-            device=device,
-        )
-
     def preprocess(
         self, batch: List[str], device: Optional[torch.device] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        NOTE: Assumes the batch has not been altered yet
-        """
-
-        return self.preprocess_tokenized(
-            [self.tokenize(s) for s in batch], device=device
+        return self.pad(
+            [self.convert_tokens_to_ids(self.tokenize(s)) for s in batch], device=device
         )
 
     @property

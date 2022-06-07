@@ -11,8 +11,12 @@ from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
 
-from tdgu.preprocessor import SpacyPreprocessor, BOS, EOS
-from tdgu.nn.utils import compute_masks_from_event_type_ids, update_batched_graph
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.nn.utils import (
+    compute_masks_from_event_type_ids,
+    shift_tokens_right,
+    update_batched_graph,
+)
 from tdgu.utils import draw_graph
 from tdgu.constants import (
     EVENT_TYPE_ID_MAP,
@@ -532,13 +536,11 @@ class TWCmdGenGraphEventDataCollator:
         )
         """
         # textual observation
-        obs_word_ids, obs_mask = self.preprocessor.preprocess_tokenized(
-            [ob.split() for ob in obs]
-        )
+        obs_word_ids, obs_mask = self.preprocessor.preprocess(obs)
 
         # textual previous action
-        prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess_tokenized(
-            [prev_action.split() for prev_action in prev_actions]
+        prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess(
+            prev_actions
         )
         return TWCmdGenGraphEventStepInput(
             obs_word_ids=obs_word_ids,
@@ -599,8 +601,7 @@ class TWCmdGenGraphEventDataCollator:
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
-            batch_event_label_tgt_tokens: List[List[str]] = []
-            batch_event_label_groundtruth_tokens: List[List[str]] = []
+            batch_event_groundtruth_labels: List[str] = []
             for event_seq in batch_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
@@ -610,28 +611,23 @@ class TWCmdGenGraphEventDataCollator:
                         event.get("src_id", event.get("node_id", 0))
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
-                    label_tokens = event["label"].split()
-                    batch_event_label_tgt_tokens.append([BOS] + label_tokens)
-                    batch_event_label_groundtruth_tokens.append(label_tokens + [EOS])
+                    batch_event_groundtruth_labels.append(event["label"])
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
-                    # can't pack an empty sequence so add one token
-                    batch_event_label_tgt_tokens.append([BOS])
-                    batch_event_label_groundtruth_tokens.append([EOS])
+                    # can't pack an empty sequence so add an empty string
+                    batch_event_groundtruth_labels.append("")
             groundtruth_event_type_ids = torch.tensor(batch_event_type_ids)
             groundtruth_event_src_ids = torch.tensor(batch_event_src_ids)
             groundtruth_event_dst_ids = torch.tensor(batch_event_dst_ids)
             (
-                groundtruth_event_label_tgt_word_ids,
-                groundtruth_event_label_tgt_mask,
-            ) = self.preprocessor.preprocess_tokenized(batch_event_label_tgt_tokens)
-            (
                 groundtruth_event_label_groundtruth_word_ids,
-                _,
-            ) = self.preprocessor.preprocess_tokenized(
-                batch_event_label_groundtruth_tokens
+                groundtruth_event_label_tgt_mask,
+            ) = self.preprocessor.preprocess(batch_event_groundtruth_labels)
+            groundtruth_event_label_tgt_word_ids = shift_tokens_right(
+                groundtruth_event_label_groundtruth_word_ids,
+                self.preprocessor.bos_token_id,
             )
             masks = compute_masks_from_event_type_ids(groundtruth_event_type_ids)
             collated.append(
@@ -714,7 +710,7 @@ class TWCmdGenGraphEventDataCollator:
             batch_event_type_ids: List[int] = []
             batch_event_src_ids: List[int] = []
             batch_event_dst_ids: List[int] = []
-            batch_event_label_tokens: List[List[str]] = []
+            batch_event_labels: List[str] = []
             batch_event_timestamps: List[List[int]] = []
             for event_seq in batch_prev_event_seq:
                 # collect event data for all the items in the batch at event i
@@ -725,18 +721,17 @@ class TWCmdGenGraphEventDataCollator:
                         event.get("src_id", event.get("node_id", 0))
                     )
                     batch_event_dst_ids.append(event.get("dst_id", 0))
-                    batch_event_label_tokens.append(event["label"].split() + [EOS])
+                    batch_event_labels.append(event["label"])
                     batch_event_timestamps.append(event["timestamp"])
                 else:
                     batch_event_type_ids.append(EVENT_TYPE_ID_MAP["pad"])
                     batch_event_src_ids.append(0)
                     batch_event_dst_ids.append(0)
-                    batch_event_label_tokens.append([])
+                    batch_event_labels.append("")
                     batch_event_timestamps.append([0, 0])
-            (
-                event_label_word_ids,
-                event_label_mask,
-            ) = self.preprocessor.preprocess_tokenized(batch_event_label_tokens)
+            event_label_word_ids, event_label_mask = self.preprocessor.preprocess(
+                batch_event_labels
+            )
             batched_graph = update_batched_graph(
                 batched_graph,
                 torch.tensor(batch_event_type_ids),
