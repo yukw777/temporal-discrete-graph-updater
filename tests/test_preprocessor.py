@@ -208,6 +208,9 @@ def test_mock_clean_and_preprocess(batch, expected_preprocessed, expected_mask):
         def get_vocab(self):
             return {}
 
+        def batch_decode(self, token_ids, mask):
+            return []
+
         @property
         def bos_token_id(self) -> int:
             return -1
@@ -228,3 +231,78 @@ def test_mock_clean_and_preprocess(batch, expected_preprocessed, expected_mask):
     preprocessed, mask = sp.clean_and_preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
     assert mask.equal(expected_mask)
+
+
+@pytest.mark.parametrize(
+    "token_ids,mask,skip_special_tokens,expected",
+    [
+        (
+            torch.tensor([[2, 13, 3]]),
+            torch.ones(1, 3).bool(),
+            False,
+            ["<bos> player <eos>"],
+        ),
+        (
+            torch.tensor([[2, 14, 3, 0, 0, 0], [2, 8, 7, 11, 13, 3]]),
+            torch.tensor([[True, True, True, False, False, False], [True] * 6]),
+            False,
+            ["<bos> inventory <eos>", "<bos> peter is a player <eos>"],
+        ),
+        (torch.tensor([[2, 13, 3]]), torch.ones(1, 3).bool(), True, ["player"]),
+        (
+            torch.tensor([[2, 14, 3, 0, 0, 0], [2, 8, 7, 11, 13, 3]]),
+            torch.tensor([[True, True, True, False, False, False], [True] * 6]),
+            True,
+            ["inventory", "peter is a player"],
+        ),
+    ],
+)
+def test_spacy_preprocessor_batch_decode(
+    token_ids, mask, skip_special_tokens, expected
+):
+    sp = SpacyPreprocessor.load_from_file("tests/data/test_word_vocab.txt")
+    assert (
+        sp.batch_decode(token_ids, mask, skip_special_tokens=skip_special_tokens)
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "token_ids,mask,skip_special_tokens,expected",
+    [
+        (
+            torch.tensor([[101, 2447, 102]]),
+            torch.ones(1, 3).bool(),
+            False,
+            ["[CLS] player [SEP]"],
+        ),
+        (
+            torch.tensor(
+                [[101, 12612, 102, 0, 0, 0], [101, 2848, 2003, 1037, 2447, 102]]
+            ),
+            torch.tensor([[True, True, True, False, False, False], [True] * 6]),
+            False,
+            ["[CLS] inventory [SEP]", "[CLS] peter is a player [SEP]"],
+        ),
+        (
+            torch.tensor([[101, 2447, 102]]),
+            torch.ones(1, 3).bool(),
+            True,
+            ["player"],
+        ),
+        (
+            torch.tensor(
+                [[101, 12612, 102, 0, 0, 0], [101, 2848, 2003, 1037, 2447, 102]]
+            ),
+            torch.tensor([[True, True, True, False, False, False], [True] * 6]),
+            True,
+            ["inventory", "peter is a player"],
+        ),
+    ],
+)
+def test_hf_preprocessor_batch_decode(token_ids, mask, skip_special_tokens, expected):
+    hf = HuggingFacePreprocessor("distilbert-base-uncased")
+    assert (
+        hf.batch_decode(token_ids, mask, skip_special_tokens=skip_special_tokens)
+        == expected
+    )

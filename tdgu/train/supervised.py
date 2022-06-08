@@ -120,26 +120,6 @@ class SupervisedTDGU(TDGULightningModule):
         self.test_free_run_f1 = F1()
         self.test_free_run_em = ExactMatch()
 
-    def decode_label(
-        self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
-    ) -> List[str]:
-        """
-        label_word_ids: (batch, label_len)
-        label_mask: (batch, label_len)
-
-        output: [label, ...]
-        """
-        decoded: List[str] = []
-        for word_ids, mask in zip(label_word_ids, label_mask):
-            decoded.append(
-                " ".join(
-                    self.preprocessor.convert_ids_to_tokens(word_ids[mask].tolist())[
-                        :-1
-                    ]
-                )
-            )
-        return decoded
-
     def teacher_force(
         self,
         step_input: TWCmdGenGraphEventStepInput,
@@ -336,18 +316,22 @@ class SupervisedTDGU(TDGULightningModule):
                 EVENT_TYPE_ID_MAP["edge-add"],
                 EVENT_TYPE_ID_MAP["edge-delete"],
             }:
-                src_label = self.decode_label(
+                src_label = self.preprocessor.batch_decode(
                     batched_graph.x[src_id].unsqueeze(0),
                     batched_graph.node_label_mask[src_id].unsqueeze(0),
+                    skip_special_tokens=True,
                 )[0]
-                dst_label = self.decode_label(
+                dst_label = self.preprocessor.batch_decode(
                     batched_graph.x[dst_id].unsqueeze(0),
                     batched_graph.node_label_mask[dst_id].unsqueeze(0),
+                    skip_special_tokens=True,
                 )[0]
                 if event_type_id == EVENT_TYPE_ID_MAP["edge-add"]:
                     cmd = "add"
-                    edge_label = self.decode_label(
-                        label_word_ids.unsqueeze(0), label_mask.unsqueeze(0)
+                    edge_label = self.preprocessor.batch_decode(
+                        label_word_ids.unsqueeze(0),
+                        label_mask.unsqueeze(0),
+                        skip_special_tokens=True,
                     )[0]
                 else:
                     cmd = "delete"
@@ -361,8 +345,8 @@ class SupervisedTDGU(TDGULightningModule):
                         batched_graph.edge_label_mask,
                         torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
                     )
-                    edge_label = self.decode_label(
-                        edge_label_word_ids, edge_label_mask
+                    edge_label = self.preprocessor.batch_decode(
+                        edge_label_word_ids, edge_label_mask, skip_special_tokens=True
                     )[0]
                 # in the original dataset, multi-word edge labels are joined by
                 # an underscore
@@ -680,9 +664,10 @@ class SupervisedTDGU(TDGULightningModule):
                     nid,
                     {
                         "node_last_update": node_last_update,
-                        "label": self.decode_label(
+                        "label": self.preprocessor.batch_decode(
                             node_label_word_ids.unsqueeze(0),
                             node_label_mask.unsqueeze(0),
+                            skip_special_tokens=True,
                         )[0],
                     },
                 )
@@ -702,9 +687,10 @@ class SupervisedTDGU(TDGULightningModule):
                     dst_id,
                     {
                         "edge_last_update": edge_last_update,
-                        "label": self.decode_label(
+                        "label": self.preprocessor.batch_decode(
                             edge_label_word_ids.unsqueeze(0),
                             edge_label_mask.unsqueeze(0),
+                            skip_special_tokens=True,
                         )[0],
                     },
                 )

@@ -18,23 +18,6 @@ def supervised_tdgu(tmp_path):
     )
 
 
-@pytest.mark.parametrize(
-    "label_word_ids,label_mask,expected",
-    [
-        (torch.tensor([[13, 3]]), torch.ones(1, 2).bool(), ["player"]),
-        (
-            torch.tensor([[14, 3, 0, 0, 0], [8, 7, 11, 13, 3]]),
-            torch.tensor([[True, True, False, False, False], [True] * 5]),
-            ["inventory", "peter is a player"],
-        ),
-    ],
-)
-def test_supervised_tdgu_decode_label(
-    supervised_tdgu, label_word_ids, label_mask, expected
-):
-    assert supervised_tdgu.decode_label(label_word_ids, label_mask) == expected
-
-
 @pytest.mark.parametrize("num_word", [10, 20])
 @pytest.mark.parametrize("label_len", [2, 3])
 @pytest.mark.parametrize("num_node", [5, 12])
@@ -736,8 +719,8 @@ def test_supervised_tdgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0]),
-                    x=torch.tensor([[13, 3]]),
-                    node_label_mask=torch.tensor([[True, True]]),
+                    x=torch.tensor([[2, 13, 3]]),
+                    node_label_mask=torch.ones(1, 3).bool(),
                     node_last_update=torch.tensor([[1, 2]]),
                     edge_index=torch.empty(2, 0).long(),
                     edge_attr=torch.empty(0, 0).long(),
@@ -756,8 +739,8 @@ def test_supervised_tdgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0]),
-                    x=torch.tensor([[13, 3]]),
-                    node_label_mask=torch.tensor([[True, True]]),
+                    x=torch.tensor([[2, 13, 3]]),
+                    node_label_mask=torch.ones(1, 3).bool(),
                     node_last_update=torch.tensor([[1, 2]]),
                     edge_index=torch.empty(2, 0).long(),
                     edge_attr=torch.empty(0, 0).long(),
@@ -776,8 +759,8 @@ def test_supervised_tdgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[15, 3], [13, 3]]),
-                    node_label_mask=torch.ones(2, 2).bool(),
+                    x=torch.tensor([[2, 15, 3], [2, 13, 3]]),
+                    node_label_mask=torch.ones(2, 3).bool(),
                     node_last_update=torch.tensor([1, 2]),
                     edge_index=torch.empty(2, 0).long(),
                     edge_attr=torch.empty(0, 0).long(),
@@ -799,12 +782,12 @@ def test_supervised_tdgu_generate_graph_triples(
             [
                 Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[15, 3], [13, 3]]),
-                    node_label_mask=torch.ones(2, 2).bool(),
+                    x=torch.tensor([[2, 15, 3], [2, 13, 3]]),
+                    node_label_mask=torch.ones(2, 3).bool(),
                     node_last_update=torch.tensor([[0, 0], [0, 1]]),
                     edge_index=torch.tensor([[1], [0]]),
-                    edge_attr=torch.tensor([[7, 3]]),
-                    edge_label_mask=torch.tensor([[True, True]]),
+                    edge_attr=torch.tensor([[2, 7, 3]]),
+                    edge_label_mask=torch.ones(1, 2).bool(),
                     edge_last_update=torch.tensor([[0, 2]]),
                 )
             ],
@@ -833,29 +816,43 @@ def test_supervised_tdgu_generate_graph_triples(
                 Batch(
                     batch=torch.tensor([0, 0, 0, 0, 1, 1]),
                     x=torch.tensor(
-                        [[15, 3], [13, 3], [13, 3], [8, 3], [13, 3], [14, 3]]
+                        [
+                            [2, 15, 3],
+                            [2, 13, 3],
+                            [2, 13, 3],
+                            [2, 8, 3],
+                            [2, 13, 3],
+                            [2, 14, 3],
+                        ]
                     ),
-                    node_label_mask=torch.ones(6, 2).bool(),
+                    node_label_mask=torch.ones(6, 3).bool(),
                     node_last_update=torch.tensor(
                         [[1, 0], [2, 1], [3, 1], [2, 3], [1, 2], [2, 3]]
                     ),
                     edge_index=torch.tensor([[4], [5]]),
-                    edge_attr=torch.tensor([[12, 3]]),
-                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_attr=torch.tensor([[2, 12, 3]]),
+                    edge_label_mask=torch.ones(1, 3).bool(),
                     edge_last_update=torch.tensor([[2, 1]]),
                 ),
                 Batch(
                     batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                     x=torch.tensor(
-                        [[13, 3], [15, 3], [13, 3], [15, 3], [13, 3], [14, 3]]
+                        [
+                            [2, 13, 3],
+                            [2, 15, 3],
+                            [2, 13, 3],
+                            [2, 15, 3],
+                            [2, 13, 3],
+                            [2, 14, 3],
+                        ]
                     ),
-                    node_label_mask=torch.ones(6, 2).bool(),
+                    node_label_mask=torch.ones(6, 3).bool(),
                     node_last_update=torch.tensor(
                         [[1, 2], [1, 3], [2, 0], [2, 1], [2, 2], [2, 3]]
                     ),
                     edge_index=torch.tensor([[0], [1]]),
-                    edge_attr=torch.tensor([[7, 3]]),
-                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_attr=torch.tensor([[2, 7, 3]]),
+                    edge_label_mask=torch.ones(1, 3).bool(),
                     edge_last_update=torch.tensor([[1, 1]]),
                 ),
             ],
@@ -913,23 +910,37 @@ def test_supervised_tdgu_generate_graph_triples(
                 Batch(
                     batch=torch.tensor([0, 0, 0, 0, 1, 1]),
                     x=torch.tensor(
-                        [[15, 3], [13, 3], [13, 3], [8, 3], [13, 3], [14, 3]]
+                        [
+                            [2, 15, 3],
+                            [2, 13, 3],
+                            [2, 13, 3],
+                            [2, 8, 3],
+                            [2, 13, 3],
+                            [2, 14, 3],
+                        ]
                     ),
-                    node_label_mask=torch.ones(6, 2).bool(),
+                    node_label_mask=torch.ones(6, 3).bool(),
                     node_last_update=torch.tensor(
                         [[0, 2], [0, 3], [0, 4], [0, 5], [1, 2], [1, 4]]
                     ),
                     edge_index=torch.tensor([[4], [5]]),
-                    edge_attr=torch.tensor([[12, 3]]),
-                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_attr=torch.tensor([[2, 12, 3]]),
+                    edge_label_mask=torch.ones(1, 3).bool(),
                     edge_last_update=torch.tensor([[1, 5]]),
                 ),
                 Batch(
                     batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                     x=torch.tensor(
-                        [[13, 3], [15, 3], [13, 3], [15, 3], [13, 3], [14, 3]]
+                        [
+                            [2, 13, 3],
+                            [2, 15, 3],
+                            [2, 13, 3],
+                            [2, 15, 3],
+                            [2, 13, 3],
+                            [2, 14, 3],
+                        ]
                     ),
-                    node_label_mask=torch.ones(6, 2).bool(),
+                    node_label_mask=torch.ones(6, 3).bool(),
                     node_last_update=torch.tensor(
                         [[1, 3], [1, 4], [2, 1], [2, 2], [2, 3], [2, 4]]
                     ),

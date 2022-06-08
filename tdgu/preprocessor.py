@@ -60,6 +60,21 @@ class Preprocessor(ABC):
     def get_vocab(self) -> Dict[str, int]:
         pass
 
+    @abstractmethod
+    def batch_decode(
+        self,
+        token_ids: torch.Tensor,
+        mask: torch.Tensor,
+        skip_special_tokens: bool = False,
+    ) -> List[str]:
+        """
+        token_ids: (batch, sent_len)
+        mask: (batch, sent_len)
+        skip_special_tokens: whether or not to skip special tokens.
+
+        output: [sent, ...]
+        """
+
     @property
     @abstractmethod
     def bos_token_id(self) -> int:
@@ -86,6 +101,9 @@ class SpacyPreprocessor(Preprocessor):
         self.tokenizer = English().tokenizer
         self.word_vocab = word_vocab
         self.word_to_id_dict = {w: i for i, w in enumerate(word_vocab)}
+        self.special_token_ids = set(
+            [self.bos_token_id, self.eos_token_id, self.pad_token_id, self.unk_token_id]
+        )
 
     def convert_ids_to_tokens(self, word_ids: List[int]) -> List[str]:
         return [self.word_vocab[word_id] for word_id in word_ids]
@@ -125,6 +143,32 @@ class SpacyPreprocessor(Preprocessor):
         return self.pad(
             [self.convert_tokens_to_ids(self.tokenize(s)) for s in batch], device=device
         )
+
+    def batch_decode(
+        self,
+        token_ids: torch.Tensor,
+        mask: torch.Tensor,
+        skip_special_tokens: bool = False,
+    ) -> List[str]:
+        """
+        token_ids: (batch, sent_len)
+        mask: (batch, sent_len)
+        skip_special_tokens: whether or not to skip special tokens.
+
+        output: [sent, ...]
+        """
+        decoded: List[str] = []
+        for ids, size in zip(token_ids.tolist(), mask.sum(dim=1).tolist()):
+            if skip_special_tokens:
+                filtered_ids = [
+                    token_id
+                    for token_id in ids[:size]
+                    if token_id not in self.special_token_ids
+                ]
+            else:
+                filtered_ids = ids[:size]
+            decoded.append(" ".join(self.convert_ids_to_tokens(filtered_ids)))
+        return decoded
 
     @property
     def vocab_size(self) -> int:
@@ -187,6 +231,26 @@ class HuggingFacePreprocessor(Preprocessor):
 
     def get_vocab(self) -> Dict[str, int]:
         return self.tokenizer.get_vocab()
+
+    def batch_decode(
+        self,
+        token_ids: torch.Tensor,
+        mask: torch.Tensor,
+        skip_special_tokens: bool = False,
+    ) -> List[str]:
+        """
+        token_ids: (batch, sent_len)
+        mask: (batch, sent_len)
+        skip_special_tokens: whether or not to skip special tokens.
+
+        output: [sent, ...]
+        """
+        sequences: List[List[str]] = []
+        for ids, size in zip(token_ids.tolist(), mask.sum(dim=1).tolist()):
+            sequences.append(ids[:size])
+        return self.tokenizer.batch_decode(
+            sequences, skip_special_tokens=skip_special_tokens
+        )
 
     @property
     def bos_token_id(self) -> int:
