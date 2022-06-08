@@ -2,6 +2,7 @@ import torch
 import networkx as nx
 
 from typing import List
+from torch_geometric.data import Data, Batch
 
 
 def increasing_mask(
@@ -41,4 +42,37 @@ class EqualityDiGraph(nx.DiGraph):
 
         return self.nodes.data() == o.nodes.data() and list(self.edges.data()) == list(
             o.edges.data()
+        )
+
+
+class EqualityData(Data):
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, EqualityData):
+            return False
+
+        return (
+            self.x.equal(o.x)
+            and self.node_label_mask.equal(o.node_label_mask)
+            and self.node_last_update.equal(o.node_last_update)
+            and self.edge_index.equal(o.edge_index)
+            and self.edge_attr.equal(o.edge_attr)
+            and self.edge_label_mask.equal(o.edge_label_mask)
+            and self.edge_last_update.equal(o.edge_last_update)
+        )
+
+
+class EqualityBatch(Batch):
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, EqualityBatch):
+            return False
+
+        return (
+            self.batch.equal(o.batch)
+            and self.x.equal(o.x)
+            and self.node_label_mask.equal(o.node_label_mask)
+            and self.node_last_update.equal(o.node_last_update)
+            and self.edge_index.equal(o.edge_index)
+            and self.edge_attr.equal(o.edge_attr)
+            and self.edge_label_mask.equal(o.edge_label_mask)
+            and self.edge_last_update.equal(o.edge_last_update)
         )

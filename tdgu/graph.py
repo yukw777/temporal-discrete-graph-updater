@@ -319,7 +319,12 @@ def data_list_to_batch(data_list: List[Data]) -> Batch:
     return Batch.from_data_list(
         [
             Data(
-                x=F.pad(data.x, (0, max_node_label_len - data.x.size(1))),
+                x=F.pad(
+                    data.x,
+                    (0, max_node_label_len - data.x.size(1))
+                    if data.x.dim() == 2
+                    else (0, 0, 0, max_node_label_len - data.x.size(1)),
+                ),
                 node_label_mask=F.pad(
                     data.node_label_mask,
                     (0, max_node_label_len - data.node_label_mask.size(1)),
@@ -327,7 +332,10 @@ def data_list_to_batch(data_list: List[Data]) -> Batch:
                 node_last_update=data.node_last_update,
                 edge_index=data.edge_index,
                 edge_attr=F.pad(
-                    data.edge_attr, (0, max_edge_label_len - data.edge_attr.size(1))
+                    data.edge_attr,
+                    (0, max_edge_label_len - data.edge_attr.size(1))
+                    if data.edge_attr.dim() == 2
+                    else (0, 0, 0, max_edge_label_len - data.edge_attr.size(1)),
                 ),
                 edge_label_mask=F.pad(
                     data.edge_label_mask,
