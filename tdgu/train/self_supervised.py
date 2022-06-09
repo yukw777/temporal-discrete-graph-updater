@@ -183,9 +183,11 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         )
         text_decoder_output = self(step_input, batched_graph)
         # (batch, obs_len, num_word)
-        return self.ce_loss(
+        loss = self.ce_loss(
             text_decoder_output.flatten(end_dim=1), step_input.obs_word_ids.flatten()
         )
+        self.log("train_loss", loss)
+        return loss
 
     def eval_step(self, batch: List[Tuple[int, Dict[str, Any]]]) -> None:
         if self.trainer.state.stage in {  # type: ignore
