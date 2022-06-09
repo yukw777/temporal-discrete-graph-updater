@@ -933,3 +933,54 @@ def read_label_vocab_files(
             if stripped != "":
                 labels.append(stripped)
     return labels, {label: i for i, label in enumerate(labels)}
+
+
+class TWCmdGenGraphEventFreeRunDataModule(pl.LightningDataModule):
+    def __init__(
+        self,
+        train_path: str,
+        train_batch_size: int,
+        val_path: str,
+        val_batch_size: int,
+        test_path: str,
+        test_batch_size: int,
+        word_vocab_path: str,
+    ) -> None:
+        super().__init__()
+        self.train_path = to_absolute_path(train_path)
+        self.train_batch_size = train_batch_size
+        self.val_path = to_absolute_path(val_path)
+        self.val_batch_size = val_batch_size
+        self.test_path = to_absolute_path(test_path)
+        self.test_batch_size = test_batch_size
+
+        self.preprocessor = SpacyPreprocessor.load_from_file(
+            to_absolute_path(word_vocab_path)
+        )
+        self.collator = TWCmdGenGraphEventDataCollator(self.preprocessor)
+
+    def prepare_data(self) -> None:
+        pass
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if stage == "fit" or stage is None:
+            self.train = TWCmdGenGraphEventFreeRunDataset(
+                self.train_path, self.train_batch_size, shuffle=True
+            )
+            self.valid = TWCmdGenGraphEventFreeRunDataset(
+                self.val_path, self.val_batch_size
+            )
+
+        if stage == "test" or stage is None:
+            self.test = TWCmdGenGraphEventFreeRunDataset(
+                self.test_path, self.test_batch_size
+            )
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(self.train, batch_size=None, pin_memory=True, num_workers=1)
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(self.valid, batch_size=None, pin_memory=True, num_workers=1)
+
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(self.test, batch_size=None, pin_memory=True, num_workers=1)
