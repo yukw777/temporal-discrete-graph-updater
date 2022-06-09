@@ -287,7 +287,10 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
         )
         subgraph = Data(
             x=F.pad(
-                batch.x[node_mask], (0, max_node_label_len - batch.x[node_mask].size(1))
+                batch.x[node_mask],
+                (0, max_node_label_len - batch.x[node_mask].size(1))
+                if batch.x.dim() == 2
+                else (0, 0, 0, max_node_label_len - batch.x[node_mask].size(1)),
             ),
             node_label_mask=F.pad(
                 batch.node_label_mask[node_mask],
@@ -297,7 +300,9 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
             edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
             edge_attr=F.pad(
                 batch.edge_attr[edge_mask],
-                (0, max_edge_label_len - batch.edge_attr[edge_mask].size(1)),
+                (0, max_edge_label_len - batch.edge_attr[edge_mask].size(1))
+                if batch.edge_attr.dim() == 2
+                else (0, 0, 0, max_edge_label_len - batch.edge_attr[edge_mask].size(1)),
             ),
             edge_label_mask=F.pad(
                 batch.edge_label_mask[edge_mask],
