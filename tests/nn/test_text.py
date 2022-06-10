@@ -141,6 +141,7 @@ def test_qanet_text_encoder(
     )
 
 
+@pytest.mark.parametrize("empty_graph", [True, False])
 @pytest.mark.parametrize(
     "hidden_dim,num_heads,batch_size,input_seq_len,num_node,prev_action_len",
     [
@@ -149,10 +150,16 @@ def test_qanet_text_encoder(
     ],
 )
 def test_text_decoder_block(
-    hidden_dim, num_heads, batch_size, input_seq_len, num_node, prev_action_len
+    hidden_dim,
+    num_heads,
+    batch_size,
+    input_seq_len,
+    num_node,
+    prev_action_len,
+    empty_graph,
 ):
     decoder_block = TextDecoderBlock(hidden_dim, num_heads)
-    assert decoder_block(
+    output = decoder_block(
         torch.rand(batch_size, input_seq_len, hidden_dim),
         torch.tensor(
             [
@@ -161,7 +168,9 @@ def test_text_decoder_block(
             ]
         ),
         torch.rand(batch_size, num_node, hidden_dim),
-        torch.tensor(
+        torch.zeros(batch_size, num_node).bool()
+        if empty_graph
+        else torch.tensor(
             [[1.0] * (i + 1) + [0.0] * (num_node - i - 1) for i in range(batch_size)]
         ),
         torch.rand(batch_size, prev_action_len, hidden_dim),
@@ -171,7 +180,9 @@ def test_text_decoder_block(
                 for i in range(batch_size)
             ]
         ),
-    ).size() == (batch_size, input_seq_len, hidden_dim)
+    )
+    assert output.size() == (batch_size, input_seq_len, hidden_dim)
+    assert not output.isnan().any()
 
 
 @pytest.mark.parametrize(

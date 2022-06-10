@@ -261,11 +261,18 @@ class TextDecoderBlock(nn.Module):
         # (batch, input_seq_len, hidden_dim)
 
         # multihead attention for the nodes
+        # If there are no nodes in the graph, MultiheadAttention returns nan due to
+        # https://github.com/pytorch/pytorch/issues/41508
+        # In order to get around it, set the mask of an empty graph to all True.
+        # This is OK, b/c node embeddings for an empty graph are all 0.
+        filled_node_mask = node_mask.masked_fill(
+            node_mask.logical_not().all(dim=1).unsqueeze(1), True
+        )
         node_attn, _ = self.node_attn(
             query,
             node_embeddings,
             node_embeddings,
-            key_padding_mask=node_mask.logical_not(),
+            key_padding_mask=filled_node_mask.logical_not(),
         )
         # (batch, input_seq_len, hidden_dim)
 
