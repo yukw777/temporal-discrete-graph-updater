@@ -29,6 +29,7 @@ from tdgu.data import (
     TWCmdGenGraphEventGraphicalInput,
     TWCmdGenGraphEventStepInput,
     TWCmdGenGraphEventDataCollator,
+    collate_step_inputs,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.graph import (
@@ -711,7 +712,6 @@ class SupervisedTDGU(TDGULightningModule):
         self,
         dataset: TWCmdGenGraphEventFreeRunDataset,
         dataloader: DataLoader,
-        collator: TWCmdGenGraphEventDataCollator,
         total: Optional[int] = None,
     ) -> Tuple[List[List[str]], List[List[str]]]:
         if total is None:
@@ -806,8 +806,11 @@ class SupervisedTDGU(TDGULightningModule):
 
                 # greedy decode
                 results_list = self.greedy_decode(
-                    collator.collate_step_inputs(  # type: ignore
-                        batched_obs, batched_prev_actions, batched_timestamps
+                    collate_step_inputs(
+                        self.preprocessor,
+                        batched_obs,
+                        batched_prev_actions,
+                        batched_timestamps,
                     ).to(self.device),
                     data_list_to_batch(graph_list),
                 )
@@ -852,7 +855,6 @@ class SupervisedTDGU(TDGULightningModule):
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.valid_free_run,  # type: ignore
             self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
-            self.trainer.datamodule.collator,  # type: ignore
         )
         self.val_free_run_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_f1", self.val_free_run_f1, prog_bar=True)
@@ -868,7 +870,6 @@ class SupervisedTDGU(TDGULightningModule):
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
-            self.trainer.datamodule.collator,  # type: ignore
         )
         self.test_free_run_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_f1", self.test_free_run_f1)

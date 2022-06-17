@@ -1,8 +1,7 @@
 from torch.utils.data import DataLoader
 
 from tdgu.train.supervised import SupervisedTDGU
-from tdgu.data import TWCmdGenGraphEventFreeRunDataset, TWCmdGenGraphEventDataCollator
-from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.data import TWCmdGenGraphEventFreeRunDataset
 from tdgu.metrics.f1 import F1
 from tdgu.metrics.exact_match import ExactMatch
 
@@ -16,8 +15,6 @@ def main(
 ) -> None:
     dataset = TWCmdGenGraphEventFreeRunDataset(data_filename, batch_size)
     dataloader = DataLoader(dataset, batch_size=None, num_workers=1)
-    preprocessor = SpacyPreprocessor.load_from_file(word_vocab_path)
-    collator = TWCmdGenGraphEventDataCollator(preprocessor)
 
     lm = SupervisedTDGU.load_from_checkpoint(
         ckpt_filename, word_vocab_path=word_vocab_path
@@ -28,7 +25,7 @@ def main(
     graph_em = ExactMatch()
 
     generated_rdfs_list, groundtruth_rdfs_list = lm.eval_free_run(
-        dataset, dataloader, collator, total=len(dataset)
+        dataset, dataloader, total=len(dataset)
     )
     graph_f1.update(generated_rdfs_list, groundtruth_rdfs_list)
     graph_em.update(generated_rdfs_list, groundtruth_rdfs_list)

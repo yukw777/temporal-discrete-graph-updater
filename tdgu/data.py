@@ -11,7 +11,7 @@ from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
 
-from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.preprocessor import SpacyPreprocessor, Preprocessor
 from tdgu.nn.utils import (
     compute_masks_from_event_type_ids,
     shift_tokens_right,
@@ -311,6 +311,71 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
         )
 
 
+class TWCmdGenObsGenDataset(Dataset):
+    """
+    TextWorld Command Generation observation generation dataset.
+    [{
+        "game": "game name",
+        "walkthrough_step": walkthrough step,
+        "random_step": random step,
+        "observation": "observation...",
+        "previous_action": "previous action...",
+        "timestamp": timestamp,
+    }, ...]
+    """
+
+    def __init__(self, path: str) -> None:
+        with open(path, "r") as f:
+            raw_data = json.load(f)
+        self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self.walkthrough_example_ids: List[Tuple[str, int]] = []
+        self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
+            list
+        )
+
+        for example in raw_data["examples"]:
+            game = example["game"]
+            walkthrough_step, random_step = example["step"]
+            if random_step == 0:
+                # walkthrough example
+                self.walkthrough_examples[(game, walkthrough_step)] = example
+                self.walkthrough_example_ids.append((game, walkthrough_step))
+            else:
+                # random example
+                self.random_examples[(game, walkthrough_step)].append(example)
+
+    def __getitem__(self, idx: int) -> List[Dict[str, Any]]:
+        game, walkthrough_step = self.walkthrough_example_ids[idx]
+        walkthrough_examples = [
+            self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
+        ]
+        random_examples = self.random_examples[(game, walkthrough_step)]
+        data: List[Dict[str, Any]] = []
+        for timestamp, example in enumerate(walkthrough_examples + random_examples):
+            data.append(
+                {
+                    "game": game,
+                    "walkthrough_step": walkthrough_step,
+                    "observation": example["observation"],
+                    "previous_action": example["previous_action"],
+                    "timestamp": timestamp,
+                }
+            )
+        return data
+
+    def __len__(self) -> int:
+        return len(self.walkthrough_example_ids)
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenObsGenDataset):
+            return False
+        return (
+            self.walkthrough_examples == o.walkthrough_examples
+            and self.walkthrough_example_ids == o.walkthrough_example_ids
+            and self.random_examples == o.random_examples
+        )
+
+
 def sort_target_commands(list_of_cmds: List[str]) -> List[str]:
     """
     Copied from the original GATA code
@@ -514,41 +579,40 @@ class TWCmdGenGraphEventBatch:
         )
 
 
+def collate_step_inputs(
+    preprocessor: Preprocessor,
+    obs: List[str],
+    prev_actions: List[str],
+    timestamps: List[int],
+) -> TWCmdGenGraphEventStepInput:
+    """
+    Collate step data such as observation, previous action and timestamp.
+
+    output: TWCmdGenGraphEventStepInput(
+        obs_word_ids: (batch, obs_len),
+        obs_mask: (batch, obs_len),
+        prev_action_word_ids: (batch, prev_action_len),
+        prev_action_mask: (batch, prev_action_len),
+        timestamps: (batch)
+    )
+    """
+    # textual observation
+    obs_word_ids, obs_mask = preprocessor.preprocess(obs)
+
+    # textual previous action
+    prev_action_word_ids, prev_action_mask = preprocessor.preprocess(prev_actions)
+    return TWCmdGenGraphEventStepInput(
+        obs_word_ids=obs_word_ids,
+        obs_mask=obs_mask,
+        prev_action_word_ids=prev_action_word_ids,
+        prev_action_mask=prev_action_mask,
+        timestamps=torch.tensor(timestamps),
+    )
+
+
 class TWCmdGenGraphEventDataCollator:
     def __init__(self, preprocessor: SpacyPreprocessor) -> None:
         self.preprocessor = preprocessor
-
-    def collate_step_inputs(
-        self,
-        obs: List[str],
-        prev_actions: List[str],
-        timestamps: List[int],
-    ) -> TWCmdGenGraphEventStepInput:
-        """
-        Collate step data such as observation, previous action and timestamp.
-
-        output: TWCmdGenGraphEventStepInput(
-            obs_word_ids: (batch, obs_len),
-            obs_mask: (batch, obs_len),
-            prev_action_word_ids: (batch, prev_action_len),
-            prev_action_mask: (batch, prev_action_len),
-            timestamps: (batch)
-        )
-        """
-        # textual observation
-        obs_word_ids, obs_mask = self.preprocessor.preprocess(obs)
-
-        # textual previous action
-        prev_action_word_ids, prev_action_mask = self.preprocessor.preprocess(
-            prev_actions
-        )
-        return TWCmdGenGraphEventStepInput(
-            obs_word_ids=obs_word_ids,
-            obs_mask=obs_mask,
-            prev_action_word_ids=prev_action_word_ids,
-            prev_action_mask=prev_action_mask,
-            timestamps=torch.tensor(timestamps),
-        )
 
     def collate_graphical_input_seq(
         self, batch: List[Dict[str, Any]], initial_batched_graph: Batch
@@ -797,7 +861,8 @@ class TWCmdGenGraphEventDataCollator:
                 )
                 for step in batch
             ),
-            step_input=self.collate_step_inputs(
+            step_input=collate_step_inputs(
+                self.preprocessor,
                 [step["observation"] for step in batch],
                 [step["previous_action"] for step in batch],
                 [step["timestamp"] for step in batch],
@@ -807,6 +872,89 @@ class TWCmdGenGraphEventDataCollator:
                 batch, initial_batched_graph
             ),
             graph_commands=tuple(tuple(step["target_commands"]) for step in batch),
+        )
+
+
+@dataclass(frozen=True)
+class TWCmdGenObsGenBatch:
+    step_inputs: Tuple[TWCmdGenGraphEventStepInput, ...]
+    step_mask: torch.Tensor
+
+    def __eq__(self, o: object) -> bool:
+        if not isinstance(o, TWCmdGenObsGenBatch):
+            return False
+        return all(
+            getattr(self, f) == getattr(o, f)
+            for f in self.__annotations__
+            if f != "step_mask"
+        ) and self.step_mask.equal(o.step_mask)
+
+    def to(self, *args, **kwargs) -> "TWCmdGenObsGenBatch":
+        return TWCmdGenObsGenBatch(
+            step_inputs=tuple(
+                step_input.to(*args, **kwargs) for step_input in self.step_inputs
+            ),
+            step_mask=self.step_mask.to(*args, **kwargs),
+        )
+
+    def pin_memory(self) -> "TWCmdGenObsGenBatch":
+        return TWCmdGenObsGenBatch(
+            step_inputs=tuple(
+                step_input.pin_memory() for step_input in self.step_inputs
+            ),
+            step_mask=self.step_mask.pin_memory(),
+        )
+
+
+class TWCmdGenObsGenDataCollator:
+    def __init__(self, preprocessor: SpacyPreprocessor) -> None:
+        self.preprocessor = preprocessor
+
+    def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenObsGenBatch:
+        """
+        Each batch is a tuple of step inputs and a step mask.
+        (
+            (TWCmdGenGraphEventStepInput(
+                obs_word_ids: (batch, obs_len),
+                obs_mask: (batch, obs_len),
+                prev_action_word_ids: (batch, prev_action_len),
+                prev_action_mask: (batch, prev_action_len),
+                timestamps: (batch)
+            ), ...),
+            step_mask: (max_step, batch)
+        )
+        """
+        max_step = max(len(walkthrough) for walkthrough in batch)
+        collated_steps: List[TWCmdGenGraphEventStepInput] = []
+        collated_step_mask: List[List[bool]] = []
+        for step in range(max_step):
+            collated_steps.append(
+                collate_step_inputs(
+                    self.preprocessor,
+                    [
+                        walkthrough[step]["observation"]
+                        if step < len(walkthrough)
+                        else ""
+                        for walkthrough in batch
+                    ],
+                    [
+                        walkthrough[step]["previous_action"]
+                        if step < len(walkthrough)
+                        else ""
+                        for walkthrough in batch
+                    ],
+                    [
+                        walkthrough[step]["timestamp"] if step < len(walkthrough) else 0
+                        for walkthrough in batch
+                    ],
+                )
+            )
+            collated_step_mask.append(
+                [True if step < len(walkthrough) else False for walkthrough in batch]
+            )
+        return TWCmdGenObsGenBatch(
+            step_inputs=tuple(collated_steps),
+            step_mask=torch.tensor(collated_step_mask),
         )
 
 
@@ -935,52 +1083,71 @@ def read_label_vocab_files(
     return labels, {label: i for i, label in enumerate(labels)}
 
 
-class TWCmdGenGraphEventFreeRunDataModule(pl.LightningDataModule):
+class TWCmdGenObsGenDataModule(pl.LightningDataModule):
     def __init__(
         self,
         train_path: str,
         train_batch_size: int,
+        train_num_worker: int,
         val_path: str,
         val_batch_size: int,
+        val_num_worker: int,
         test_path: str,
         test_batch_size: int,
+        test_num_worker: int,
         word_vocab_path: str,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
         self.train_batch_size = train_batch_size
+        self.train_num_worker = train_num_worker
         self.val_path = to_absolute_path(val_path)
         self.val_batch_size = val_batch_size
+        self.val_num_worker = val_num_worker
         self.test_path = to_absolute_path(test_path)
         self.test_batch_size = test_batch_size
+        self.test_num_worker = test_num_worker
 
         self.preprocessor = SpacyPreprocessor.load_from_file(
             to_absolute_path(word_vocab_path)
         )
-        self.collator = TWCmdGenGraphEventDataCollator(self.preprocessor)
+        self.collator = TWCmdGenObsGenDataCollator(self.preprocessor)
 
     def prepare_data(self) -> None:
         pass
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage is None:
-            self.train = TWCmdGenGraphEventFreeRunDataset(
-                self.train_path, self.train_batch_size, shuffle=True
-            )
-            self.valid = TWCmdGenGraphEventFreeRunDataset(
-                self.val_path, self.val_batch_size
-            )
+            self.train = TWCmdGenObsGenDataset(self.train_path)
+            self.valid = TWCmdGenObsGenDataset(self.val_path)
 
         if stage == "test" or stage is None:
-            self.test = TWCmdGenGraphEventFreeRunDataset(
-                self.test_path, self.test_batch_size
-            )
+            self.test = TWCmdGenObsGenDataset(self.test_path)
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(self.train, batch_size=None, pin_memory=True, num_workers=1)
+        return DataLoader(
+            self.train,
+            batch_size=self.train_batch_size,
+            collate_fn=self.collator,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=self.train_num_worker,
+        )
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.valid, batch_size=None, pin_memory=True, num_workers=1)
+        return DataLoader(
+            self.valid,
+            batch_size=self.val_batch_size,
+            collate_fn=self.collator,
+            pin_memory=True,
+            num_workers=self.val_num_worker,
+        )
 
     def test_dataloader(self) -> DataLoader:
-        return DataLoader(self.test, batch_size=None, pin_memory=True, num_workers=1)
+        return DataLoader(
+            self.test,
+            batch_size=self.test_batch_size,
+            collate_fn=self.collator,
+            pin_memory=True,
+            num_workers=self.test_num_worker,
+        )

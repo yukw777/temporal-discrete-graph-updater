@@ -8,22 +8,34 @@ from unittest.mock import Mock
 from tdgu.data import (
     TWCmdGenGraphEventDataset,
     TWCmdGenGraphEventDataCollator,
+    TWCmdGenObsGenBatch,
+    TWCmdGenObsGenDataCollator,
+    TWCmdGenObsGenDataset,
     read_label_vocab_files,
     TWCmdGenGraphEventStepInput,
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventGraphicalInput,
     sort_target_commands,
     TWCmdGenGraphEventFreeRunDataset,
+    collate_step_inputs,
 )
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.fixture
-def tw_cmd_gen_collator():
-    return TWCmdGenGraphEventDataCollator(
-        SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
-    )
+def spacy_preprocessor():
+    return SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
+
+
+@pytest.fixture
+def tw_cmd_gen_collator(spacy_preprocessor):
+    return TWCmdGenGraphEventDataCollator(spacy_preprocessor)
+
+
+@pytest.fixture
+def tw_cmd_gen_obs_gen_data_collator(spacy_preprocessor):
+    return TWCmdGenObsGenDataCollator(spacy_preprocessor)
 
 
 @pytest.mark.parametrize("sort_cmds", [True, False])
@@ -81,6 +93,18 @@ def test_tw_cmd_gen_free_run_dataset_init(batch_size, sort_cmds):
     assert len(generated_dataset) == len(expected_dataset)
     for data, expected_data in zip(generated_dataset, expected_dataset):
         assert data == list(map(tuple, expected_data))
+
+
+def test_tw_cmd_gen_obs_gen_dataset_init():
+    dataset = TWCmdGenObsGenDataset("tests/data/test_data.json")
+    expected_dataset = []
+    with open("tests/data/preprocessed_obs_gen_test_data.jsonl") as f:
+        for line in f:
+            expected_dataset.append(json.loads(line))
+
+    assert len(dataset) == len(expected_dataset)
+    for data, expected_data in zip(dataset, expected_dataset):
+        assert data == expected_data
 
 
 @pytest.mark.parametrize("shuffle", [True, False])
@@ -266,11 +290,11 @@ def test_sort_target_commands(tgt_cmds, expected):
         ),
     ],
 )
-def test_tw_cmd_gen_collator_collate_step_inputs(
-    tw_cmd_gen_collator, obs, prev_actions, timestamps, expected
+def test_collate_step_inputs(
+    spacy_preprocessor, obs, prev_actions, timestamps, expected
 ):
     assert (
-        tw_cmd_gen_collator.collate_step_inputs(obs, prev_actions, timestamps)
+        collate_step_inputs(spacy_preprocessor, obs, prev_actions, timestamps)
         == expected
     )
 
@@ -3264,3 +3288,110 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
 )
 def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
     assert tw_cmd_gen_collator(batch) == expected
+
+
+@pytest.mark.parametrize(
+    "batch,expected",
+    [
+        (
+            [
+                [
+                    {
+                        "game": "g1",
+                        "walkthrough_step": 0,
+                        "random_step": 0,
+                        "observation": "you are hungry ! "
+                        "let 's cook a delicious meal .",
+                        "previous_action": "drop knife",
+                        "timestamp": 2,
+                    }
+                ],
+            ],
+            TWCmdGenObsGenBatch(
+                step_inputs=(
+                    TWCmdGenGraphEventStepInput(
+                        obs_word_ids=torch.tensor(
+                            [[2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3]]
+                        ),
+                        obs_mask=torch.ones(1, 13).bool(),
+                        prev_action_word_ids=torch.tensor([[2, 257, 404, 3]]),
+                        prev_action_mask=torch.ones(1, 4).bool(),
+                        timestamps=torch.tensor([2]),
+                    ),
+                ),
+                step_mask=torch.tensor([[True]]),
+            ),
+        ),
+        (
+            [
+                [
+                    {
+                        "game": "g1",
+                        "walkthrough_step": 0,
+                        "random_step": 0,
+                        "observation": "you are hungry ! ",
+                        "previous_action": "drop knife",
+                        "timestamp": 2,
+                    },
+                    {
+                        "game": "g1",
+                        "walkthrough_step": 0,
+                        "random_step": 1,
+                        "observation": "let 's cook a delicious meal .",
+                        "previous_action": "drop knife",
+                        "timestamp": 3,
+                    },
+                ],
+                [
+                    {
+                        "game": "g2",
+                        "walkthrough_step": 0,
+                        "random_step": 0,
+                        "observation": "let 's cook a delicious meal .",
+                        "previous_action": "drop knife",
+                        "timestamp": 3,
+                    }
+                ],
+            ],
+            TWCmdGenObsGenBatch(
+                step_inputs=(
+                    TWCmdGenGraphEventStepInput(
+                        obs_word_ids=torch.tensor(
+                            [
+                                [2, 769, 122, 377, 5, 3, 0, 0, 0],
+                                [2, 416, 12, 215, 94, 237, 441, 21, 3],
+                            ]
+                        ),
+                        obs_mask=torch.tensor([[True] * 6 + [False] * 3, [True] * 9]),
+                        prev_action_word_ids=torch.tensor(
+                            [[2, 257, 404, 3], [2, 257, 404, 3]]
+                        ),
+                        prev_action_mask=torch.ones(2, 4).bool(),
+                        timestamps=torch.tensor([2, 3]),
+                    ),
+                    TWCmdGenGraphEventStepInput(
+                        obs_word_ids=torch.tensor(
+                            [
+                                [2, 416, 12, 215, 94, 237, 441, 21, 3],
+                                [2, 3, 0, 0, 0, 0, 0, 0, 0],
+                            ]
+                        ),
+                        obs_mask=torch.tensor([[True] * 9, [True] * 2 + [False] * 7]),
+                        prev_action_word_ids=torch.tensor(
+                            [[2, 257, 404, 3], [2, 3, 0, 0]]
+                        ),
+                        prev_action_mask=torch.tensor(
+                            [[True] * 4, [True] * 2 + [False] * 2]
+                        ),
+                        timestamps=torch.tensor([3, 0]),
+                    ),
+                ),
+                step_mask=torch.tensor([[True, True], [True, False]]),
+            ),
+        ),
+    ],
+)
+def test_tw_cmd_gen_obs_gen_data_collator(
+    tw_cmd_gen_obs_gen_data_collator, batch, expected
+):
+    assert tw_cmd_gen_obs_gen_data_collator(batch) == expected
