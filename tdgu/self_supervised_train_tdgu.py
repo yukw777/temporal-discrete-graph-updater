@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate, to_absolute_path
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 
 @hydra.main(config_path="self_supervised_train_tdgu_conf", config_name="config")
@@ -15,7 +16,16 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed)
 
     # trainer
-    trainer = instantiate(cfg.trainer)
+    trainer = instantiate(
+        cfg.trainer,
+        callbacks=[
+            ModelCheckpoint(
+                monitor="val_loss",
+                mode="min",
+                filename="tdgu-self-supervised-obs-gen-{epoch}-{val_loss:.2f}",
+            )
+        ],
+    )
 
     # data module
     dm = instantiate(cfg.data_module)
