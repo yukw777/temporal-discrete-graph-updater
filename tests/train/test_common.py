@@ -1955,7 +1955,7 @@ from tdgu.train.common import TDGULightningModule
         ),
     ],
 )
-def test_supervised_tdgu_greedy_decode(
+def test_tdgu_greedy_decode(
     monkeypatch,
     max_event_decode_len,
     max_label_decode_len,
@@ -1986,12 +1986,10 @@ def test_supervised_tdgu_greedy_decode(
     monkeypatch.setattr(tdgu, "forward", MockForward())
     decoded_list = tdgu.greedy_decode(
         TWCmdGenGraphEventStepInput(
-            obs_word_ids=torch.randint(
-                tdgu.hparams.text_encoder_vocab_size, (batch, obs_len)
-            ),
+            obs_word_ids=torch.randint(tdgu.preprocessor.vocab_size, (batch, obs_len)),
             obs_mask=torch.randint(2, (batch, obs_len)).float(),
             prev_action_word_ids=torch.randint(
-                tdgu.hparams.text_encoder_vocab_size, (batch, prev_action_len)
+                tdgu.preprocessor.vocab_size, (batch, prev_action_len)
             ),
             prev_action_mask=torch.randint(2, (batch, prev_action_len)).float(),
             timestamps=torch.tensor([4.0] * batch),
