@@ -3299,7 +3299,6 @@ def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
                     {
                         "game": "g1",
                         "walkthrough_step": 0,
-                        "random_step": 0,
                         "observation": "you are hungry ! "
                         "let 's cook a delicious meal .",
                         "previous_action": "drop knife",
@@ -3308,6 +3307,7 @@ def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
                 ],
             ],
             TWCmdGenObsGenBatch(
+                ids=((("g1", 0, 2),),),
                 step_inputs=(
                     TWCmdGenGraphEventStepInput(
                         obs_word_ids=torch.tensor(
@@ -3328,7 +3328,6 @@ def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
                     {
                         "game": "g1",
                         "walkthrough_step": 0,
-                        "random_step": 0,
                         "observation": "you are hungry ! ",
                         "previous_action": "drop knife",
                         "timestamp": 2,
@@ -3336,7 +3335,6 @@ def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
                     {
                         "game": "g1",
                         "walkthrough_step": 0,
-                        "random_step": 1,
                         "observation": "let 's cook a delicious meal .",
                         "previous_action": "drop knife",
                         "timestamp": 3,
@@ -3346,7 +3344,6 @@ def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
                     {
                         "game": "g2",
                         "walkthrough_step": 0,
-                        "random_step": 0,
                         "observation": "let 's cook a delicious meal .",
                         "previous_action": "drop knife",
                         "timestamp": 3,
@@ -3354,6 +3351,7 @@ def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
                 ],
             ],
             TWCmdGenObsGenBatch(
+                ids=((("g1", 0, 2), ("g1", 0, 3)), (("g2", 0, 3),)),
                 step_inputs=(
                     TWCmdGenGraphEventStepInput(
                         obs_word_ids=torch.tensor(

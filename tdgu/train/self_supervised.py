@@ -1,17 +1,21 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+import wandb
 
 from torch.optim import AdamW, Optimizer
 from typing import Dict, Tuple, Any, List, Optional, Union
 from torch_geometric.data import Data, Batch
 from pytorch_lightning.trainer.states import RunningStage
+from pytorch_lightning.loggers import WandbLogger
 
 from tdgu.train.common import TDGULightningModule
-from tdgu.nn.utils import shift_tokens_right
+from tdgu.nn.utils import shift_tokens_right, index_edge_attr
 from tdgu.nn.text import TextDecoder
 from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
 from tdgu.metrics import F1
+from tdgu.constants import EVENT_TYPES
+from tdgu.graph import batch_to_data_list
 
 
 class ObsGenSelfSupervisedTDGU(pl.LightningModule):
@@ -53,7 +57,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         step_input: TWCmdGenGraphEventStepInput,
         step_mask: torch.Tensor,
         prev_batched_graph: Optional[Batch] = None,
-    ) -> Dict[str, Union[torch.Tensor, Batch]]:
+    ) -> Dict[str, Union[torch.Tensor, Batch, List[torch.Tensor]]]:
         results_list = self.tdgu.greedy_decode(
             step_input,
             prev_batched_graph
@@ -96,7 +100,24 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         return {
             "text_decoder_output": text_decoder_output,
             "loss": loss,
-            "updated_batched_graph": results_list[-1]["updated_batched_graph"],
+            "updated_batched_graph_list": [
+                results["updated_batched_graph"] for results in results_list
+            ],
+            "decoded_event_type_id_list": [
+                results["decoded_event_type_ids"] for results in results_list
+            ],
+            "decoded_event_src_id_list": [
+                results["decoded_event_src_ids"] for results in results_list
+            ],
+            "decoded_event_dst_id_list": [
+                results["decoded_event_dst_ids"] for results in results_list
+            ],
+            "decoded_event_label_word_id_list": [
+                results["decoded_event_label_word_ids"] for results in results_list
+            ],
+            "decoded_event_label_mask_list": [
+                results["decoded_event_label_mask"] for results in results_list
+            ],
         }
 
     def on_train_epoch_start(self) -> None:
@@ -118,14 +139,14 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         for step_input, step_mask in zip(batch.step_inputs, batch.step_mask):
             # step_mask: (batch)
             results = self(step_input, step_mask, prev_batched_graph=prev_batched_graph)
-            prev_batched_graph = results["updated_batched_graph"]
+            prev_batched_graph = results["updated_batched_graph_list"][-1]
             losses.append(results["loss"])
         loss = torch.stack(losses).mean()
         self.log("train_loss", loss)
         assert prev_batched_graph is not None
         return {"loss": loss, "hiddens": prev_batched_graph.detach()}
 
-    def eval_step(self, batch: TWCmdGenObsGenBatch) -> None:
+    def eval_step(self, batch: TWCmdGenObsGenBatch) -> List[Tuple[str, ...]]:
         if self.trainer.state.stage in {  # type: ignore
             RunningStage.SANITY_CHECKING,
             RunningStage.VALIDATING,
@@ -140,37 +161,70 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         losses: List[torch.Tensor] = []
         f1 = getattr(self, f"{log_prefix}_f1")
         prev_batched_graph: Optional[Batch] = None
-        for step_input, step_mask in zip(batch.step_inputs, batch.step_mask):
+        # [(id, observation, previous action, decoded graph events)]
+        # id = (game|walkthrough_step|random_step)
+        table_data: List[Tuple[str, ...]] = []
+        for ids, step_input, step_mask in zip(
+            batch.ids, batch.step_inputs, batch.step_mask
+        ):
             results = self(step_input, step_mask, prev_batched_graph=prev_batched_graph)
-            prev_batched_graph = results["updated_batched_graph"]
+            prev_batched_graph = results["updated_batched_graph_list"][-1]
             losses.append(results["loss"])
             sizes = step_input.obs_mask.sum(dim=1).tolist()
             f1(
                 [
-                    ids[:size]
-                    for ids, size in zip(
+                    word_ids[:size]
+                    for word_ids, size in zip(
                         results["text_decoder_output"].argmax(dim=-1).tolist(), sizes
                     )
                 ],
                 [
-                    ids[:size]
-                    for ids, size in zip(step_input.obs_word_ids.tolist(), sizes)
+                    word_ids[:size]
+                    for word_ids, size in zip(step_input.obs_word_ids.tolist(), sizes)
                 ],
+            )
+            table_data.extend(
+                list(
+                    zip(
+                        "|".join(map(str, ids)),
+                        self.tdgu.preprocessor.batch_decode(
+                            step_input.obs_word_ids,
+                            step_input.obs_mask,
+                            skip_special_tokens=True,
+                        ),
+                        self.tdgu.preprocessor.batch_decode(
+                            step_input.prev_action_word_ids,
+                            step_input.prev_action_mask,
+                            skip_special_tokens=True,
+                        ),
+                        self.decode_graph_events(
+                            results["decoded_event_type_id_list"],
+                            results["decoded_event_src_id_list"],
+                            results["decoded_event_dst_id_list"],
+                            results["decoded_event_label_word_id_list"],
+                            results["decoded_event_label_mask_list"],
+                            results["updated_batched_graph_list"],
+                            step_mask,
+                        ),
+                    )
+                )
             )
         loss = torch.cat(losses).mean()
         batch_size = batch.step_mask.size(1)
         self.log(f"{log_prefix}_loss", loss, batch_size=batch_size)
         self.log(f"{log_prefix}_f1", f1, batch_size=batch_size)
 
+        return table_data
+
     def validation_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
-    ) -> None:
-        self.eval_step(batch)
+    ) -> List[Tuple[str, ...]]:
+        return self.eval_step(batch)
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
-    ) -> None:
-        self.eval_step(batch)
+    ) -> List[Tuple[str, ...]]:
+        return self.eval_step(batch)
 
     def tbptt_split_batch(
         self, batch: TWCmdGenObsGenBatch, split_size: int
@@ -179,6 +233,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         for i in range(0, len(batch.step_inputs), split_size):
             splits.append(
                 TWCmdGenObsGenBatch(
+                    ids=batch.ids[i : i + split_size],
                     step_inputs=batch.step_inputs[i : i + split_size],
                     step_mask=batch.step_mask[i : i + split_size],
                 )
@@ -192,3 +247,119 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
 
     def configure_optimizers(self) -> Optimizer:
         return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
+
+    def decode_graph_events(
+        self,
+        event_type_id_list: List[torch.Tensor],
+        src_id_list: List[torch.Tensor],
+        dst_id_list: List[torch.Tensor],
+        label_word_id_list: List[torch.Tensor],
+        label_mask_list: List[torch.Tensor],
+        batched_graph_list: List[Batch],
+        step_mask: torch.Tensor,
+    ) -> List[str]:
+        batch_size = event_type_id_list[0].size(0)
+        batched_graph_events: List[List[str]] = [[] for _ in range(batch_size)]
+        for (
+            event_type_ids,
+            src_ids,
+            dst_ids,
+            batched_label_word_ids,
+            batched_label_mask,
+            batched_graph,
+        ) in zip(
+            event_type_id_list,
+            src_id_list,
+            dst_id_list,
+            label_word_id_list,
+            label_mask_list,
+            batched_graph_list,
+        ):
+            batched_labels = self.tdgu.preprocessor.batch_decode(
+                batched_label_word_ids.argmax(dim=-1),
+                batched_label_mask,
+                skip_special_tokens=True,
+            )
+            for batch_id, (
+                event_type_id,
+                src_id,
+                dst_id,
+                label,
+                graph,
+                is_valid_step,
+            ) in enumerate(
+                zip(
+                    event_type_ids.tolist(),
+                    src_ids,
+                    dst_ids,
+                    batched_labels,
+                    batch_to_data_list(batched_graph, batch_size),
+                    step_mask.tolist(),
+                )
+            ):
+                if not is_valid_step:
+                    continue
+                node_labels = self.tdgu.preprocessor.batch_decode(
+                    graph.x.argmax(dim=-1),
+                    graph.node_label_mask,
+                    skip_special_tokens=True,
+                )
+                event_type = EVENT_TYPES[event_type_id]
+                src_label = "<none>"
+                dst_label = "<none>"
+                edge_label = "<none>"
+                if event_type == "node-add":
+                    src_label = label
+                elif event_type == "node-delete":
+                    src_label = node_labels[src_id]
+                elif event_type == "edge-add":
+                    src_label = node_labels[src_id]
+                    dst_label = node_labels[dst_id]
+                    edge_label = label
+                elif event_type == "edge-delete":
+                    src_label = node_labels[src_id]
+                    dst_label = node_labels[dst_id]
+                    edge_label_word_ids = index_edge_attr(
+                        graph.edge_index,
+                        graph.edge_attr.argmax(dim=-1),
+                        torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
+                    )
+                    edge_label_mask = index_edge_attr(
+                        graph.edge_index,
+                        graph.edge_label_mask,
+                        torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
+                    )
+                    edge_label = self.tdgu.preprocessor.batch_decode(
+                        edge_label_word_ids, edge_label_mask, skip_special_tokens=True
+                    )[0]
+                batched_graph_events[batch_id].append(
+                    f"({event_type}, {src_label}, {dst_label}, {edge_label})"
+                )
+        return [", ".join(graph_events) for graph_events in batched_graph_events]
+
+    def wandb_log_gen_obs(
+        self, outputs: List[List[Tuple[str, str, str, str]]], table_title: str
+    ) -> None:
+        eval_table_artifact = wandb.Artifact(
+            table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
+        )
+        eval_table = wandb.Table(
+            columns=["id", "observation", "previous action", "decoded graph events"],
+            data=[item for sublist in outputs for item in sublist],
+        )
+        eval_table_artifact.add(eval_table, "predictions")
+        self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
+
+    def validation_epoch_end(  # type: ignore
+        self,
+        outputs: List[List[Tuple[str, str, str, str]]],
+    ) -> None:
+        if isinstance(self.logger, WandbLogger):
+            self.wandb_log_gen_obs(outputs, "val_graph_events")
+
+    def test_epoch_end(  # type: ignore
+        self,
+        outputs: List[List[Tuple[str, str, str, str]]],
+    ) -> None:
+        if isinstance(self.logger, WandbLogger):
+            self.wandb_log_gen_obs(outputs, "test_graph_events")

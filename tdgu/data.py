@@ -317,7 +317,6 @@ class TWCmdGenObsGenDataset(Dataset):
     [{
         "game": "game name",
         "walkthrough_step": walkthrough step,
-        "random_step": random step,
         "observation": "observation...",
         "previous_action": "previous action...",
         "timestamp": timestamp,
@@ -877,6 +876,7 @@ class TWCmdGenGraphEventDataCollator:
 
 @dataclass(frozen=True)
 class TWCmdGenObsGenBatch:
+    ids: Tuple[Tuple[Tuple[str, int, int], ...], ...]
     step_inputs: Tuple[TWCmdGenGraphEventStepInput, ...]
     step_mask: torch.Tensor
 
@@ -891,6 +891,7 @@ class TWCmdGenObsGenBatch:
 
     def to(self, *args, **kwargs) -> "TWCmdGenObsGenBatch":
         return TWCmdGenObsGenBatch(
+            ids=self.ids,
             step_inputs=tuple(
                 step_input.to(*args, **kwargs) for step_input in self.step_inputs
             ),
@@ -899,6 +900,7 @@ class TWCmdGenObsGenBatch:
 
     def pin_memory(self) -> "TWCmdGenObsGenBatch":
         return TWCmdGenObsGenBatch(
+            ids=self.ids,
             step_inputs=tuple(
                 step_input.pin_memory() for step_input in self.step_inputs
             ),
@@ -914,7 +916,8 @@ class TWCmdGenObsGenDataCollator:
         """
         Each batch is a tuple of step inputs and a step mask.
         (
-            (TWCmdGenGraphEventStepInput(
+            ids: (((game, walkthrough_step, random_step), ...), ...)
+            step_inputs: (TWCmdGenGraphEventStepInput(
                 obs_word_ids: (batch, obs_len),
                 obs_mask: (batch, obs_len),
                 prev_action_word_ids: (batch, prev_action_len),
@@ -953,6 +956,17 @@ class TWCmdGenObsGenDataCollator:
                 [True if step < len(walkthrough) else False for walkthrough in batch]
             )
         return TWCmdGenObsGenBatch(
+            ids=tuple(
+                tuple(
+                    (
+                        str(step["game"]),
+                        int(step["walkthrough_step"]),
+                        int(step["timestamp"]),
+                    )
+                    for step in walkthrough
+                )
+                for walkthrough in batch
+            ),
             step_inputs=tuple(collated_steps),
             step_mask=torch.tensor(collated_step_mask),
         )
