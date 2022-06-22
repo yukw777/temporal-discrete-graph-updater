@@ -513,7 +513,8 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
     ) -> torch.Tensor:
         """
-        label_word_ids: (batch, label_len)
+        label_word_ids: (batch, label_len) or
+            one-hot encoded (batch, label_len, num_word)
         label_mask: (batch, label_len)
 
         output: (batch, hidden_dim)
