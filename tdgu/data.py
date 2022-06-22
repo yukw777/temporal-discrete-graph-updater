@@ -314,13 +314,15 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
 class TWCmdGenObsGenDataset(Dataset):
     """
     TextWorld Command Generation observation generation dataset.
-    [{
+    {
         "game": "game name",
         "walkthrough_step": walkthrough step,
-        "observation": "observation...",
-        "previous_action": "previous action...",
-        "timestamp": timestamp,
-    }, ...]
+        "steps": [{
+            "observation": "observation...",
+            "previous_action": "previous action...",
+        }, ...]
+    }
+
     """
 
     def __init__(self, path: str) -> None:
@@ -343,24 +345,21 @@ class TWCmdGenObsGenDataset(Dataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __getitem__(self, idx: int) -> List[Dict[str, Any]]:
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         game, walkthrough_step = self.walkthrough_example_ids[idx]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
         random_examples = self.random_examples[(game, walkthrough_step)]
-        data: List[Dict[str, Any]] = []
-        for timestamp, example in enumerate(walkthrough_examples + random_examples):
-            data.append(
+        steps = []
+        for example in walkthrough_examples + random_examples:
+            steps.append(
                 {
-                    "game": game,
-                    "walkthrough_step": walkthrough_step,
                     "observation": example["observation"],
                     "previous_action": example["previous_action"],
-                    "timestamp": timestamp,
                 }
             )
-        return data
+        return {"game": game, "walkthrough_step": walkthrough_step, "steps": steps}
 
     def __len__(self) -> int:
         return len(self.walkthrough_example_ids)
@@ -876,7 +875,7 @@ class TWCmdGenGraphEventDataCollator:
 
 @dataclass(frozen=True)
 class TWCmdGenObsGenBatch:
-    ids: Tuple[Tuple[Tuple[str, int, int], ...], ...]
+    ids: Tuple[Tuple[str, int], ...]
     step_inputs: Tuple[TWCmdGenGraphEventStepInput, ...]
     step_mask: torch.Tensor
 
@@ -912,11 +911,11 @@ class TWCmdGenObsGenDataCollator:
     def __init__(self, preprocessor: SpacyPreprocessor) -> None:
         self.preprocessor = preprocessor
 
-    def __call__(self, batch: List[List[Dict[str, Any]]]) -> TWCmdGenObsGenBatch:
+    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenObsGenBatch:
         """
         Each batch is a tuple of step inputs and a step mask.
         (
-            ids: (((game, walkthrough_step, random_step), ...), ...)
+            ids: ((game, walkthrough_step), ...)
             step_inputs: (TWCmdGenGraphEventStepInput(
                 obs_word_ids: (batch, obs_len),
                 obs_mask: (batch, obs_len),
@@ -927,7 +926,7 @@ class TWCmdGenObsGenDataCollator:
             step_mask: (max_step, batch)
         )
         """
-        max_step = max(len(walkthrough) for walkthrough in batch)
+        max_step = max(len(walkthrough["steps"]) for walkthrough in batch)
         collated_steps: List[TWCmdGenGraphEventStepInput] = []
         collated_step_mask: List[List[bool]] = []
         for step in range(max_step):
@@ -935,36 +934,32 @@ class TWCmdGenObsGenDataCollator:
                 collate_step_inputs(
                     self.preprocessor,
                     [
-                        walkthrough[step]["observation"]
-                        if step < len(walkthrough)
+                        walkthrough["steps"][step]["observation"]
+                        if step < len(walkthrough["steps"])
                         else ""
                         for walkthrough in batch
                     ],
                     [
-                        walkthrough[step]["previous_action"]
-                        if step < len(walkthrough)
+                        walkthrough["steps"][step]["previous_action"]
+                        if step < len(walkthrough["steps"])
                         else ""
                         for walkthrough in batch
                     ],
                     [
-                        walkthrough[step]["timestamp"] if step < len(walkthrough) else 0
+                        step if step < len(walkthrough["steps"]) else 0
                         for walkthrough in batch
                     ],
                 )
             )
             collated_step_mask.append(
-                [True if step < len(walkthrough) else False for walkthrough in batch]
+                [
+                    True if step < len(walkthrough["steps"]) else False
+                    for walkthrough in batch
+                ]
             )
         return TWCmdGenObsGenBatch(
             ids=tuple(
-                tuple(
-                    (
-                        str(step["game"]),
-                        int(step["walkthrough_step"]),
-                        int(step["timestamp"]),
-                    )
-                    for step in walkthrough
-                )
+                (walkthrough["game"], walkthrough["walkthrough_step"])
                 for walkthrough in batch
             ),
             step_inputs=tuple(collated_steps),

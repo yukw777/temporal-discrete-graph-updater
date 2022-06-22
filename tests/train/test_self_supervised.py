@@ -24,14 +24,14 @@ def obs_gen_self_supervised_tdgu(tmp_path):
     [
         (
             TWCmdGenObsGenBatch(
-                ((("g1", 0, 0),),),
+                (("g1", 0),),
                 (TWCmdGenGraphEventStepInput(),),
                 torch.tensor([[True]]),
             ),
             1,
             [
                 TWCmdGenObsGenBatch(
-                    ((("g1", 0, 0),),),
+                    (("g1", 0),),
                     (TWCmdGenGraphEventStepInput(),),
                     torch.tensor([[True]]),
                 )
@@ -39,14 +39,14 @@ def obs_gen_self_supervised_tdgu(tmp_path):
         ),
         (
             TWCmdGenObsGenBatch(
-                ((("g1", 0, 0),),),
+                (("g1", 0),),
                 (TWCmdGenGraphEventStepInput(),),
                 torch.tensor([[True]]),
             ),
             2,
             [
                 TWCmdGenObsGenBatch(
-                    ((("g1", 0, 0),),),
+                    (("g1", 0),),
                     (TWCmdGenGraphEventStepInput(),),
                     torch.tensor([[True]]),
                 )
@@ -54,11 +54,7 @@ def obs_gen_self_supervised_tdgu(tmp_path):
         ),
         (
             TWCmdGenObsGenBatch(
-                (
-                    (("g1", 0, 0), ("g2", 0, 0), ("g3", 0, 0)),
-                    (("g1", 1, 0), ("g2", 0, 1), ("g3", 1, 0)),
-                    (("g1", 1, 1), ("g2", 0, 2), ("g3", 2, 0)),
-                ),
+                (("g1", 0), ("g2", 1), ("g1", 1)),
                 (
                     TWCmdGenGraphEventStepInput(),
                     TWCmdGenGraphEventStepInput(),
@@ -69,15 +65,12 @@ def obs_gen_self_supervised_tdgu(tmp_path):
             2,
             [
                 TWCmdGenObsGenBatch(
-                    (
-                        (("g1", 0, 0), ("g2", 0, 0), ("g3", 0, 0)),
-                        (("g1", 1, 0), ("g2", 0, 1), ("g3", 1, 0)),
-                    ),
+                    (("g1", 0), ("g2", 1)),
                     (TWCmdGenGraphEventStepInput(), TWCmdGenGraphEventStepInput()),
                     torch.tensor([[True] * 3, [True, False, True]]),
                 ),
                 TWCmdGenObsGenBatch(
-                    ((("g1", 1, 1), ("g2", 0, 2), ("g3", 2, 0)),),
+                    (("g1", 1),),
                     (TWCmdGenGraphEventStepInput(),),
                     torch.tensor([[False, False, True]]),
                 ),

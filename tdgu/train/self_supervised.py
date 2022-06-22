@@ -164,8 +164,8 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         # [(id, observation, previous action, decoded graph events)]
         # id = (game|walkthrough_step|random_step)
         table_data: List[Tuple[str, ...]] = []
-        for ids, step_input, step_mask in zip(
-            batch.ids, batch.step_inputs, batch.step_mask
+        for timestamp, (step_input, step_mask) in enumerate(
+            zip(batch.step_inputs, batch.step_mask)
         ):
             results = self(step_input, step_mask, prev_batched_graph=prev_batched_graph)
             prev_batched_graph = results["updated_batched_graph_list"][-1]
@@ -183,32 +183,45 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                     for word_ids, size in zip(step_input.obs_word_ids.tolist(), sizes)
                 ],
             )
-            table_data.extend(
-                list(
-                    zip(
-                        "|".join(map(str, ids)),
-                        self.tdgu.preprocessor.batch_decode(
-                            step_input.obs_word_ids,
-                            step_input.obs_mask,
-                            skip_special_tokens=True,
-                        ),
-                        self.tdgu.preprocessor.batch_decode(
-                            step_input.prev_action_word_ids,
-                            step_input.prev_action_mask,
-                            skip_special_tokens=True,
-                        ),
-                        self.decode_graph_events(
-                            results["decoded_event_type_id_list"],
-                            results["decoded_event_src_id_list"],
-                            results["decoded_event_dst_id_list"],
-                            results["decoded_event_label_word_id_list"],
-                            results["decoded_event_label_mask_list"],
-                            results["updated_batched_graph_list"],
-                            step_mask,
-                        ),
+            for (
+                (game, walkthrough_step),
+                obs,
+                prev_action,
+                graph_events,
+                is_valid_step,
+            ) in zip(
+                batch.ids,
+                self.tdgu.preprocessor.batch_decode(
+                    step_input.obs_word_ids,
+                    step_input.obs_mask,
+                    skip_special_tokens=True,
+                ),
+                self.tdgu.preprocessor.batch_decode(
+                    step_input.prev_action_word_ids,
+                    step_input.prev_action_mask,
+                    skip_special_tokens=True,
+                ),
+                self.decode_graph_events(
+                    results["decoded_event_type_id_list"],
+                    results["decoded_event_src_id_list"],
+                    results["decoded_event_dst_id_list"],
+                    results["decoded_event_label_word_id_list"],
+                    results["decoded_event_label_mask_list"],
+                    results["updated_batched_graph_list"],
+                    step_mask,
+                ),
+                step_mask.tolist(),
+            ):
+                if not is_valid_step:
+                    continue
+                table_data.append(
+                    (
+                        f"{game}|{walkthrough_step}|{timestamp}",
+                        obs,
+                        prev_action,
+                        graph_events,
                     )
                 )
-            )
         loss = torch.cat(losses).mean()
         batch_size = batch.step_mask.size(1)
         self.log(f"{log_prefix}_loss", loss, batch_size=batch_size)
