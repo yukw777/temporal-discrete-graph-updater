@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+import torch.nn.functional as F
 
 from typing import Optional, List, Dict, Any
 from torch_geometric.nn import TransformerConv, GATv2Conv
@@ -13,7 +14,7 @@ from tdgu.nn.text import QANetTextEncoder
 from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.nn.utils import masked_softmax, load_fasttext
+from tdgu.nn.utils import masked_softmax, load_fasttext, masked_gumbel_softmax
 from tdgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
 
 
@@ -131,7 +132,7 @@ class TDGULightningModule(  # type: ignore
         prev_batched_graph: Batch,
         max_event_decode_len: int = 100,
         max_label_decode_len: int = 10,
-        one_hot: bool = False,
+        gumbel_greedy_decode: bool = False,
         gumbel_tau: float = 0.5,
     ) -> List[Dict[str, Any]]:
         """
@@ -139,16 +140,22 @@ class TDGULightningModule(  # type: ignore
         prev_batch_graph: diagonally stacked batch of current graphs
         max_event_decode_len: max length of decoded event sequence
         max_label_decode_len: max length of decoded labels
-        one_hot: use one-hot encoded label word IDs
+        gumbel: greedy decode using gumbel softmax
         gumbel_tau: gumbel temperature, only used if one_hot is True
 
         output:
         len([{
-            decoded_event_type_ids: (batch)
-            decoded_event_src_ids: (batch)
-            decoded_event_dst_ids: (batch)
+            decoded_event_type_ids: one-hot encoded
+                (batch, num_event_type) if gumbel_greedy_decode is True
+                (batch) otherwise
+            decoded_event_src_ids: one-hot encoded
+                (batch, max_sub_graph_num_node) if gumbel_greedy_decode is True
+                (batch) otherwise
+            decoded_event_dst_ids: one-hot encoded
+                (batch, max_sub_graph_num_node) if gumbel_greedy_decode is True
+                (batch) otherwise
             decoded_event_label_word_ids: one-hot encoded
-                (batch, decoded_label_len, num_word) if one_hot is True
+                (batch, decoded_label_len, num_word) if gumbel_greedy_decode is True
                 (batch, decoded_label_len) otherwise
             decoded_event_label_mask: (batch, decoded_label_len)
             updated_batched_graph: diagonally stacked batch of updated graphs.
@@ -169,23 +176,47 @@ class TDGULightningModule(  # type: ignore
         """
         # initialize the initial inputs
         batch_size = step_input.obs_word_ids.size(0)
-        decoded_event_type_ids = torch.full(
-            (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
-        )
-        # (batch)
-        decoded_src_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
-        # (batch)
-        decoded_dst_ids = torch.zeros(batch_size, device=self.device, dtype=torch.long)
-        # (batch)
-        if one_hot:
+        if gumbel_greedy_decode:
+            decoded_event_type_ids = F.one_hot(
+                torch.full(
+                    (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
+                ),
+                num_classes=len(EVENT_TYPE_ID_MAP),
+            ).float()
+            # (batch, num_event_type)
+            prev_max_sub_graph_num_node = (
+                prev_batched_graph.batch.bincount().max()
+                if prev_batched_graph.num_nodes > 0
+                else 0
+            )
+            decoded_src_ids = torch.zeros(
+                batch_size, prev_max_sub_graph_num_node, device=self.device
+            )
+            # (batch, prev_max_sub_graph_num_node)
+            decoded_dst_ids = torch.zeros(
+                batch_size, prev_max_sub_graph_num_node, device=self.device
+            )
+            # (batch, prev_max_sub_graph_num_node)
             decoded_label_word_ids = torch.empty(
                 batch_size,
                 0,
-                self.text_encoder.get_input_embeddings().num_embeddings,
+                self.preprocessor.vocab_size,
                 device=self.device,
             )
             # (batch, 0, num_word)
         else:
+            decoded_event_type_ids = torch.full(
+                (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
+            )
+            # (batch)
+            decoded_src_ids = torch.zeros(
+                batch_size, device=self.device, dtype=torch.long
+            )
+            # (batch)
+            decoded_dst_ids = torch.zeros(
+                batch_size, device=self.device, dtype=torch.long
+            )
+            # (batch)
             decoded_label_word_ids = torch.empty(
                 batch_size, 0, device=self.device, dtype=torch.long
             )
@@ -221,36 +252,72 @@ class TDGULightningModule(  # type: ignore
                 prev_input_event_emb_seq=prev_input_event_emb_seq,
                 prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
                 max_label_decode_len=max_label_decode_len,
-                gumbel_greedy_decode_labels=one_hot,
+                gumbel_greedy_decode=gumbel_greedy_decode,
                 gumbel_tau=gumbel_tau,
             )
 
             # process the decoded result for the next iteration
-            decoded_event_type_ids = (
-                results["event_type_logits"]
-                .argmax(dim=1)
-                .masked_fill(end_event_mask, EVENT_TYPE_ID_MAP["pad"])
-            )
-            # (batch)
+            if gumbel_greedy_decode:
+                # applying mask like this is OK, since the argmax of all zeros
+                # is 0, which is the index of the pad event type.
+                decoded_event_type_ids = F.gumbel_softmax(
+                    results["event_type_logits"], hard=True, tau=gumbel_tau
+                ) * end_event_mask.logical_not().unsqueeze(1)
+                # (batch, num_event_type)
+            else:
+                decoded_event_type_ids = (
+                    results["event_type_logits"]
+                    .argmax(dim=1)
+                    .masked_fill(end_event_mask, EVENT_TYPE_ID_MAP["pad"])
+                )
+                # (batch)
 
             if results["event_src_logits"].size(1) == 0:
-                decoded_src_ids = torch.zeros(
-                    batch_size, dtype=torch.long, device=self.device
-                )
+                if gumbel_greedy_decode:
+                    decoded_src_ids = torch.zeros(batch_size, 0, device=self.device)
+                    # (batch, 0)
+                else:
+                    decoded_src_ids = torch.zeros(
+                        batch_size, dtype=torch.long, device=self.device
+                    )
+                    # (batch)
             else:
-                decoded_src_ids = masked_softmax(
-                    results["event_src_logits"], results["batch_node_mask"], dim=1
-                ).argmax(dim=1)
-            # (batch)
+                if gumbel_greedy_decode:
+                    decoded_src_ids = masked_gumbel_softmax(
+                        results["event_src_logits"],
+                        results["batch_node_mask"],
+                        hard=True,
+                        tau=gumbel_tau,
+                    )
+                    # (batch, max_sub_graph_num_node)
+                else:
+                    decoded_src_ids = masked_softmax(
+                        results["event_src_logits"], results["batch_node_mask"], dim=1
+                    ).argmax(dim=1)
+                    # (batch)
             if results["event_dst_logits"].size(1) == 0:
-                decoded_dst_ids = torch.zeros(
-                    batch_size, dtype=torch.long, device=self.device
-                )
+                if gumbel_greedy_decode:
+                    decoded_dst_ids = torch.zeros(batch_size, 0, device=self.device)
+                    # (batch, 0)
+                else:
+                    decoded_dst_ids = torch.zeros(
+                        batch_size, dtype=torch.long, device=self.device
+                    )
+                    # (batch)
             else:
-                decoded_dst_ids = masked_softmax(
-                    results["event_dst_logits"], results["batch_node_mask"], dim=1
-                ).argmax(dim=1)
-            # (batch)
+                if gumbel_greedy_decode:
+                    decoded_dst_ids = masked_gumbel_softmax(
+                        results["event_dst_logits"],
+                        results["batch_node_mask"],
+                        hard=True,
+                        tau=gumbel_tau,
+                    )
+                    # (batch, max_sub_graph_num_node)
+                else:
+                    decoded_dst_ids = masked_softmax(
+                        results["event_dst_logits"], results["batch_node_mask"], dim=1
+                    ).argmax(dim=1)
+                    # (batch)
             decoded_label_word_ids = results["decoded_event_label_word_ids"]
             # (batch, decoded_label_len, num_word) if one_hot is True
             # (batch, decoded_label_len) otherwise
@@ -258,17 +325,50 @@ class TDGULightningModule(  # type: ignore
             # (batch, decoded_label_len)
 
             # filter out invalid decoded events
+            if gumbel_greedy_decode:
+                if decoded_src_ids.size(1) == 0:
+                    decoded_src_ids_argmax = torch.zeros(
+                        decoded_src_ids.size(0),
+                        device=decoded_src_ids.device,
+                        dtype=torch.long,
+                    )
+                else:
+                    decoded_src_ids_argmax = decoded_src_ids.argmax(dim=-1)
+            else:
+                decoded_src_ids_argmax = decoded_src_ids
+            # (batch)
+            if gumbel_greedy_decode:
+                if decoded_dst_ids.size(1) == 0:
+                    decoded_dst_ids_argmax = torch.zeros(
+                        decoded_dst_ids.size(0),
+                        device=decoded_dst_ids.device,
+                        dtype=torch.long,
+                    )
+                else:
+                    decoded_dst_ids_argmax = decoded_dst_ids.argmax(dim=-1)
+            else:
+                decoded_dst_ids_argmax = decoded_dst_ids
+            # (batch)
             invalid_event_mask = self.filter_invalid_events(
-                decoded_event_type_ids,
-                decoded_src_ids,
-                decoded_dst_ids,
+                decoded_event_type_ids.argmax(dim=-1)
+                if gumbel_greedy_decode
+                else decoded_event_type_ids,
+                decoded_src_ids_argmax,
+                decoded_dst_ids_argmax,
                 results["updated_batched_graph"].batch,
                 results["updated_batched_graph"].edge_index,
             )
             # (batch)
-            decoded_event_type_ids = decoded_event_type_ids.masked_fill(
-                invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
-            )
+
+            if gumbel_greedy_decode:
+                decoded_event_type_ids = (
+                    decoded_event_type_ids
+                    * invalid_event_mask.logical_not().unsqueeze(1)
+                )
+            else:
+                decoded_event_type_ids = decoded_event_type_ids.masked_fill(
+                    invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
+                )
 
             # collect the results
             results_list.append(
@@ -308,7 +408,12 @@ class TDGULightningModule(  # type: ignore
 
             # update end_event_mask
             end_event_mask = end_event_mask.logical_or(
-                decoded_event_type_ids == EVENT_TYPE_ID_MAP["end"]
+                (
+                    decoded_event_type_ids.argmax(dim=-1)
+                    if gumbel_greedy_decode
+                    else decoded_event_type_ids
+                )
+                == EVENT_TYPE_ID_MAP["end"]
             )
 
             # if everything in the batch is done, break

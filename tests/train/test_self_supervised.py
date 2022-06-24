@@ -89,9 +89,14 @@ def test_obs_gen_tbptt_split_batch(
     "batched_graph_list,batched_step_mask,expected",
     [
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["pad"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["pad"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -109,12 +114,17 @@ def test_obs_gen_tbptt_split_batch(
                 )
             ],
             torch.tensor([True]),
-            ["(pad, <none>, <none>, <none>)"],
+            [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["pad"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["pad"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -135,9 +145,14 @@ def test_obs_gen_tbptt_split_batch(
             [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["start"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -158,9 +173,14 @@ def test_obs_gen_tbptt_split_batch(
             ["(start, <none>, <none>, <none>)"],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["start"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["start"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -181,9 +201,14 @@ def test_obs_gen_tbptt_split_batch(
             [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["end"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -204,9 +229,14 @@ def test_obs_gen_tbptt_split_batch(
             ["(end, <none>, <none>, <none>)"],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["end"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -227,9 +257,14 @@ def test_obs_gen_tbptt_split_batch(
             [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["node-add"]])],
-            [torch.tensor([0])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [torch.empty(1, 0)],
+            [torch.empty(1, 0)],
             [F.one_hot(torch.tensor([[2, 8, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -248,9 +283,14 @@ def test_obs_gen_tbptt_split_batch(
             ["(node-add, peter, <none>, <none>)"],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["node-add"]])],
-            [torch.tensor([0])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [torch.empty(1, 0)],
+            [torch.empty(1, 0)],
             [F.one_hot(torch.tensor([[2, 8, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -269,9 +309,14 @@ def test_obs_gen_tbptt_split_batch(
             [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]])],
-            [torch.tensor([0])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([0]), num_classes=1).float()],
+            [torch.zeros(1, 1)],
             [F.one_hot(torch.tensor([[2, 8, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -290,9 +335,14 @@ def test_obs_gen_tbptt_split_batch(
             ["(node-delete, player, <none>, <none>)"],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]])],
-            [torch.tensor([0])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([0]), num_classes=1).float()],
+            [torch.zeros(1, 1)],
             [F.one_hot(torch.tensor([[2, 8, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -311,9 +361,14 @@ def test_obs_gen_tbptt_split_batch(
             [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -334,9 +389,14 @@ def test_obs_gen_tbptt_split_batch(
             ["(edge-add, player, chopped, is)"],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 7, 3]]), num_classes=17).float()],
             [torch.tensor([[True, True]])],
             [
@@ -357,9 +417,14 @@ def test_obs_gen_tbptt_split_batch(
             [""],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 8, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -382,9 +447,14 @@ def test_obs_gen_tbptt_split_batch(
             ["(edge-delete, player, chopped, is)"],
         ),
         (
-            [torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]])],
-            [torch.tensor([1])],
-            [torch.tensor([0])],
+            [
+                F.one_hot(
+                    torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float()
+            ],
+            [F.one_hot(torch.tensor([1]), num_classes=2).float()],
+            [F.one_hot(torch.tensor([0]), num_classes=2).float()],
             [F.one_hot(torch.tensor([[2, 8, 3]]), num_classes=17).float()],
             [torch.ones(1, 3).bool()],
             [
@@ -408,15 +478,33 @@ def test_obs_gen_tbptt_split_batch(
         ),
         (
             [
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
-                ),
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-delete"], EVENT_TYPE_ID_MAP["edge-add"]]
-                ),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
             ],
-            [torch.tensor([1, 0]), torch.tensor([0, 2])],
-            [torch.tensor([0, 1]), torch.tensor([1, 3])],
+            [
+                F.one_hot(torch.tensor([1, 0]), num_classes=4).float(),
+                F.one_hot(torch.tensor([0, 2]), num_classes=4).float(),
+            ],
+            [
+                F.one_hot(torch.tensor([0, 1]), num_classes=4).float(),
+                F.one_hot(torch.tensor([1, 3]), num_classes=4).float(),
+            ],
             [
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),
                 F.one_hot(
@@ -490,15 +578,33 @@ def test_obs_gen_tbptt_split_batch(
         ),
         (
             [
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
-                ),
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-delete"], EVENT_TYPE_ID_MAP["edge-add"]]
-                ),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
             ],
-            [torch.tensor([1, 0]), torch.tensor([0, 2])],
-            [torch.tensor([0, 1]), torch.tensor([1, 3])],
+            [
+                F.one_hot(torch.tensor([1, 0]), num_classes=4).float(),
+                F.one_hot(torch.tensor([0, 2]), num_classes=4).float(),
+            ],
+            [
+                F.one_hot(torch.tensor([0, 1]), num_classes=4).float(),
+                F.one_hot(torch.tensor([1, 3]), num_classes=4).float(),
+            ],
             [
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),
                 F.one_hot(
@@ -572,15 +678,33 @@ def test_obs_gen_tbptt_split_batch(
         ),
         (
             [
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
-                ),
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-delete"], EVENT_TYPE_ID_MAP["edge-add"]]
-                ),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
             ],
-            [torch.tensor([1, 0]), torch.tensor([0, 2])],
-            [torch.tensor([0, 1]), torch.tensor([1, 3])],
+            [
+                F.one_hot(torch.tensor([1, 0]), num_classes=4).float(),
+                F.one_hot(torch.tensor([0, 2]), num_classes=4).float(),
+            ],
+            [
+                F.one_hot(torch.tensor([0, 1]), num_classes=4).float(),
+                F.one_hot(torch.tensor([1, 3]), num_classes=4).float(),
+            ],
             [
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),
                 F.one_hot(
@@ -653,15 +777,48 @@ def test_obs_gen_tbptt_split_batch(
         ),
         (
             [
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+            ],
+            [
+                torch.cat(
+                    [
+                        torch.zeros(1, 4),
+                        F.one_hot(torch.tensor([0]), num_classes=4).float(),
+                    ],
                 ),
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["node-delete"]]
+                F.one_hot(torch.tensor([0, 2]), num_classes=4).float(),
+            ],
+            [
+                torch.cat(
+                    [
+                        torch.zeros(1, 4),
+                        F.one_hot(torch.tensor([1]), num_classes=4).float(),
+                    ],
+                ),
+                torch.cat(
+                    [
+                        F.one_hot(torch.tensor([1]), num_classes=4).float(),
+                        torch.zeros(1, 4),
+                    ],
                 ),
             ],
-            [torch.tensor([0, 0]), torch.tensor([0, 2])],
-            [torch.tensor([0, 1]), torch.tensor([1, 0])],
             [
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),
@@ -731,15 +888,48 @@ def test_obs_gen_tbptt_split_batch(
         ),
         (
             [
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["edge-delete"]]
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["node-add"],
+                            EVENT_TYPE_ID_MAP["edge-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+                F.one_hot(
+                    torch.tensor(
+                        [
+                            EVENT_TYPE_ID_MAP["edge-add"],
+                            EVENT_TYPE_ID_MAP["node-delete"],
+                        ]
+                    ),
+                    num_classes=len(EVENT_TYPE_ID_MAP),
+                ).float(),
+            ],
+            [
+                torch.cat(
+                    [
+                        torch.zeros(1, 4),
+                        F.one_hot(torch.tensor([0]), num_classes=4).float(),
+                    ],
                 ),
-                torch.tensor(
-                    [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["node-delete"]]
+                F.one_hot(torch.tensor([0, 2]), num_classes=4).float(),
+            ],
+            [
+                torch.cat(
+                    [
+                        torch.zeros(1, 4),
+                        F.one_hot(torch.tensor([1]), num_classes=4).float(),
+                    ],
+                ),
+                torch.cat(
+                    [
+                        F.one_hot(torch.tensor([1]), num_classes=4).float(),
+                        torch.zeros(1, 4),
+                    ],
                 ),
             ],
-            [torch.tensor([0, 0]), torch.tensor([0, 2])],
-            [torch.tensor([0, 1]), torch.tensor([1, 0])],
             [
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),
                 F.one_hot(torch.tensor([[2, 7, 3], [2, 3, 0]]), num_classes=17).float(),

@@ -539,44 +539,32 @@ def test_tdgu_forward(
     [
         (
             4,
-            torch.tensor(
+            F.one_hot(
+                torch.tensor(
+                    [
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                    ]
+                ),
+                num_classes=len(EVENT_TYPE_ID_MAP),
+            ).float(),
+            torch.cat(
                 [
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
+                    F.one_hot(torch.tensor([0]), num_classes=4).float(),
+                    torch.zeros(1, 4),
+                    F.one_hot(torch.tensor([3, 1]), num_classes=4).float(),
                 ]
             ),
-            torch.tensor([0, 0, 3, 1]),
-            torch.tensor([2, 0, 0, 0]),
-            5,
-            12,
-            8,
-            Batch(
-                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3]),
-                x=F.one_hot(torch.randint(6, (12, 3)), num_classes=17).float(),
-                node_label_mask=torch.randint(2, (12, 3)).bool(),
-                node_last_update=torch.randint(10, (12, 2)),
-                edge_index=torch.tensor([[0, 3, 7, 8], [2, 4, 6, 6]]),
-                edge_attr=F.one_hot(torch.randint(6, (4, 3)), num_classes=17).float(),
-                edge_label_mask=torch.randint(2, (4, 3)).bool(),
-                edge_last_update=torch.randint(10, (4, 2)),
-            ),
-            12,
-            4,
-        ),
-        (
-            4,
-            torch.tensor(
+            torch.cat(
                 [
-                    EVENT_TYPE_ID_MAP["edge-delete"],
-                    EVENT_TYPE_ID_MAP["node-add"],
-                    EVENT_TYPE_ID_MAP["edge-add"],
-                    EVENT_TYPE_ID_MAP["node-delete"],
+                    F.one_hot(torch.tensor([2]), num_classes=4).float(),
+                    torch.zeros(1, 4),
+                    F.one_hot(torch.tensor([0]), num_classes=4).float(),
+                    torch.zeros(1, 4),
                 ]
             ),
-            torch.tensor([0, 0, 3, 1]),
-            torch.tensor([2, 0, 0, 0]),
             5,
             12,
             8,
@@ -665,7 +653,7 @@ def test_tdgu_gumbel_forward(
             tdgu.graph_event_decoder.hidden_dim,
         ),
         prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
-        gumbel_greedy_decode_labels=True,
+        gumbel_greedy_decode=True,
         gumbel_tau=tau,
     )
     assert results["event_type_logits"].size() == (batch_size, len(EVENT_TYPES))
@@ -760,7 +748,6 @@ def test_tdgu_gumbel_forward(
         )
 
 
-@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "event_type_ids,event_src_ids,event_dst_ids,event_label_word_ids,event_label_mask,"
     "batch,node_label_word_ids,node_label_mask,expected",
@@ -949,7 +936,6 @@ def test_tdgu_get_decoder_input(
     node_label_word_ids,
     node_label_mask,
     expected,
-    one_hot,
 ):
     tdgu.event_type_embeddings = nn.Embedding.from_pretrained(
         torch.tensor(
@@ -964,24 +950,9 @@ def test_tdgu_get_decoder_input(
             ]
         )
     )
-    if one_hot:
-        tdgu.embed_label = (
-            lambda x, y: x.argmax(-1)[:, 0]
-            .unsqueeze(-1)
-            .expand(-1, tdgu.hidden_dim)
-            .float()
-        )
-        event_label_word_ids = F.one_hot(event_label_word_ids)
-        if node_label_word_ids.size(0) == 0:
-            node_label_word_ids = torch.empty(
-                0, node_label_word_ids.size(1), event_label_word_ids.size(2)
-            )
-        else:
-            node_label_word_ids = F.one_hot(node_label_word_ids)
-    else:
-        tdgu.embed_label = (
-            lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hidden_dim).float()
-        )
+    tdgu.embed_label = (
+        lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hidden_dim).float()
+    )
     assert tdgu.get_decoder_input(
         event_type_ids,
         event_src_ids,
@@ -992,6 +963,279 @@ def test_tdgu_get_decoder_input(
         node_label_word_ids,
         node_label_mask,
         compute_masks_from_event_type_ids(event_type_ids),
+    ).equal(expected)
+
+
+@pytest.mark.parametrize(
+    "event_type_ids,event_src_ids,event_dst_ids,event_label_word_ids,event_label_mask,"
+    "batch,node_label_word_ids,node_label_mask,expected",
+    [
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["pad"]]), num_classes=len(EVENT_TYPES)
+            ).float(),
+            torch.zeros(1, 0),
+            torch.zeros(1, 0),
+            F.one_hot(torch.tensor([[3]]), num_classes=12).float(),
+            torch.tensor([[True]]),
+            torch.empty(0).long(),
+            torch.empty(0, 0, 12),
+            torch.empty(0, 0).bool(),
+            torch.tensor([[0.0] * 4 + [0.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["pad"]]), num_classes=len(EVENT_TYPES)
+            ).float(),
+            torch.zeros(1, 2),
+            torch.zeros(1, 2),
+            F.one_hot(torch.tensor([[3]]), num_classes=12).float(),
+            torch.tensor([[True]]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True]]),
+            torch.tensor([[0.0] * 4 + [0.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["start"]]), num_classes=len(EVENT_TYPES)
+            ).float(),
+            torch.zeros(1, 0),
+            torch.zeros(1, 0),
+            F.one_hot(torch.tensor([[3]]), num_classes=12).float(),
+            torch.tensor([[True]]),
+            torch.empty(0).long(),
+            torch.empty(0, 0, 12),
+            torch.empty(0, 0).bool(),
+            torch.tensor([[3.0] * 4 + [0.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["start"]]), num_classes=len(EVENT_TYPES)
+            ).float(),
+            torch.zeros(1, 2),
+            torch.zeros(1, 2),
+            F.one_hot(torch.tensor([[3]]), num_classes=12).float(),
+            torch.tensor([[True]]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True]]),
+            torch.tensor([[3.0] * 4 + [0.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["end"]]), num_classes=len(EVENT_TYPES)
+            ).float(),
+            torch.zeros(1, 0),
+            torch.zeros(1, 0),
+            F.one_hot(torch.tensor([[3]]), num_classes=12).float(),
+            torch.tensor([[True]]),
+            torch.empty(0).long(),
+            torch.empty(0, 0, 12),
+            torch.empty(0, 0).bool(),
+            torch.tensor([[4.0] * 4 + [0.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["end"]]), num_classes=len(EVENT_TYPES)
+            ).float(),
+            torch.zeros(1, 2),
+            torch.zeros(1, 2),
+            F.one_hot(torch.tensor([[3]]), num_classes=12).float(),
+            torch.tensor([[True]]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True]]),
+            torch.tensor([[4.0] * 4 + [0.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                num_classes=len(EVENT_TYPES),
+            ).float(),
+            torch.zeros(1, 0),
+            torch.zeros(1, 0),
+            F.one_hot(torch.tensor([[6, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True]]),
+            torch.empty(0).long(),
+            torch.empty(0, 0, 12),
+            torch.empty(0, 0).bool(),
+            torch.tensor([[5.0] * 4 + [0.0] * 8 + [0.0] * 8 + [6.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
+                num_classes=len(EVENT_TYPES),
+            ).float(),
+            torch.zeros(1, 2),
+            torch.zeros(1, 2),
+            F.one_hot(torch.tensor([[6, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True]]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True]]),
+            torch.tensor([[5.0] * 4 + [0.0] * 8 + [0.0] * 8 + [6.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["node-delete"]]),
+                num_classes=len(EVENT_TYPES),
+            ).float(),
+            F.one_hot(torch.tensor([1]), num_classes=2).float(),
+            torch.zeros(1, 2),
+            F.one_hot(torch.tensor([[6, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True]]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True]]),
+            torch.tensor([[6.0] * 4 + [5.0] * 8 + [0.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
+                num_classes=len(EVENT_TYPES),
+            ).float(),
+            F.one_hot(torch.tensor([1]), num_classes=2).float(),
+            F.one_hot(torch.tensor([0]), num_classes=2).float(),
+            F.one_hot(torch.tensor([[6, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True]]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True]]),
+            torch.tensor([[7.0] * 4 + [5.0] * 8 + [4.0] * 8 + [6.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor([EVENT_TYPE_ID_MAP["edge-delete"]]),
+                num_classes=len(EVENT_TYPES),
+            ).float(),
+            F.one_hot(torch.tensor([2]), num_classes=3).float(),
+            F.one_hot(torch.tensor([1]), num_classes=3).float(),
+            F.one_hot(torch.tensor([[6, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True]]),
+            torch.tensor([0, 0, 0]),
+            F.one_hot(torch.tensor([[4, 3], [5, 3], [8, 3]]), num_classes=12).float(),
+            torch.tensor([[True, True], [True, True], [True, True]]),
+            torch.tensor([[8.0] * 4 + [8.0] * 8 + [5.0] * 8 + [0.0] * 8]),
+        ),
+        (
+            F.one_hot(
+                torch.tensor(
+                    [
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["node-add"],
+                        EVENT_TYPE_ID_MAP["edge-delete"],
+                        EVENT_TYPE_ID_MAP["node-delete"],
+                        EVENT_TYPE_ID_MAP["edge-add"],
+                        EVENT_TYPE_ID_MAP["node-add"],
+                    ]
+                ),
+                num_classes=len(EVENT_TYPES),
+            ).float(),
+            torch.cat(
+                [
+                    F.one_hot(torch.tensor([0]), num_classes=3).float(),
+                    torch.zeros(1, 3),
+                    F.one_hot(torch.tensor([2, 1, 1]), num_classes=3).float(),
+                    torch.zeros(1, 3),
+                ]
+            ),
+            torch.cat(
+                [
+                    F.one_hot(torch.tensor([1]), num_classes=3).float(),
+                    torch.zeros(1, 3),
+                    F.one_hot(torch.tensor([0]), num_classes=3).float(),
+                    torch.zeros(1, 3),
+                    F.one_hot(torch.tensor([2]), num_classes=3).float(),
+                    torch.zeros(1, 3),
+                ]
+            ),
+            F.one_hot(
+                torch.tensor([[2, 3], [3, 3], [4, 3], [1, 3], [2, 3], [3, 3]]),
+                num_classes=12,
+            ).float(),
+            torch.ones(6, 2).bool(),
+            torch.tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5]),
+            F.one_hot(
+                torch.tensor(
+                    [
+                        [1, 3],
+                        [2, 3],
+                        [1, 3],
+                        [3, 3],
+                        [2, 3],
+                        [4, 3],
+                        [2, 3],
+                        [1, 3],
+                        [3, 3],
+                        [4, 3],
+                        [3, 3],
+                        [4, 3],
+                        [2, 3],
+                        [3, 3],
+                        [4, 3],
+                        [2, 3],
+                        [1, 3],
+                        [4, 3],
+                    ]
+                ),
+                num_classes=12,
+            ).float(),
+            torch.ones(18, 2).bool(),
+            torch.tensor(
+                [
+                    [7.0] * 4 + [1.0] * 8 + [2.0] * 8 + [2.0] * 8,
+                    [5.0] * 4 + [0.0] * 8 + [0.0] * 8 + [3.0] * 8,
+                    [8.0] * 4 + [3.0] * 8 + [2.0] * 8 + [0.0] * 8,
+                    [6.0] * 4 + [3.0] * 8 + [0.0] * 8 + [0.0] * 8,
+                    [7.0] * 4 + [3.0] * 8 + [4.0] * 8 + [2.0] * 8,
+                    [5.0] * 4 + [0.0] * 8 + [0.0] * 8 + [3.0] * 8,
+                ]
+            ),
+        ),
+    ],
+)
+def test_tdgu_get_decoder_input_one_hot(
+    tdgu,
+    event_type_ids,
+    event_src_ids,
+    event_dst_ids,
+    event_label_word_ids,
+    event_label_mask,
+    batch,
+    node_label_word_ids,
+    node_label_mask,
+    expected,
+):
+    tdgu.event_type_embeddings = nn.Embedding.from_pretrained(
+        torch.tensor(
+            [
+                [0.0] * 4,
+                [3.0] * 4,
+                [4.0] * 4,
+                [5.0] * 4,
+                [6.0] * 4,
+                [7.0] * 4,
+                [8.0] * 4,
+            ]
+        )
+    )
+    tdgu.embed_label = (
+        lambda x, y: x.argmax(-1)[:, 0]
+        .unsqueeze(-1)
+        .expand(-1, tdgu.hidden_dim)
+        .float()
+    )
+    assert tdgu.get_decoder_input(
+        event_type_ids,
+        event_src_ids,
+        event_dst_ids,
+        event_label_word_ids,
+        event_label_mask,
+        batch,
+        node_label_word_ids,
+        node_label_mask,
+        compute_masks_from_event_type_ids(event_type_ids.argmax(dim=-1)),
     ).equal(expected)
 
 

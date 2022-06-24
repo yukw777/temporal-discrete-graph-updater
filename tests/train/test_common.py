@@ -6,11 +6,13 @@ from torch_geometric.data.batch import Batch
 
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.train.common import TDGULightningModule
+from tdgu.constants import EVENT_TYPES
+from tdgu.nn.utils import masked_softmax
 
 
 @pytest.mark.parametrize("gumbel_tau", [0.3, 0.5])
 @pytest.mark.parametrize(
-    "max_event_decode_len,max_label_decode_len,one_hot,batch,obs_len,"
+    "max_event_decode_len,max_label_decode_len,gumbel_greedy_decode,batch,obs_len,"
     "prev_action_len,forward_results,prev_batched_graph,expected_decoded_list",
     [
         (
@@ -1691,11 +1693,15 @@ from tdgu.train.common import TDGULightningModule
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[13, 3], [13, 3], [14, 3]]),
+                        x=F.one_hot(
+                            torch.tensor([[13, 3], [13, 3], [14, 3]]), num_classes=20
+                        ).float(),
                         node_label_mask=torch.ones(3, 2).bool(),
                         node_last_update=torch.tensor([[1, 2], [2, 1], [2, 2]]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(1, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3]]),
                     ),
@@ -1727,13 +1733,18 @@ from tdgu.train.common import TDGULightningModule
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
-                        x=torch.tensor([[13, 3], [13, 3], [13, 3], [14, 3], [13, 3]]),
+                        x=F.one_hot(
+                            torch.tensor([[13, 3], [13, 3], [13, 3], [14, 3], [13, 3]]),
+                            num_classes=20,
+                        ).float(),
                         node_label_mask=torch.ones(5, 2).bool(),
                         node_last_update=torch.tensor(
                             [[1, 2], [2, 0], [2, 1], [2, 2], [3, 0]]
                         ),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(1, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3]]),
                     ),
@@ -1769,15 +1780,20 @@ from tdgu.train.common import TDGULightningModule
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
-                        ),
+                        x=F.one_hot(
+                            torch.tensor(
+                                [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
+                            ),
+                            num_classes=20,
+                        ).float(),
                         node_label_mask=torch.ones(6, 2).bool(),
                         node_last_update=torch.tensor(
                             [[1, 2], [2, 0], [2, 1], [2, 2], [3, 0], [3, 1]]
                         ),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(1, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3]]),
                     ),
@@ -1813,15 +1829,20 @@ from tdgu.train.common import TDGULightningModule
                     "encoded_prev_action": torch.rand(2, 5, 8),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
-                        ),
+                        x=F.one_hot(
+                            torch.tensor(
+                                [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
+                            ),
+                            num_classes=20,
+                        ).float(),
                         node_label_mask=torch.ones(6, 2).bool(),
                         node_last_update=torch.tensor(
                             [[1, 2], [2, 0], [2, 1], [2, 2], [3, 0], [3, 1]]
                         ),
                         edge_index=torch.tensor([[2, 5], [3, 6]]),
-                        edge_attr=torch.tensor([[12, 3], [12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3], [12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(2, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3], [3, 2]]),
                     ),
@@ -1838,32 +1859,42 @@ from tdgu.train.common import TDGULightningModule
             ],
             Batch(
                 batch=torch.tensor([0, 1, 1]),
-                x=torch.tensor([[13, 3], [13, 3], [14, 3]]),
+                x=F.one_hot(
+                    torch.tensor([[13, 3], [13, 3], [14, 3]]), num_classes=20
+                ).float(),
                 node_label_mask=torch.ones(3, 2).bool(),
                 node_last_update=torch.tensor([[1, 2], [2, 1], [2, 2]]),
                 edge_index=torch.tensor([[1], [2]]),
-                edge_attr=torch.tensor([[12, 3]]),
+                edge_attr=F.one_hot(torch.tensor([[12, 3]]), num_classes=20).float(),
                 edge_label_mask=torch.ones(1, 2).bool(),
                 edge_last_update=torch.tensor([[2, 3]]),
             ),
             [
                 {
-                    "decoded_event_type_ids": torch.tensor(
-                        [3, 3]
-                    ),  # [node-add, node-add]
-                    "decoded_event_src_ids": torch.tensor([0, 0]),
-                    "decoded_event_dst_ids": torch.tensor([0, 1]),
+                    "decoded_event_type_ids": F.one_hot(
+                        torch.tensor([3, 3]), num_classes=len(EVENT_TYPES)
+                    ).float(),  # [node-add, node-add]
+                    "decoded_event_src_ids": F.one_hot(
+                        torch.tensor([0, 0]), num_classes=2
+                    ).float(),
+                    "decoded_event_dst_ids": F.one_hot(
+                        torch.tensor([0, 1]), num_classes=2
+                    ).float(),
                     "decoded_event_label_word_ids": F.one_hot(
                         torch.tensor([[13, 3], [13, 3]]), num_classes=20
                     ),  # [player, player]
                     "decoded_event_label_mask": torch.ones(2, 2).bool(),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 1, 1]),
-                        x=torch.tensor([[13, 3], [13, 3], [14, 3]]),
+                        x=F.one_hot(
+                            torch.tensor([[13, 3], [13, 3], [14, 3]]), num_classes=20
+                        ).float(),
                         node_label_mask=torch.ones(3, 2).bool(),
                         node_last_update=torch.tensor([[1, 2], [2, 1], [2, 2]]),
                         edge_index=torch.tensor([[1], [2]]),
-                        edge_attr=torch.tensor([[12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(1, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3]]),
                     ),
@@ -1871,9 +1902,15 @@ from tdgu.train.common import TDGULightningModule
                     "batch_node_mask": torch.tensor([[True, False], [True, True]]),
                 },
                 {
-                    "decoded_event_type_ids": torch.tensor([2, 3]),  # [end, node-add]
-                    "decoded_event_src_ids": torch.tensor([1, 2]),
-                    "decoded_event_dst_ids": torch.tensor([1, 2]),
+                    "decoded_event_type_ids": F.one_hot(
+                        torch.tensor([2, 3]), num_classes=len(EVENT_TYPES)
+                    ).float(),  # [end, node-add]
+                    "decoded_event_src_ids": F.one_hot(
+                        torch.tensor([1, 2]), num_classes=3
+                    ).float(),
+                    "decoded_event_dst_ids": F.one_hot(
+                        torch.tensor([1, 2]), num_classes=3
+                    ).float(),
                     "decoded_event_label_word_ids": F.one_hot(
                         torch.tensor([[3, 0], [14, 3]]), num_classes=20
                     ),  # [end, inventory]
@@ -1882,13 +1919,18 @@ from tdgu.train.common import TDGULightningModule
                     ),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
-                        x=torch.tensor([[13, 3], [13, 3], [13, 3], [14, 3], [13, 3]]),
+                        x=F.one_hot(
+                            torch.tensor([[13, 3], [13, 3], [13, 3], [14, 3], [13, 3]]),
+                            num_classes=20,
+                        ).float(),
                         node_label_mask=torch.ones(5, 2).bool(),
                         node_last_update=torch.tensor(
                             [[1, 2], [2, 0], [2, 1], [2, 2], [3, 0]]
                         ),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(1, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3]]),
                     ),
@@ -1898,24 +1940,40 @@ from tdgu.train.common import TDGULightningModule
                     ),
                 },
                 {
-                    "decoded_event_type_ids": torch.tensor([0, 5]),  # [pad, edge-add]
-                    "decoded_event_src_ids": torch.tensor([1, 2]),
-                    "decoded_event_dst_ids": torch.tensor([1, 3]),
+                    "decoded_event_type_ids": torch.cat(
+                        [
+                            torch.zeros(1, len(EVENT_TYPES)),
+                            F.one_hot(
+                                torch.tensor([5]), num_classes=len(EVENT_TYPES)
+                            ).float(),
+                        ]
+                    ),  # [pad, edge-add]
+                    "decoded_event_src_ids": F.one_hot(
+                        torch.tensor([1, 2]), num_classes=4
+                    ).float(),
+                    "decoded_event_dst_ids": F.one_hot(
+                        torch.tensor([1, 3]), num_classes=4
+                    ).float(),
                     "decoded_event_label_word_ids": F.one_hot(
                         torch.tensor([[12, 3], [7, 3]]), num_classes=20
                     ),  # [in, is]
                     "decoded_event_label_mask": torch.ones(2, 2).bool(),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
-                        ),
+                        x=F.one_hot(
+                            torch.tensor(
+                                [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
+                            ),
+                            num_classes=20,
+                        ).float(),
                         node_label_mask=torch.ones(6, 2).bool(),
                         node_last_update=torch.tensor(
                             [[1, 2], [2, 0], [2, 1], [2, 2], [3, 0], [3, 1]]
                         ),
                         edge_index=torch.tensor([[2], [3]]),
-                        edge_attr=torch.tensor([[12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(1, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3]]),
                     ),
@@ -1925,24 +1983,40 @@ from tdgu.train.common import TDGULightningModule
                     ),
                 },
                 {
-                    "decoded_event_type_ids": torch.tensor([0, 2]),  # [pad, end]
-                    "decoded_event_src_ids": torch.tensor([1, 2]),
-                    "decoded_event_dst_ids": torch.tensor([1, 3]),
+                    "decoded_event_type_ids": torch.cat(
+                        [
+                            torch.zeros(1, len(EVENT_TYPES)),
+                            F.one_hot(
+                                torch.tensor([2]), num_classes=len(EVENT_TYPES)
+                            ).float(),
+                        ]
+                    ),  # [pad, end]
+                    "decoded_event_src_ids": F.one_hot(
+                        torch.tensor([1, 2]), num_classes=4
+                    ).float(),
+                    "decoded_event_dst_ids": F.one_hot(
+                        torch.tensor([1, 3]), num_classes=4
+                    ).float(),
                     "decoded_event_label_word_ids": F.one_hot(
                         torch.tensor([[13, 3], [14, 3]]), num_classes=20
                     ),  # [player, inventory]
                     "decoded_event_label_mask": torch.ones(2, 2).bool(),
                     "updated_batched_graph": Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
-                        x=torch.tensor(
-                            [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
-                        ),
+                        x=F.one_hot(
+                            torch.tensor(
+                                [[13, 3], [13, 3], [13, 3], [14, 3], [13, 3], [14, 3]]
+                            ),
+                            num_classes=20,
+                        ).float(),
                         node_label_mask=torch.ones(6, 2).bool(),
                         node_last_update=torch.tensor(
                             [[1, 2], [2, 0], [2, 1], [2, 2], [3, 0], [3, 1]]
                         ),
                         edge_index=torch.tensor([[2, 5], [3, 6]]),
-                        edge_attr=torch.tensor([[12, 3], [12, 3]]),
+                        edge_attr=F.one_hot(
+                            torch.tensor([[12, 3], [12, 3]]), num_classes=20
+                        ).float(),
                         edge_label_mask=torch.ones(2, 2).bool(),
                         edge_last_update=torch.tensor([[2, 3], [3, 2]]),
                     ),
@@ -1959,7 +2033,7 @@ def test_tdgu_greedy_decode(
     monkeypatch,
     max_event_decode_len,
     max_label_decode_len,
-    one_hot,
+    gumbel_greedy_decode,
     batch,
     obs_len,
     prev_action_len,
@@ -1968,6 +2042,24 @@ def test_tdgu_greedy_decode(
     expected_decoded_list,
     gumbel_tau,
 ):
+    # monkeypatch gumbel_softmax to argmax() + F.one_hot()
+    # to remove randomness for tests
+    def mock_gumbel_softmax(logits, **kwargs):
+        return F.one_hot(logits.argmax(-1), num_classes=logits.size(-1)).float()
+
+    monkeypatch.setattr("tdgu.train.common.F.gumbel_softmax", mock_gumbel_softmax)
+
+    # monkeypatch masked_gumbel_softmax to masked_softmax() + argmax() + F.one_hot()
+    # to remove randomness for tests
+    def mock_masked_gumbel_softmax(logits, mask, **kwargs):
+        return F.one_hot(
+            masked_softmax(logits, mask, dim=-1).argmax(-1), num_classes=logits.size(-1)
+        ).float()
+
+    monkeypatch.setattr(
+        "tdgu.train.common.masked_gumbel_softmax", mock_masked_gumbel_softmax
+    )
+
     tdgu = TDGULightningModule()
 
     class MockForward:
@@ -1997,7 +2089,7 @@ def test_tdgu_greedy_decode(
         prev_batched_graph,
         max_event_decode_len=max_event_decode_len,
         max_label_decode_len=max_label_decode_len,
-        one_hot=one_hot,
+        gumbel_greedy_decode=gumbel_greedy_decode,
         gumbel_tau=gumbel_tau,
     )
 

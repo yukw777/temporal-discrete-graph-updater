@@ -14,7 +14,7 @@ from tdgu.nn.utils import shift_tokens_right, index_edge_attr
 from tdgu.nn.text import TextDecoder
 from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
 from tdgu.metrics import F1
-from tdgu.constants import EVENT_TYPES
+from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 from tdgu.graph import batch_to_data_list
 
 
@@ -74,7 +74,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             ).to(self.device),
             max_event_decode_len=self.tdgu.hparams.max_event_decode_len,  # type: ignore
             max_label_decode_len=self.tdgu.hparams.max_label_decode_len,  # type: ignore
-            one_hot=True,
+            gumbel_greedy_decode=True,
             gumbel_tau=self.gumbel_tau,
         )
 
@@ -271,6 +271,15 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         batched_graph_list: List[Batch],
         step_mask: torch.Tensor,
     ) -> List[str]:
+        """
+        event_type_id_list: [(batch, num_event_type), ...]
+        src_id_list: [(batch, max_sub_graph_num_node), ...]
+        dst_id_list: [(batch, max_sub_graph_num_node), ...]
+        label_word_id_list: [(batch, label_len, num_word), ...]
+        label_mask_list: [(batch, label_len), ...]
+        batched_graph_list: [Batch(), ...]
+        step_mask: (batch)
+        """
         batch_size = event_type_id_list[0].size(0)
         batched_graph_events: List[List[str]] = [[] for _ in range(batch_size)]
         for (
@@ -302,15 +311,19 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                 is_valid_step,
             ) in enumerate(
                 zip(
-                    event_type_ids.tolist(),
-                    src_ids,
-                    dst_ids,
+                    event_type_ids.argmax(dim=-1).tolist(),
+                    src_ids.argmax(dim=-1)
+                    if src_ids.size(-1) > 0
+                    else torch.zeros(batch_size, device=self.device, dtype=torch.long),
+                    dst_ids.argmax(dim=-1)
+                    if dst_ids.size(-1) > 0
+                    else torch.zeros(batch_size, device=self.device, dtype=torch.long),
                     batched_labels,
                     batch_to_data_list(batched_graph, batch_size),
                     step_mask.tolist(),
                 )
             ):
-                if not is_valid_step:
+                if not is_valid_step or event_type_id == EVENT_TYPE_ID_MAP["pad"]:
                     continue
                 node_labels = self.tdgu.preprocessor.batch_decode(
                     graph.x.argmax(dim=-1),

@@ -166,15 +166,17 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         # groundtruth events for decoder teacher-force training
         groundtruth_event: Optional[Dict[str, torch.Tensor]] = None,
         max_label_decode_len: int = 10,
-        gumbel_greedy_decode_labels: bool = False,
+        gumbel_greedy_decode: bool = False,
         gumbel_tau: float = 0.5,
     ) -> Dict[str, torch.Tensor]:
         """
         graph events: {
-            event_type_ids: (batch)
-            event_src_ids: (batch)
-            event_dst_ids: (batch)
-            event_label_word_ids: (batch, event_label_len) or
+            event_type_ids: (batch) or one-hot encoded (batch, num_event_type)
+            event_src_ids: (batch) or
+                one-hot encoded (batch, prev_max_sub_graph_num_node)
+            event_dst_ids: (batch) or
+                one-hot encoded (batch, prev_max_sub_graph_num_node)
+            event_label_word_ids_or_one_hot: (batch, event_label_len) or
                 one-hot encoded (batch, event_label_len, num_word)
             event_label_mask: (batch, event_label_len)
         }
@@ -224,7 +226,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
 
         max_label_decode_len: max length of labels to decode
 
-        gumbel_greedy_decode_labels: whether to perform gumbel greedy decoding or not
+        gumbel_greedy_decode: whether to perform gumbel greedy decoding or not
         gumbel_tau: gumbel greedy decoding temperature
 
         output:
@@ -297,11 +299,35 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             dim=1,
         )
         # (batch, 2)
+        event_type_ids_argmax = (
+            event_type_ids.argmax(dim=-1) if gumbel_greedy_decode else event_type_ids
+        )
+        # (batch)
+        if gumbel_greedy_decode:
+            if event_src_ids.size(1) == 0:
+                event_src_ids_argmax = torch.zeros(
+                    event_src_ids.size(0), device=event_src_ids.device, dtype=torch.long
+                )
+            else:
+                event_src_ids_argmax = event_src_ids.argmax(dim=-1)
+        else:
+            event_src_ids_argmax = event_src_ids
+        # (batch)
+        if gumbel_greedy_decode:
+            if event_dst_ids.size(1) == 0:
+                event_dst_ids_argmax = torch.zeros(
+                    event_dst_ids.size(0), device=event_dst_ids.device, dtype=torch.long
+                )
+            else:
+                event_dst_ids_argmax = event_dst_ids.argmax(dim=-1)
+        else:
+            event_dst_ids_argmax = event_dst_ids
+        # (batch)
         updated_batched_graph = update_batched_graph(
             prev_batched_graph,
-            event_type_ids,
-            event_src_ids,
-            event_dst_ids,
+            event_type_ids_argmax,
+            event_src_ids_argmax,
+            event_dst_ids_argmax,
             event_label_word_ids,
             event_label_mask,
             event_timestamps,
@@ -355,7 +381,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         # h_ag: (batch, prev_action_len, hidden_dim)
         # h_ga: (batch, num_node, hidden_dim)
 
-        masks = compute_masks_from_event_type_ids(event_type_ids)
+        masks = compute_masks_from_event_type_ids(event_type_ids_argmax)
         decoder_output, decoder_attn_weights = self.graph_event_decoder(
             self.get_decoder_input(
                 event_type_ids,
@@ -368,7 +394,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                 prev_batched_graph.node_label_mask,
                 masks,
             ),
-            event_type_ids != EVENT_TYPE_ID_MAP["pad"],
+            event_type_ids_argmax != EVENT_TYPE_ID_MAP["pad"],
             h_og,
             obs_mask,
             h_ag,
@@ -393,7 +419,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             autoregressive_emb = self.event_type_head.get_autoregressive_embedding(
                 decoder_output["output"],
                 F.gumbel_softmax(event_type_logits, hard=True, tau=gumbel_tau)
-                if gumbel_greedy_decode_labels
+                if gumbel_greedy_decode
                 else event_type_logits.argmax(dim=1),
                 masks["event_mask"],
             )
@@ -419,7 +445,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                 masked_gumbel_softmax(
                     event_src_logits, batch_node_mask, hard=True, tau=gumbel_tau
                 )
-                if gumbel_greedy_decode_labels
+                if gumbel_greedy_decode
                 else masked_softmax(event_src_logits, batch_node_mask, dim=1).argmax(
                     dim=1
                 ),
@@ -449,7 +475,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                 masked_gumbel_softmax(
                     event_dst_logits, batch_node_mask, hard=True, tau=gumbel_tau
                 )
-                if gumbel_greedy_decode_labels
+                if gumbel_greedy_decode
                 else masked_softmax(event_dst_logits, batch_node_mask, dim=1).argmax(
                     dim=1
                 ),
@@ -484,7 +510,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             # (batch, groundtruth_event_label_len, num_word)
             output["event_label_logits"] = event_label_logits
         else:
-            if gumbel_greedy_decode_labels:
+            if gumbel_greedy_decode:
                 (
                     decoded_event_label_word_ids,
                     decoded_event_label_mask,
@@ -537,9 +563,12 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         Turn the graph events into decoder inputs by concatenating their embeddings.
 
         input:
-            event_type_ids: (batch)
-            event_src_ids: (batch)
-            event_dst_ids: (batch)
+            event_type_ids_or_one_hot: (batch) or
+                one-hot encoded (batch, num_event_type)
+            event_src_ids: (batch) or
+                one-hot encoded (batch, prev_max_sub_graph_num_node)
+            event_dst_ids: (batch) or
+                one-hot encoded (batch, prev_max_sub_graph_num_node)
             event_label_word_ids: (batch, event_label_len) or
                 one-hot encoded (batch, event_label_len, num_word)
             event_label_mask: (batch, event_label_len)
@@ -555,7 +584,10 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         batch_size = event_type_ids.size(0)
 
         # event type embeddings
-        event_type_embs = self.event_type_embeddings(event_type_ids)
+        if event_type_ids.dim() == 1:
+            event_type_embs = self.event_type_embeddings(event_type_ids)
+        else:
+            event_type_embs = event_type_ids.matmul(self.event_type_embeddings.weight)
         # (batch, event_type_embedding_dim)
 
         # event label embeddings
@@ -578,25 +610,64 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             batch_size, self.hidden_dim, device=event_type_ids.device
         )
         # (batch, label_embedding_dim)
-        node_id_offsets = calculate_node_id_offsets(batch_size, batch)
-        # (batch)
-        if masks["src_mask"].any():
-            event_src_embs[masks["src_mask"]] = self.embed_label(
-                node_label_word_ids[
-                    (event_src_ids + node_id_offsets)[masks["src_mask"]]
-                ],
-                node_label_mask[(event_src_ids + node_id_offsets)[masks["src_mask"]]],
+        if event_src_ids.dim() == 1:
+            node_id_offsets = calculate_node_id_offsets(batch_size, batch)
+            # (batch)
+            if masks["src_mask"].any():
+                event_src_embs[masks["src_mask"]] = self.embed_label(
+                    node_label_word_ids[
+                        (event_src_ids + node_id_offsets)[masks["src_mask"]]
+                    ],
+                    node_label_mask[
+                        (event_src_ids + node_id_offsets)[masks["src_mask"]]
+                    ],
+                )
+            if masks["dst_mask"].any():
+                event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                    node_label_word_ids[
+                        (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
+                    ],
+                    node_label_mask[
+                        (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
+                    ],
+                )
+        else:
+            batch_node_label_word_ids, _ = to_dense_batch(
+                node_label_word_ids, batch=batch, batch_size=batch_size
             )
-            # (batch, label_embedding_dim)
-
-        if masks["dst_mask"].any():
-            event_dst_embs[masks["dst_mask"]] = self.embed_label(
-                node_label_word_ids[
-                    (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
-                ],
-                node_label_mask[(event_dst_ids + node_id_offsets)[masks["dst_mask"]]],
+            # batch_node_label_word_ids: one-hot encoded
+            # (batch, prev_max_sub_graph_num_node, node_label_len, num_word)
+            batch_node_label_mask, _ = to_dense_batch(
+                node_label_mask, batch=batch, batch_size=batch_size
             )
-            # (batch, label_embedding_dim)
+            # batch_node_label_mask: one-hot encoded
+            # (batch, prev_max_sub_graph_num_node, node_label_len)
+            if masks["src_mask"].any():
+                event_src_embs[masks["src_mask"]] = self.embed_label(
+                    torch.sum(
+                        batch_node_label_word_ids
+                        * event_src_ids.view(batch_size, -1, 1, 1),
+                        dim=1,
+                    )[masks["src_mask"]],
+                    # (batch, node_label_len, num_word)
+                    torch.sum(
+                        batch_node_label_mask * event_src_ids.unsqueeze(-1), dim=1
+                    ).bool()[masks["src_mask"]]
+                    # (batch, node_label_len)
+                )
+            if masks["dst_mask"].any():
+                event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                    torch.sum(
+                        batch_node_label_word_ids
+                        * event_dst_ids.view(batch_size, -1, 1, 1),
+                        dim=1,
+                    )[masks["dst_mask"]],
+                    # (batch, node_label_len, num_word)
+                    torch.sum(
+                        batch_node_label_mask * event_dst_ids.unsqueeze(-1), dim=1
+                    ).bool()[masks["dst_mask"]]
+                    # (batch, node_label_len)
+                )
 
         return torch.cat(
             [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1
