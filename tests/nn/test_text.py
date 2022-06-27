@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import pytest
 
 from tdgu.nn.text import (
@@ -7,6 +8,8 @@ from tdgu.nn.text import (
     TextEncoderConvBlock,
     TextEncoderBlock,
     QANetTextEncoder,
+    TextDecoderBlock,
+    TextDecoder,
 )
 from utils import increasing_mask
 
@@ -80,6 +83,7 @@ def test_text_enc_block(
     )
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "num_enc_blocks,enc_block_num_conv_layers,enc_block_kernel_size,"
     "enc_block_hidden_dim,enc_block_num_heads,batch_size,seq_len",
@@ -90,7 +94,7 @@ def test_text_enc_block(
     ],
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
-def test_text_encoder(
+def test_qanet_text_encoder(
     dropout,
     num_enc_blocks,
     enc_block_num_conv_layers,
@@ -99,6 +103,7 @@ def test_text_encoder(
     enc_block_num_heads,
     batch_size,
     seq_len,
+    one_hot,
 ):
     vocab_size = 10
     word_emb_dim = 12
@@ -121,14 +126,109 @@ def test_text_encoder(
             enc_block_num_heads,
             dropout=dropout,
         )
-    # random word ids and increasing masks
-    assert text_encoder(
-        torch.randint(0, vocab_size, size=(batch_size, seq_len)),
-        torch.tensor(
-            [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
-        ),
-    ).size() == (
+    # random word ids
+    word_ids = torch.randint(0, vocab_size, size=(batch_size, seq_len))
+    if one_hot:
+        word_ids = F.one_hot(word_ids, num_classes=vocab_size).float()
+    # increasing masks
+    mask = torch.tensor(
+        [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+    )
+    assert text_encoder(word_ids, mask).size() == (
         batch_size,
         seq_len,
         enc_block_hidden_dim,
     )
+
+
+@pytest.mark.parametrize("empty_graph", [True, False])
+@pytest.mark.parametrize(
+    "hidden_dim,num_heads,batch_size,input_seq_len,num_node,prev_action_len",
+    [
+        (10, 1, 1, 3, 5, 4),
+        (20, 2, 3, 5, 10, 8),
+    ],
+)
+def test_text_decoder_block(
+    hidden_dim,
+    num_heads,
+    batch_size,
+    input_seq_len,
+    num_node,
+    prev_action_len,
+    empty_graph,
+):
+    decoder_block = TextDecoderBlock(hidden_dim, num_heads)
+    output = decoder_block(
+        torch.rand(batch_size, input_seq_len, hidden_dim),
+        torch.tensor(
+            [
+                [1.0] * (i + 1) + [0.0] * (input_seq_len - i - 1)
+                for i in range(batch_size)
+            ]
+        ),
+        torch.rand(batch_size, num_node, hidden_dim),
+        torch.zeros(batch_size, num_node).bool()
+        if empty_graph
+        else torch.tensor(
+            [[1.0] * (i + 1) + [0.0] * (num_node - i - 1) for i in range(batch_size)]
+        ),
+        torch.rand(batch_size, prev_action_len, hidden_dim),
+        torch.tensor(
+            [
+                [1.0] * (i + 1) + [0.0] * (prev_action_len - i - 1)
+                for i in range(batch_size)
+            ]
+        ),
+    )
+    assert output.size() == (batch_size, input_seq_len, hidden_dim)
+    assert not output.isnan().any()
+
+
+@pytest.mark.parametrize(
+    "num_embeddings,embedding_dim,num_dec_blocks,dec_block_num_heads,"
+    "dec_block_hidden_dim,batch_size,input_seq_len,num_node,prev_action_len",
+    [
+        (2, 10, 1, 1, 10, 1, 3, 5, 4),
+        (2, 20, 1, 2, 20, 3, 5, 10, 8),
+        (8, 20, 3, 1, 10, 1, 3, 5, 4),
+        (8, 40, 3, 2, 20, 3, 5, 10, 8),
+    ],
+)
+def test_text_decoder(
+    num_embeddings,
+    embedding_dim,
+    num_dec_blocks,
+    dec_block_num_heads,
+    dec_block_hidden_dim,
+    batch_size,
+    input_seq_len,
+    num_node,
+    prev_action_len,
+):
+    decoder = TextDecoder(
+        nn.Embedding(num_embeddings, embedding_dim),
+        num_dec_blocks,
+        dec_block_num_heads,
+        dec_block_hidden_dim,
+    )
+    assert decoder(
+        torch.randint(num_embeddings, (batch_size, input_seq_len)),
+        torch.tensor(
+            [
+                [1.0] * (i + 1) + [0.0] * (input_seq_len - i - 1)
+                for i in range(batch_size)
+            ]
+        ),
+        torch.rand(batch_size, num_node, dec_block_hidden_dim),
+        torch.tensor(
+            [[1.0] * (i + 1) + [0.0] * (num_node - i - 1) for i in range(batch_size)]
+        ),
+        torch.randint(num_embeddings, (batch_size, prev_action_len)),
+        torch.tensor(
+            [
+                [1.0] * (i + 1) + [0.0] * (prev_action_len - i - 1)
+                for i in range(batch_size)
+            ]
+        ),
+    ).size() == (batch_size, input_seq_len, num_embeddings)

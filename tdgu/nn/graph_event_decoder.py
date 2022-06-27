@@ -7,7 +7,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from tdgu.nn.utils import masked_mean, PositionalEncoder
 from tdgu.constants import EVENT_TYPES
-from tdgu.preprocessor import Preprocessor
 
 
 class EventTypeHead(nn.Module):
@@ -57,17 +56,23 @@ class EventTypeHead(nn.Module):
     ) -> torch.Tensor:
         """
         graph_event_embeddings: (batch, graph_event_embedding_dim)
-        event_type_ids: (batch)
+        event_type_ids: (batch) or one-hot encoded (batch, num_event_type)
         event_mask: (batch)
 
         output: autoregressive_embedding, (batch, autoregressive_embedding_dim)
         """
         # autoregressive embedding
-        # get the one hot encoding of event
-        one_hot_event_type = F.one_hot(
-            event_type_ids, num_classes=len(EVENT_TYPES)
-        ).float()
+        if event_type_ids.dim() == 2:
+            # event_type_ids is a one-hot encoded tensor
+            one_hot_event_type = event_type_ids
+        else:
+            # event_type_ids is not a one-hot encoded tensor
+            # get the one hot encoding of event
+            one_hot_event_type = F.one_hot(
+                event_type_ids, num_classes=len(EVENT_TYPES)
+            ).float()
         # (batch, num_event_type)
+
         # pass it through the linear layers
         encoded_event_type = self.autoregressive_linear(one_hot_event_type)
         # (batch, autoregressive_embedding_dim)
@@ -139,7 +144,7 @@ class EventNodeHead(nn.Module):
     ) -> torch.Tensor:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
-        node_ids: (batch)
+        node_ids: (batch) or one-hot encoded (batch, num_node)
         node_embeddings: (batch, num_node, node_embedding_dim)
         node_mask: (batch, num_node)
         event_node_mask: (batch)
@@ -151,10 +156,16 @@ class EventNodeHead(nn.Module):
         if node_embeddings.size(1) == 0:
             # if there are no nodes, just return without updating
             return autoregressive_embedding
-        # get the one hot encoding of the selected nodes
-        one_hot_selected_node = (
-            F.one_hot(node_ids, num_classes=node_embeddings.size(1)).float() * node_mask
-        )
+        if node_ids.dim() == 2:
+            # node_ids is a one-hot encoded tensor
+            one_hot_selected_node = node_ids
+        else:
+            # node_ids is not a one-hot encoded tensor
+            # get the one hot encoding of the selected nodes
+            one_hot_selected_node = (
+                F.one_hot(node_ids, num_classes=node_embeddings.size(1)).float()
+                * node_mask
+            )
         # (batch, num_node)
         # multiply by the key
         selected_keys = torch.bmm(one_hot_selected_node.unsqueeze(1), key).squeeze(1)
@@ -211,18 +222,24 @@ class EventSequentialLabelHead(nn.Module):
         self,
         autoregressive_embedding_dim: int,
         hidden_dim: int,
-        preprocessor: Preprocessor,
         pretrained_word_embeddings: nn.Embedding,
+        bos_token_id: int,
+        eos_token_id: int,
+        pad_token_id: int,
     ) -> None:
         super().__init__()
-        self.preprocessor = preprocessor
-        self.word_embeddings = nn.Sequential(
-            pretrained_word_embeddings,
-            nn.Linear(pretrained_word_embeddings.embedding_dim, hidden_dim),
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = eos_token_id
+        self.pad_token_id = pad_token_id
+        self.pretrained_word_embeddings = pretrained_word_embeddings
+        self.word_embedding_linear = nn.Linear(
+            self.pretrained_word_embeddings.embedding_dim, hidden_dim
         )
         self.linear_hidden = nn.Linear(autoregressive_embedding_dim, hidden_dim)
         self.gru = nn.GRU(hidden_dim, hidden_dim, batch_first=True)
-        self.linear_output = nn.Linear(hidden_dim, self.preprocessor.vocab_size)
+        self.linear_output = nn.Linear(
+            hidden_dim, self.pretrained_word_embeddings.num_embeddings
+        )
 
     def forward(
         self,
@@ -232,7 +249,8 @@ class EventSequentialLabelHead(nn.Module):
         prev_hidden: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        output_tgt_seq: (batch, seq_len)
+        output_tgt_seq: (batch, seq_len) or
+            one-hot encoded (batch, seq_len, num_word)
         output_tgt_seq_mask: (batch, seq_len)
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         prev_hidden: (batch, hidden_dim)
@@ -256,7 +274,14 @@ class EventSequentialLabelHead(nn.Module):
         # (1, batch, hidden_dim)
 
         # embed the output target sequence
-        embedded_output_tgt_seq = self.word_embeddings(output_tgt_seq)
+        if output_tgt_seq.dim() == 3:
+            # one-hot encoded
+            embedded_output_tgt_seq = output_tgt_seq.matmul(
+                self.pretrained_word_embeddings.weight
+            )
+        else:
+            embedded_output_tgt_seq = self.pretrained_word_embeddings(output_tgt_seq)
+        embedded_output_tgt_seq = self.word_embedding_linear(embedded_output_tgt_seq)
         # (batch, seq_len, hidden_dim)
 
         # pack it
@@ -288,13 +313,15 @@ class EventSequentialLabelHead(nn.Module):
         )
         """
         batch_size = autoregressive_embedding.size(0)
-        decoded = torch.tensor(
-            [[self.preprocessor.bos_token_id]] * batch_size,
+        decoded = torch.full(
+            (batch_size, 1),
+            self.bos_token_id,
+            dtype=torch.long,
             device=autoregressive_embedding.device,
         )
         # (batch, 1)
-        end_mask = torch.tensor(
-            [[False]] * batch_size, device=autoregressive_embedding.device
+        end_mask = torch.full(
+            (batch_size, 1), False, device=autoregressive_embedding.device
         )
         # (batch, 1)
         decoded_seq: List[torch.Tensor] = []
@@ -318,18 +345,93 @@ class EventSequentialLabelHead(nn.Module):
                 )
             # logits: (num_not_end, 1, num_word)
             # hidden: (num_not_end, hidden_dim)
-            decoded = torch.tensor(
-                [[self.preprocessor.pad_token_id]] * batch_size, device=logits.device
+            decoded = torch.full(
+                (batch_size, 1),
+                self.pad_token_id,
+                dtype=torch.long,
+                device=logits.device,
             ).masked_scatter(not_end_mask, logits.argmax(dim=2))
             # (batch, 1)
             decoded_seq.append(decoded)
-            end_mask = end_mask.logical_or(decoded == self.preprocessor.eos_token_id)
+            end_mask = end_mask.logical_or(decoded == self.eos_token_id)
 
             if end_mask.all():
                 break
 
         return torch.cat(decoded_seq, dim=1), torch.cat(decoded_seq_mask, dim=1)
         # decoded: (batch, decoded_seq_len)
+        # mask: (batch, decoded_seq_len)
+
+    def gumbel_greedy_decode(
+        self,
+        autoregressive_embedding: torch.Tensor,
+        max_decode_len: int = 10,
+        tau: float = 1,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        autoregressive_embedding: (batch, autoregressive_embedding_dim)
+        max_decode_len: max decode length, default 10
+        tau: temperature for gumbel softmax
+
+        output: (
+            decoded: one-hot encoded (batch, decoded_seq_len, num_word)
+            mask: (batch, decoded_seq_len)
+        )
+        """
+        batch_size = autoregressive_embedding.size(0)
+        decoded = F.one_hot(
+            torch.full(
+                (batch_size, 1),
+                self.bos_token_id,
+                dtype=torch.long,
+                device=autoregressive_embedding.device,
+            ),
+            num_classes=self.pretrained_word_embeddings.num_embeddings,
+        ).float()
+        # (batch, 1, num_word)
+        end_mask = torch.full(
+            (batch_size, 1), False, device=autoregressive_embedding.device
+        )
+        # (batch, 1)
+        decoded_seq: List[torch.Tensor] = []
+        decoded_seq_mask: List[torch.Tensor] = []
+        for i in range(max_decode_len):
+            # we have to slice decoded and not_end_mask and deselect empty
+            # sequences b/c no sequence in the batch can be empty when packing.
+            not_end_mask = ~end_mask
+            decoded_seq_mask.append(not_end_mask)
+            if i == 0:
+                logits, hidden = self(
+                    decoded[not_end_mask.squeeze(1)],
+                    not_end_mask[not_end_mask.squeeze(1)],
+                    autoregressive_embedding=autoregressive_embedding,
+                )
+            else:
+                logits, hidden = self(
+                    decoded[not_end_mask.squeeze(1)],
+                    not_end_mask[not_end_mask.squeeze(1)],
+                    prev_hidden=hidden,
+                )
+            # logits: (num_not_end, 1, num_word)
+            # hidden: (num_not_end, hidden_dim)
+            decoded = torch.full(
+                (batch_size, 1, self.pretrained_word_embeddings.num_embeddings),
+                self.pad_token_id,
+                dtype=torch.float,
+                device=logits.device,
+            )
+            # (batch, 1, num_word)
+            decoded[not_end_mask] = F.gumbel_softmax(
+                logits, tau=tau, hard=True
+            ).squeeze(1)
+            decoded_seq.append(decoded)
+            end_mask = end_mask.logical_or(decoded.argmax(-1) == self.eos_token_id)
+
+            if end_mask.all():
+                break
+
+        return torch.cat(decoded_seq, dim=1), torch.cat(decoded_seq_mask, dim=1)
+        # decoded: one-hot encoded (batch, decoded_seq_len, num_word)
         # mask: (batch, decoded_seq_len)
 
 

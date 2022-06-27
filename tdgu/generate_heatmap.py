@@ -6,7 +6,7 @@ import random
 from typing import List
 from torch.utils.data import DataLoader
 
-from tdgu.nn.graph_updater import SupervisedTDGU
+from tdgu.train.supervised import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventDataset, TWCmdGenGraphEventDataCollator
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
@@ -55,9 +55,10 @@ def main(
             decoded_event_src_ids_list.append(results["decoded_event_src_ids"])
             decoded_event_dst_ids_list.append(results["decoded_event_dst_ids"])
             decoded_event_labels_list.append(
-                lm.decode_label(
+                lm.preprocessor.batch_decode(
                     results["decoded_event_label_word_ids"],
                     results["decoded_event_label_mask"],
+                    skip_special_tokens=True,
                 )
             )
             obs_graph_attn_weights_list.append(
@@ -126,21 +127,23 @@ def main(
                     [
                         (
                             EVENT_TYPES[event_type],
-                            lm.decode_label(
+                            lm.preprocessor.batch_decode(
                                 results_list[j]["updated_batched_graph"]
                                 .x[src_id + offset]
                                 .unsqueeze(0),
                                 results_list[j]["updated_batched_graph"]
                                 .node_label_mask[src_id + offset]
                                 .unsqueeze(0),
+                                skip_special_tokens=True,
                             )[0],
-                            lm.decode_label(
+                            lm.preprocessor.batch_decode(
                                 results_list[j]["updated_batched_graph"]
                                 .x[dst_id + offset]
                                 .unsqueeze(0),
                                 results_list[j]["updated_batched_graph"]
                                 .node_label_mask[dst_id + offset]
                                 .unsqueeze(0),
+                                skip_special_tokens=True,
                             )[0],
                             label,
                         )

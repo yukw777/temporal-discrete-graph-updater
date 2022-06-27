@@ -3,26 +3,39 @@ import json
 import torch
 
 from torch_geometric.data import Batch
+from unittest.mock import Mock
 
 from tdgu.data import (
     TWCmdGenGraphEventDataset,
     TWCmdGenGraphEventDataCollator,
+    TWCmdGenObsGenBatch,
+    TWCmdGenObsGenDataCollator,
+    TWCmdGenObsGenDataset,
     read_label_vocab_files,
     TWCmdGenGraphEventStepInput,
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventGraphicalInput,
     sort_target_commands,
     TWCmdGenGraphEventFreeRunDataset,
+    collate_step_inputs,
 )
 from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.fixture
-def tw_cmd_gen_collator():
-    return TWCmdGenGraphEventDataCollator(
-        SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
-    )
+def spacy_preprocessor():
+    return SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
+
+
+@pytest.fixture
+def tw_cmd_gen_collator(spacy_preprocessor):
+    return TWCmdGenGraphEventDataCollator(spacy_preprocessor)
+
+
+@pytest.fixture
+def tw_cmd_gen_obs_gen_data_collator(spacy_preprocessor):
+    return TWCmdGenObsGenDataCollator(spacy_preprocessor)
 
 
 @pytest.mark.parametrize("sort_cmds", [True, False])
@@ -80,6 +93,32 @@ def test_tw_cmd_gen_free_run_dataset_init(batch_size, sort_cmds):
     assert len(generated_dataset) == len(expected_dataset)
     for data, expected_data in zip(generated_dataset, expected_dataset):
         assert data == list(map(tuple, expected_data))
+
+
+def test_tw_cmd_gen_obs_gen_dataset_init():
+    dataset = TWCmdGenObsGenDataset("tests/data/test_data.json")
+    expected_dataset = []
+    with open("tests/data/preprocessed_obs_gen_test_data.jsonl") as f:
+        for line in f:
+            expected_dataset.append(json.loads(line))
+
+    assert len(dataset) == len(expected_dataset)
+    for data, expected_data in zip(dataset, expected_dataset):
+        assert data == expected_data
+
+
+@pytest.mark.parametrize("shuffle", [True, False])
+def test_tw_cmd_gen_free_run_dataset_shuffle(monkeypatch, shuffle):
+    mock_shuffle = Mock()
+    monkeypatch.setattr("random.shuffle", mock_shuffle)
+    dataset = TWCmdGenGraphEventFreeRunDataset(
+        "tests/data/test_data.json", 3, shuffle=shuffle
+    )
+    list(iter(dataset))
+    if shuffle:
+        mock_shuffle.assert_called_once_with(dataset.walkthrough_example_ids)
+    else:
+        mock_shuffle.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -217,11 +256,11 @@ def test_sort_target_commands(tgt_cmds, expected):
             [2],
             TWCmdGenGraphEventStepInput(
                 obs_word_ids=torch.tensor(
-                    [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                    [[2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3]]
                 ),
-                obs_mask=torch.ones(1, 11).bool(),
-                prev_action_word_ids=torch.tensor([[257, 404]]),
-                prev_action_mask=torch.ones(1, 2).bool(),
+                obs_mask=torch.ones(1, 13).bool(),
+                prev_action_word_ids=torch.tensor([[2, 257, 404, 3]]),
+                prev_action_mask=torch.ones(1, 4).bool(),
                 timestamps=torch.tensor([2]),
             ),
         ),
@@ -235,25 +274,27 @@ def test_sort_target_commands(tgt_cmds, expected):
             TWCmdGenGraphEventStepInput(
                 obs_word_ids=torch.tensor(
                     [
-                        [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                        [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
+                        [2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3],
+                        [2, 769, 663, 676, 404, 315, 676, 661, 21, 3, 0, 0, 0],
                     ]
                 ),
-                obs_mask=torch.tensor([[True] * 11, [True] * 8 + [False] * 3]),
+                obs_mask=torch.tensor([[True] * 13, [True] * 10 + [False] * 3]),
                 prev_action_word_ids=torch.tensor(
-                    [[257, 404, 0, 0], [663, 404, 315, 661]]
+                    [[2, 257, 404, 3, 0, 0], [2, 663, 404, 315, 661, 3]]
                 ),
-                prev_action_mask=torch.tensor([[True, True, False, False], [True] * 4]),
+                prev_action_mask=torch.tensor(
+                    [[True, True, True, True, False, False], [True] * 6]
+                ),
                 timestamps=torch.tensor([2, 3]),
             ),
         ),
     ],
 )
-def test_tw_cmd_gen_collator_collate_step_inputs(
-    tw_cmd_gen_collator, obs, prev_actions, timestamps, expected
+def test_collate_step_inputs(
+    spacy_preprocessor, obs, prev_actions, timestamps, expected
 ):
     assert (
-        tw_cmd_gen_collator.collate_step_inputs(obs, prev_actions, timestamps)
+        collate_step_inputs(spacy_preprocessor, obs, prev_actions, timestamps)
         == expected
     )
 
@@ -294,11 +335,9 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2]]),  # bos
-                    groundtruth_event_label_tgt_mask=torch.tensor([[True]]),
-                    groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3]]
-                    ),  # eos
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_groundtruth_word_ids=torch.tensor([[2, 3]]),
                     groundtruth_event_label_mask=torch.tensor([False]),
                     prev_batched_graph=Batch(
                         batch=torch.empty(0, dtype=torch.long),
@@ -325,12 +364,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             ],
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[530, 3], [402, 3]]),
-                node_label_mask=torch.ones(2, 2).bool(),
+                x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                node_label_mask=torch.ones(2, 3).bool(),
                 node_last_update=torch.tensor([[0, 0], [0, 1]]),
                 edge_index=torch.tensor([[0], [1]]),
-                edge_attr=torch.tensor([[382, 3]]),
-                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_attr=torch.tensor([[2, 382, 3]]),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.tensor([[0, 2]]),
             ),
             (
@@ -346,20 +385,18 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2]]),  # bos
-                    groundtruth_event_label_tgt_mask=torch.tensor([[True]]),
-                    groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3]]
-                    ),  # eos
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_groundtruth_word_ids=torch.tensor([[2, 3]]),
                     groundtruth_event_label_mask=torch.tensor([False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
-                        x=torch.tensor([[530, 3], [402, 3]]),
-                        node_label_mask=torch.ones(2, 2).bool(),
+                        x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                        node_label_mask=torch.ones(2, 3).bool(),
                         node_last_update=torch.tensor([[0, 0], [0, 1]]),
                         edge_index=torch.tensor([[0], [1]]),
-                        edge_attr=torch.tensor([[382, 3]]),
-                        edge_label_mask=torch.ones(1, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3]]),
+                        edge_label_mask=torch.ones(1, 3).bool(),
                         edge_last_update=torch.tensor([[0, 2]]),
                     ),
                 ),
@@ -404,10 +441,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 530]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2, 530]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[530, 3]]
+                        [[2, 530, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True]),
                     prev_batched_graph=Batch(
@@ -425,8 +462,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
-                    tgt_event_label_word_ids=torch.tensor([[530, 3]]),
-                    tgt_event_label_mask=torch.ones(1, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 530, 3]]),
+                    tgt_event_label_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["node-add"]]
                     ),
@@ -435,10 +472,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 402]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2, 402]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[402, 3]]
+                        [[2, 402, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True]),
                     prev_batched_graph=Batch(
@@ -456,8 +493,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
-                    tgt_event_label_word_ids=torch.tensor([[402, 3]]),
-                    tgt_event_label_mask=torch.ones(1, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 402, 3]]),
+                    tgt_event_label_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["edge-add"]]
                     ),
@@ -466,16 +503,16 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([True]),
                     groundtruth_event_dst_ids=torch.tensor([1]),
                     groundtruth_event_dst_mask=torch.tensor([True]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 382]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2, 382]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3]]
+                        [[2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0]),
-                        x=torch.tensor([[530, 3]]),
-                        node_label_mask=torch.ones(1, 2).bool(),
+                        x=torch.tensor([[2, 530, 3]]),
+                        node_label_mask=torch.ones(1, 3).bool(),
                         node_last_update=torch.tensor([[2, 0]]),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, 0).long(),
@@ -487,22 +524,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([1]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3]]),
-                    tgt_event_label_mask=torch.ones(1, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
                     groundtruth_event_mask=torch.tensor([True]),
                     groundtruth_event_src_ids=torch.tensor([0]),
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 1).bool(),
-                    groundtruth_event_label_groundtruth_word_ids=torch.tensor([[3]]),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_groundtruth_word_ids=torch.tensor([[2, 3]]),
                     groundtruth_event_label_mask=torch.tensor([False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
-                        x=torch.tensor([[530, 3], [402, 3]]),
-                        node_label_mask=torch.ones(2, 2).bool(),
+                        x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                        node_label_mask=torch.ones(2, 3).bool(),
                         node_last_update=torch.tensor([[2, 0], [2, 1]]),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
                         edge_attr=torch.empty(0, 0).long(),
@@ -527,12 +564,12 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
             ],
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[530, 3], [402, 3]]),
-                node_label_mask=torch.ones(2, 2).bool(),
+                x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                node_label_mask=torch.ones(2, 3).bool(),
                 node_last_update=torch.tensor([[1, 0], [1, 1]]),
                 edge_index=torch.tensor([[0], [1]]),
-                edge_attr=torch.tensor([[382, 3]]),
-                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_attr=torch.tensor([[2, 382, 3]]),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.tensor([[1, 2]]),
             ),
             (
@@ -550,20 +587,22 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 192, 415]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor(
+                        [[2, 2, 192, 415]]
+                    ),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 4).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[192, 415, 3]]
+                        [[2, 192, 415, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
-                        x=torch.tensor([[530, 3], [402, 3]]),
-                        node_label_mask=torch.ones(2, 2).bool(),
+                        x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                        node_label_mask=torch.ones(2, 3).bool(),
                         node_last_update=torch.tensor([[1, 0], [1, 1]]),
                         edge_index=torch.tensor([[0], [1]]),
-                        edge_attr=torch.tensor([[382, 3]]),
-                        edge_label_mask=torch.ones(1, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3]]),
+                        edge_label_mask=torch.ones(1, 3).bool(),
                         edge_last_update=torch.tensor([[1, 2]]),
                     ),
                 ),
@@ -571,8 +610,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["node-add"]]),
                     tgt_event_src_ids=torch.tensor([0]),
                     tgt_event_dst_ids=torch.tensor([0]),
-                    tgt_event_label_word_ids=torch.tensor([[192, 415, 3]]),
-                    tgt_event_label_mask=torch.ones(1, 3).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 192, 415, 3]]),
+                    tgt_event_label_mask=torch.ones(1, 4).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [EVENT_TYPE_ID_MAP["edge-add"]]
                     ),
@@ -581,20 +620,20 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([True]),
                     groundtruth_event_dst_ids=torch.tensor([1]),
                     groundtruth_event_dst_mask=torch.tensor([True]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 382]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2, 382]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3]]
+                        [[2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0]),
-                        x=torch.tensor([[530, 3], [402, 3]]),
-                        node_label_mask=torch.ones(2, 2).bool(),
+                        x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                        node_label_mask=torch.ones(2, 3).bool(),
                         node_last_update=torch.tensor([[1, 0], [1, 1]]),
                         edge_index=torch.tensor([[0], [1]]),
-                        edge_attr=torch.tensor([[382, 3]]),
-                        edge_label_mask=torch.ones(1, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3]]),
+                        edge_label_mask=torch.ones(1, 3).bool(),
                         edge_last_update=torch.tensor([[1, 2]]),
                     ),
                 ),
@@ -602,32 +641,34 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     tgt_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["edge-add"]]),
                     tgt_event_src_ids=torch.tensor([2]),
                     tgt_event_dst_ids=torch.tensor([1]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3]]),
-                    tgt_event_label_mask=torch.ones(1, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(1, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor([EVENT_TYPE_ID_MAP["end"]]),
                     groundtruth_event_mask=torch.tensor([True]),
                     groundtruth_event_src_ids=torch.tensor([0]),
                     groundtruth_event_src_mask=torch.tensor([False]),
                     groundtruth_event_dst_ids=torch.tensor([0]),
                     groundtruth_event_dst_mask=torch.tensor([False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2]]),
-                    groundtruth_event_label_tgt_mask=torch.ones(1, 1).bool(),
-                    groundtruth_event_label_groundtruth_word_ids=torch.tensor([[3]]),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                    groundtruth_event_label_groundtruth_word_ids=torch.tensor([[2, 3]]),
                     groundtruth_event_label_mask=torch.tensor([False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0]),
-                        x=torch.tensor([[530, 3, 0], [402, 3, 0], [192, 415, 3]]),
+                        x=torch.tensor(
+                            [[2, 530, 3, 0], [2, 402, 3, 0], [2, 192, 415, 3]]
+                        ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
                             ]
                         ),
                         node_last_update=torch.tensor([[1, 0], [1, 1], [2, 0]]),
                         edge_index=torch.tensor([[0], [1]]),
-                        edge_attr=torch.tensor([[382, 3]]),
-                        edge_label_mask=torch.ones(1, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3]]),
+                        edge_label_mask=torch.ones(1, 3).bool(),
                         edge_last_update=torch.tensor([[1, 2]]),
                     ),
                 ),
@@ -717,13 +758,13 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 530, 0], [2, 192, 415]]
+                        [[2, 2, 530, 3], [2, 2, 192, 415]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, True, False], [True, True, True]]
+                        [[True, True, True, False], [True, True, True, True]]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[530, 3, 0], [192, 415, 3]]
+                        [[2, 530, 3, 0], [2, 192, 415, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
@@ -746,9 +787,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[530, 3, 0], [192, 415, 3]]),
+                    tgt_event_label_word_ids=torch.tensor(
+                        [[2, 530, 3, 0], [2, 192, 415, 3]]
+                    ),
                     tgt_event_label_mask=torch.tensor(
-                        [[True, True, False], [True, True, True]]
+                        [[True, True, True, False], [True, True, True, True]]
                     ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -762,11 +805,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 402], [2, 402]]
+                        [[2, 2, 402], [2, 2, 402]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[402, 3], [402, 3]]
+                        [[2, 402, 3], [2, 402, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
@@ -789,8 +832,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[402, 3], [402, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 402, 3], [2, 402, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -803,18 +846,18 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([1, 1]),
                     groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 382], [2, 382]]
+                        [[2, 2, 382], [2, 2, 382]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3], [382, 3]]
+                        [[2, 382, 3], [2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 1]),
-                        x=torch.tensor([[530, 3, 0], [192, 415, 3]]),
+                        x=torch.tensor([[2, 530, 3, 0], [2, 192, 415, 3]]),
                         node_label_mask=torch.tensor(
-                            [[True, True, False], [True, True, True]]
+                            [[True, True, True, False], [True, True, True, True]]
                         ),
                         node_last_update=torch.tensor([[3, 0], [1, 0]]),
                         edge_index=torch.empty(2, 0, dtype=torch.long),
@@ -832,8 +875,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([1, 1]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3], [382, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -846,26 +889,31 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 192, 415], [2, 530, 0]]
+                        [[2, 2, 192, 415], [2, 2, 530, 3]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, True, True], [True, True, False]]
+                        [[True, True, True, True], [True, True, True, False]]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[192, 415, 3], [530, 3, 0]]
+                        [[2, 192, 415, 3], [2, 530, 3, 0]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1]),
                         x=torch.tensor(
-                            [[530, 3, 0], [402, 3, 0], [192, 415, 3], [402, 3, 0]]
+                            [
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                            ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor([[3, 0], [3, 1], [1, 0], [1, 1]]),
@@ -884,9 +932,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[192, 415, 3], [530, 3, 0]]),
+                    tgt_event_label_word_ids=torch.tensor(
+                        [[2, 192, 415, 3], [2, 530, 3, 0]]
+                    ),
                     tgt_event_label_mask=torch.tensor(
-                        [[True, True, True], [True, True, False]]
+                        [[True, True, True, True], [True, True, True, False]]
                     ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -900,30 +950,35 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([1, 0]),
                     groundtruth_event_dst_mask=torch.tensor([True, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 382], [2, 425]]
+                        [[2, 2, 382], [2, 2, 425]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3], [425, 3]]
+                        [[2, 382, 3], [2, 425, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1]),
                         x=torch.tensor(
-                            [[530, 3, 0], [402, 3, 0], [192, 415, 3], [402, 3, 0]]
+                            [
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                            ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor([[3, 0], [3, 1], [1, 0], [1, 1]]),
                         edge_index=torch.tensor([[0, 2], [1, 3]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2]]),
                     ),
                 ),
@@ -936,8 +991,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([2, 0]),
                     tgt_event_dst_ids=torch.tensor([1, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3], [425, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3], [2, 425, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-delete"],
@@ -950,41 +1005,41 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([1, 3]),
                     groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 382], [2, 382]]
+                        [[2, 2, 382], [2, 2, 382]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3], [382, 3]]
+                        [[2, 382, 3], [2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 0], [3, 1], [3, 3], [1, 0], [1, 1], [1, 3]]
                         ),
                         edge_index=torch.tensor([[0, 3], [1, 4]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2]]),
                     ),
                 ),
@@ -997,8 +1052,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 2]),
                     tgt_event_dst_ids=torch.tensor([1, 3]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3], [382, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-delete"],
@@ -1011,43 +1066,43 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 1]),
                     groundtruth_event_dst_mask=torch.tensor([False, True]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 530], [2, 382]]
+                        [[2, 2, 530], [2, 2, 382]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[530, 3], [382, 3]]
+                        [[2, 530, 3], [2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 0], [3, 1], [3, 3], [1, 0], [1, 1], [1, 3], [1, 4]]
                         ),
                         edge_index=torch.tensor([[0, 3, 2], [1, 4, 1]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(3, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(3, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2], [3, 4]]),
                     ),
                 ),
@@ -1060,8 +1115,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 1]),
-                    tgt_event_label_word_ids=torch.tensor([[530, 3], [382, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 530, 3], [2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["end"],
@@ -1074,45 +1129,45 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 0], [2, 402]]
+                        [[2, 2, 3], [2, 2, 402]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, False], [True, True]]
+                        [[True, True, False], [True, True, True]]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3, 0], [402, 3]]
+                        [[2, 3, 0], [2, 402, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 0], [3, 1], [3, 3], [1, 0], [1, 1], [1, 3], [1, 4]]
                         ),
                         edge_index=torch.tensor([[3, 2, 5], [4, 1, 6]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(3, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(3, 3).bool(),
                         edge_last_update=torch.tensor([[1, 2], [3, 4], [1, 5]]),
                     ),
                 ),
@@ -1125,8 +1180,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 1]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[3, 0], [402, 3]]),
-                    tgt_event_label_mask=torch.tensor([[True, False], [True, True]]),
+                    tgt_event_label_word_ids=torch.tensor([[2, 3, 0], [2, 402, 3]]),
+                    tgt_event_label_mask=torch.tensor(
+                        [[True, True, False], [True, True, True]]
+                    ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["pad"],
@@ -1139,43 +1196,43 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 0, 0], [2, 192, 415]]
+                        [[2, 2, 3, 0], [2, 2, 192, 415]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, False, False], [True] * 3]
+                        [[True, True, False, False], [True] * 4]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3, 0, 0], [192, 415, 3]]
+                        [[2, 3, 0, 0], [2, 192, 415, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 1], [3, 3], [1, 0], [1, 1], [1, 3], [1, 4]]
                         ),
                         edge_index=torch.tensor([[1, 4], [0, 5]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 4], [1, 5]]),
                     ),
                 ),
@@ -1188,9 +1245,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[3, 0, 0], [192, 415, 3]]),
+                    tgt_event_label_word_ids=torch.tensor(
+                        [[2, 3, 0, 0], [2, 192, 415, 3]]
+                    ),
                     tgt_event_label_mask=torch.tensor(
-                        [[True, False, False], [True] * 3]
+                        [[True, True, False, False], [True] * 4]
                     ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -1203,38 +1262,38 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2], [2]]),
-                    groundtruth_event_label_tgt_mask=torch.tensor([[True], [True]]),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2], [2, 2]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3], [3]]
+                        [[2, 3], [2, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 1], [3, 3], [1, 0], [1, 3], [1, 4]]
                         ),
                         edge_index=torch.tensor([[1, 3], [0, 4]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 4], [1, 5]]),
                     ),
                 ),
@@ -1297,26 +1356,26 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                 batch=torch.tensor([0, 0, 1, 1, 1]),
                 x=torch.tensor(
                     [
-                        [402, 3, 0],
-                        [192, 415, 3],
-                        [192, 415, 3],
-                        [530, 3, 0],
-                        [425, 3, 0],
+                        [2, 402, 3, 0],
+                        [2, 192, 415, 3],
+                        [2, 192, 415, 3],
+                        [2, 530, 3, 0],
+                        [2, 425, 3, 0],
                     ]
                 ),
                 node_label_mask=torch.tensor(
                     [
-                        [True, True, False],
-                        [True, True, True],
-                        [True, True, True],
-                        [True, True, False],
-                        [True, True, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                        [True, True, True, False],
                     ]
                 ),
                 node_last_update=torch.tensor([[3, 0], [3, 1], [1, 0], [1, 1], [1, 3]]),
                 edge_index=torch.tensor([[1, 3], [0, 4]]),
-                edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                edge_label_mask=torch.ones(2, 2).bool(),
+                edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                edge_label_mask=torch.ones(2, 3).bool(),
                 edge_last_update=torch.tensor([[3, 2], [1, 2]]),
             ),
             (
@@ -1340,41 +1399,41 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 530, 0], [2, 192, 415]]
+                        [[2, 2, 530, 3], [2, 2, 192, 415]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, True, False], [True, True, True]]
+                        [[True, True, True, False], [True, True, True, True]]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[530, 3, 0], [192, 415, 3]]
+                        [[2, 530, 3, 0], [2, 192, 415, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 0], [3, 1], [1, 0], [1, 1], [1, 3]]
                         ),
                         edge_index=torch.tensor([[1, 3], [0, 4]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2]]),
                     ),
                 ),
@@ -1387,9 +1446,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[530, 3, 0], [192, 415, 3]]),
+                    tgt_event_label_word_ids=torch.tensor(
+                        [[2, 530, 3, 0], [2, 192, 415, 3]]
+                    ),
                     tgt_event_label_mask=torch.tensor(
-                        [[True, True, False], [True, True, True]]
+                        [[True, True, True, False], [True, True, True, True]]
                     ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -1403,39 +1464,39 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 402], [2, 402]]
+                        [[2, 2, 402], [2, 2, 402]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[402, 3], [402, 3]]
+                        [[2, 402, 3], [2, 402, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 0], [3, 1], [1, 0], [1, 1], [1, 3]]
                         ),
                         edge_index=torch.tensor([[1, 3], [0, 4]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2]]),
                     ),
                 ),
@@ -1448,8 +1509,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[402, 3], [402, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 402, 3], [2, 402, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-add"],
@@ -1462,43 +1523,43 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([3, 4]),
                     groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 382], [2, 382]]
+                        [[2, 2, 382], [2, 2, 382]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3], [382, 3]]
+                        [[2, 382, 3], [2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
                             ]
                         ),
                         node_last_update=torch.tensor(
                             [[3, 0], [3, 1], [4, 0], [1, 0], [1, 1], [1, 3], [2, 0]]
                         ),
                         edge_index=torch.tensor([[1, 4], [0, 5]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2]]),
                     ),
                 ),
@@ -1511,8 +1572,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([2, 3]),
                     tgt_event_dst_ids=torch.tensor([3, 4]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3], [382, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-add"],
@@ -1525,41 +1586,41 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 192, 415], [2, 530, 0]]
+                        [[2, 2, 192, 415], [2, 2, 530, 3]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, True, True], [True, True, False]]
+                        [[True, True, True, True], [True, True, True, False]]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[192, 415, 3], [530, 3, 0]]
+                        [[2, 192, 415, 3], [2, 530, 3, 0]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -1576,8 +1637,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                             ]
                         ),
                         edge_index=torch.tensor([[1, 5], [0, 6]]),
-                        edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                        edge_label_mask=torch.ones(2, 2).bool(),
+                        edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                        edge_label_mask=torch.ones(2, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2]]),
                     ),
                 ),
@@ -1590,9 +1651,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 0]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[192, 415, 3], [530, 3, 0]]),
+                    tgt_event_label_word_ids=torch.tensor(
+                        [[2, 192, 415, 3], [2, 530, 3, 0]]
+                    ),
                     tgt_event_label_mask=torch.tensor(
-                        [[True, True, True], [True, True, False]]
+                        [[True, True, True, True], [True, True, True, False]]
                     ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -1606,39 +1669,39 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([3, 0]),
                     groundtruth_event_dst_mask=torch.tensor([True, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 382], [2, 425]]
+                        [[2, 2, 382], [2, 2, 425]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3], [425, 3]]
+                        [[2, 382, 3], [2, 425, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([True, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -1656,9 +1719,9 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                         edge_index=torch.tensor([[1, 5, 2, 7], [0, 6, 3, 8]]),
                         edge_attr=torch.tensor(
-                            [[382, 3], [382, 3], [382, 3], [382, 3]]
+                            [[2, 382, 3], [2, 382, 3], [2, 382, 3], [2, 382, 3]]
                         ),
-                        edge_label_mask=torch.ones(4, 2).bool(),
+                        edge_label_mask=torch.ones(4, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2], [4, 2], [2, 2]]),
                     ),
                 ),
@@ -1671,8 +1734,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([4, 0]),
                     tgt_event_dst_ids=torch.tensor([3, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3], [425, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3], [2, 425, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["edge-delete"],
@@ -1685,43 +1748,43 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([3, 6]),
                     groundtruth_event_dst_mask=torch.tensor([True, True]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 382], [2, 382]]
+                        [[2, 2, 382], [2, 2, 382]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[382, 3], [382, 3]]
+                        [[2, 382, 3], [2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, True]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -1741,9 +1804,9 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                         edge_index=torch.tensor([[1, 6, 2, 8], [0, 7, 3, 9]]),
                         edge_attr=torch.tensor(
-                            [[382, 3], [382, 3], [382, 3], [382, 3]]
+                            [[2, 382, 3], [2, 382, 3], [2, 382, 3], [2, 382, 3]]
                         ),
-                        edge_label_mask=torch.ones(4, 2).bool(),
+                        edge_label_mask=torch.ones(4, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2], [4, 2], [2, 2]]),
                     ),
                 ),
@@ -1756,8 +1819,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([2, 5]),
                     tgt_event_dst_ids=torch.tensor([3, 6]),
-                    tgt_event_label_word_ids=torch.tensor([[382, 3], [382, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["node-delete"],
@@ -1770,45 +1833,45 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 4]),
                     groundtruth_event_dst_mask=torch.tensor([False, True]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 530], [2, 382]]
+                        [[2, 2, 530], [2, 2, 382]]
                     ),
-                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[530, 3], [382, 3]]
+                        [[2, 530, 3], [2, 382, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -1829,9 +1892,15 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                         edge_index=torch.tensor([[1, 6, 2, 8, 4], [0, 7, 3, 9, 3]]),
                         edge_attr=torch.tensor(
-                            [[382, 3], [382, 3], [382, 3], [382, 3], [382, 3]]
+                            [
+                                [2, 382, 3],
+                                [2, 382, 3],
+                                [2, 382, 3],
+                                [2, 382, 3],
+                                [2, 382, 3],
+                            ]
                         ),
-                        edge_label_mask=torch.ones(5, 2).bool(),
+                        edge_label_mask=torch.ones(5, 3).bool(),
                         edge_last_update=torch.tensor(
                             [[3, 2], [1, 2], [4, 2], [2, 2], [4, 4]]
                         ),
@@ -1846,8 +1915,8 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([2, 3]),
                     tgt_event_dst_ids=torch.tensor([0, 4]),
-                    tgt_event_label_word_ids=torch.tensor([[530, 3], [382, 3]]),
-                    tgt_event_label_mask=torch.ones(2, 2).bool(),
+                    tgt_event_label_word_ids=torch.tensor([[2, 530, 3], [2, 382, 3]]),
+                    tgt_event_label_mask=torch.ones(2, 3).bool(),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["end"],
@@ -1860,47 +1929,47 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 0], [2, 402]]
+                        [[2, 2, 3], [2, 2, 402]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, False], [True, True]]
+                        [[True, True, False], [True, True, True]]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3, 0], [402, 3]]
+                        [[2, 3, 0], [2, 402, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -1921,9 +1990,15 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                         edge_index=torch.tensor([[1, 6, 8, 4, 10], [0, 7, 9, 3, 11]]),
                         edge_attr=torch.tensor(
-                            [[382, 3], [382, 3], [382, 3], [382, 3], [382, 3]]
+                            [
+                                [2, 382, 3],
+                                [2, 382, 3],
+                                [2, 382, 3],
+                                [2, 382, 3],
+                                [2, 382, 3],
+                            ]
                         ),
-                        edge_label_mask=torch.ones(5, 2).bool(),
+                        edge_label_mask=torch.ones(5, 3).bool(),
                         edge_last_update=torch.tensor(
                             [[3, 2], [1, 2], [2, 2], [4, 4], [2, 5]]
                         ),
@@ -1938,8 +2013,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 4]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[3, 0], [402, 3]]),
-                    tgt_event_label_mask=torch.tensor([[True, False], [True, True]]),
+                    tgt_event_label_word_ids=torch.tensor([[2, 3, 0], [2, 402, 3]]),
+                    tgt_event_label_mask=torch.tensor(
+                        [[True, True, False], [True, True, True]]
+                    ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
                             EVENT_TYPE_ID_MAP["pad"],
@@ -1952,45 +2029,45 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
                     groundtruth_event_label_tgt_word_ids=torch.tensor(
-                        [[2, 0, 0], [2, 192, 415]]
+                        [[2, 2, 3, 0], [2, 2, 192, 415]]
                     ),
                     groundtruth_event_label_tgt_mask=torch.tensor(
-                        [[True, False, False], [True] * 3]
+                        [[True, True, False, False], [True] * 4]
                     ),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3, 0, 0], [192, 415, 3]]
+                        [[2, 3, 0, 0], [2, 192, 415, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -2010,9 +2087,9 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                         edge_index=torch.tensor([[1, 5, 3, 9], [0, 6, 2, 10]]),
                         edge_attr=torch.tensor(
-                            [[382, 3], [382, 3], [382, 3], [382, 3]]
+                            [[2, 382, 3], [2, 382, 3], [2, 382, 3], [2, 382, 3]]
                         ),
-                        edge_label_mask=torch.ones(4, 2).bool(),
+                        edge_label_mask=torch.ones(4, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2], [4, 4], [2, 5]]),
                     ),
                 ),
@@ -2025,9 +2102,11 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     ),
                     tgt_event_src_ids=torch.tensor([0, 3]),
                     tgt_event_dst_ids=torch.tensor([0, 0]),
-                    tgt_event_label_word_ids=torch.tensor([[3, 0, 0], [192, 415, 3]]),
+                    tgt_event_label_word_ids=torch.tensor(
+                        [[2, 3, 0, 0], [2, 192, 415, 3]]
+                    ),
                     tgt_event_label_mask=torch.tensor(
-                        [[True, False, False], [True] * 3]
+                        [[True, True, False, False], [True] * 4]
                     ),
                     groundtruth_event_type_ids=torch.tensor(
                         [
@@ -2040,40 +2119,40 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                     groundtruth_event_src_mask=torch.tensor([False, False]),
                     groundtruth_event_dst_ids=torch.tensor([0, 0]),
                     groundtruth_event_dst_mask=torch.tensor([False, False]),
-                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2], [2]]),
-                    groundtruth_event_label_tgt_mask=torch.tensor([[True], [True]]),
+                    groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2], [2, 2]]),
+                    groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
                     groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                        [[3], [3]]
+                        [[2, 3], [2, 3]]
                     ),
                     groundtruth_event_label_mask=torch.tensor([False, False]),
                     prev_batched_graph=Batch(
                         batch=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1, 1]),
                         x=torch.tensor(
                             [
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [402, 3, 0],
-                                [192, 415, 3],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
-                                [192, 415, 3],
-                                [530, 3, 0],
-                                [425, 3, 0],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 402, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
+                                [2, 192, 415, 3],
+                                [2, 530, 3, 0],
+                                [2, 425, 3, 0],
                             ]
                         ),
                         node_label_mask=torch.tensor(
                             [
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
-                                [True, True, True],
-                                [True, True, False],
-                                [True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
+                                [True, True, True, True],
+                                [True, True, True, False],
+                                [True, True, True, False],
                             ]
                         ),
                         node_last_update=torch.tensor(
@@ -2092,9 +2171,9 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
                         ),
                         edge_index=torch.tensor([[1, 5, 3, 8], [0, 6, 2, 9]]),
                         edge_attr=torch.tensor(
-                            [[382, 3], [382, 3], [382, 3], [382, 3]]
+                            [[2, 382, 3], [2, 382, 3], [2, 382, 3], [2, 382, 3]]
                         ),
-                        edge_label_mask=torch.ones(4, 2).bool(),
+                        edge_label_mask=torch.ones(4, 3).bool(),
                         edge_last_update=torch.tensor([[3, 2], [1, 2], [4, 4], [2, 5]]),
                     ),
                 ),
@@ -2105,10 +2184,10 @@ def test_tw_cmd_gen_collator_collate_step_inputs(
 def test_tw_cmd_gen_collator_collate_graphical_input_seq(
     tw_cmd_gen_collator, batch, initial_batched_graph, expected
 ):
-    assert (
-        tw_cmd_gen_collator.collate_graphical_input_seq(batch, initial_batched_graph)
-        == expected
+    collated = tw_cmd_gen_collator.collate_graphical_input_seq(
+        batch, initial_batched_graph
     )
+    assert collated == expected
 
 
 def test_read_label_vocab_files():
@@ -2173,12 +2252,12 @@ def test_read_label_vocab_files():
             ],
             Batch(
                 batch=torch.tensor([0, 0]),
-                x=torch.tensor([[530, 3], [402, 3]]),
-                node_label_mask=torch.ones(2, 2).bool(),
+                x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                node_label_mask=torch.ones(2, 3).bool(),
                 node_last_update=torch.tensor([[2, 0], [3, 0]]),
                 edge_index=torch.tensor([[0], [1]]),
-                edge_attr=torch.tensor([[382, 3]]),
-                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_attr=torch.tensor([[2, 382, 3]]),
+                edge_label_mask=torch.ones(1, 3).bool(),
                 edge_last_update=torch.tensor([[3, 1]]),
             ),
         ),
@@ -2225,12 +2304,12 @@ def test_read_label_vocab_files():
             ],
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
-                x=torch.tensor([[530, 3], [402, 3], [530, 3], [425, 3]]),
-                node_label_mask=torch.ones(4, 2).bool(),
+                x=torch.tensor([[2, 530, 3], [2, 402, 3], [2, 530, 3], [2, 425, 3]]),
+                node_label_mask=torch.ones(4, 3).bool(),
                 node_last_update=torch.tensor([[1, 3], [2, 1], [4, 2], [5, 1]]),
                 edge_index=torch.tensor([[0, 2], [1, 3]]),
-                edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                edge_label_mask=torch.ones(2, 2).bool(),
+                edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                edge_label_mask=torch.ones(2, 3).bool(),
                 edge_last_update=torch.tensor([[3, 0], [6, 2]]),
             ),
         ),
@@ -2342,19 +2421,21 @@ def test_read_label_vocab_files():
             ],
             Batch(
                 batch=torch.tensor([0, 0, 1, 1]),
-                x=torch.tensor([[402, 3, 0], [192, 415, 3], [530, 3, 0], [425, 3, 0]]),
+                x=torch.tensor(
+                    [[2, 402, 3, 0], [2, 192, 415, 3], [2, 530, 3, 0], [2, 425, 3, 0]]
+                ),
                 node_label_mask=torch.tensor(
                     [
-                        [True, True, False],
-                        [True, True, True],
-                        [True, True, False],
-                        [True, True, False],
+                        [True, True, True, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                        [True, True, True, False],
                     ]
                 ),
                 node_last_update=torch.tensor([[2, 0], [3, 1], [5, 0], [6, 0]]),
                 edge_index=torch.tensor([[1, 2], [0, 3]]),
-                edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                edge_label_mask=torch.ones(2, 2).bool(),
+                edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                edge_label_mask=torch.ones(2, 3).bool(),
                 edge_last_update=torch.tensor([[4, 0], [7, 0]]),
             ),
         ),
@@ -2403,11 +2484,11 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                 ids=(("g1", 0, 0),),
                 step_input=TWCmdGenGraphEventStepInput(
                     obs_word_ids=torch.tensor(
-                        [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                        [[2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3]]
                     ),
-                    obs_mask=torch.ones(1, 11).bool(),
-                    prev_action_word_ids=torch.tensor([[257, 404]]),
-                    prev_action_mask=torch.ones(1, 2).bool(),
+                    obs_mask=torch.ones(1, 13).bool(),
+                    prev_action_word_ids=torch.tensor([[2, 257, 404, 3]]),
+                    prev_action_mask=torch.ones(1, 4).bool(),
                     timestamps=torch.tensor([2]),
                 ),
                 initial_batched_graph=Batch(
@@ -2435,10 +2516,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False]),
                         groundtruth_event_dst_ids=torch.tensor([0]),
                         groundtruth_event_dst_mask=torch.tensor([False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 530]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2, 530]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[530, 3]]
+                            [[2, 530, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True]),
                         prev_batched_graph=Batch(
@@ -2458,8 +2541,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([0]),
-                        tgt_event_label_word_ids=torch.tensor([[530, 3]]),
-                        tgt_event_label_mask=torch.ones(1, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor([[2, 530, 3]]),
+                        tgt_event_label_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
@@ -2468,10 +2551,12 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False]),
                         groundtruth_event_dst_ids=torch.tensor([0]),
                         groundtruth_event_dst_mask=torch.tensor([False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 402]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2, 402]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[402, 3]]
+                            [[2, 402, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True]),
                         prev_batched_graph=Batch(
@@ -2491,8 +2576,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([0]),
-                        tgt_event_label_word_ids=torch.tensor([[402, 3]]),
-                        tgt_event_label_mask=torch.ones(1, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor([[2, 402, 3]]),
+                        tgt_event_label_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["edge-add"]]
                         ),
@@ -2501,16 +2586,18 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([True]),
                         groundtruth_event_dst_ids=torch.tensor([1]),
                         groundtruth_event_dst_mask=torch.tensor([True]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 382]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2, 382]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[382, 3]]
+                            [[2, 382, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0]),
-                            x=torch.tensor([[530, 3]]),
-                            node_label_mask=torch.ones(1, 2).bool(),
+                            x=torch.tensor([[2, 530, 3]]),
+                            node_label_mask=torch.ones(1, 3).bool(),
                             node_last_update=torch.tensor([[2, 0]]),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, 0).long(),
@@ -2524,8 +2611,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([1]),
-                        tgt_event_label_word_ids=torch.tensor([[382, 3]]),
-                        tgt_event_label_mask=torch.ones(1, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor([[2, 382, 3]]),
+                        tgt_event_label_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["end"]]
                         ),
@@ -2534,16 +2621,16 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False]),
                         groundtruth_event_dst_ids=torch.tensor([0]),
                         groundtruth_event_dst_mask=torch.tensor([False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 1).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2]]),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[3]]
+                            [[2, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([False]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
-                            x=torch.tensor([[530, 3], [402, 3]]),
-                            node_label_mask=torch.ones(2, 2).bool(),
+                            x=torch.tensor([[2, 530, 3], [2, 402, 3]]),
+                            node_label_mask=torch.ones(2, 3).bool(),
                             node_last_update=torch.tensor([[2, 0], [2, 1]]),
                             edge_index=torch.empty(2, 0, dtype=torch.long),
                             edge_attr=torch.empty(0, 0).long(),
@@ -2628,21 +2715,21 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                 ids=(("g1", 0, 0),),
                 step_input=TWCmdGenGraphEventStepInput(
                     obs_word_ids=torch.tensor(
-                        [[769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21]]
+                        [[2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3]]
                     ),
-                    obs_mask=torch.ones(1, 11).bool(),
-                    prev_action_word_ids=torch.tensor([[257, 404]]),
-                    prev_action_mask=torch.ones(1, 2).bool(),
+                    obs_mask=torch.ones(1, 13).bool(),
+                    prev_action_word_ids=torch.tensor([[2, 257, 404, 3]]),
+                    prev_action_mask=torch.ones(1, 4).bool(),
                     timestamps=torch.tensor([9]),
                 ),
                 initial_batched_graph=Batch(
                     batch=torch.tensor([0, 0]),
-                    x=torch.tensor([[530, 3], [425, 3]]),
-                    node_label_mask=torch.ones(2, 2).bool(),
+                    x=torch.tensor([[2, 530, 3], [2, 425, 3]]),
+                    node_label_mask=torch.ones(2, 3).bool(),
                     node_last_update=torch.tensor([[5, 0], [6, 0]]),
                     edge_index=torch.tensor([[0], [1]]),
-                    edge_attr=torch.tensor([[382, 3]]),
-                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_attr=torch.tensor([[2, 382, 3]]),
+                    edge_label_mask=torch.ones(1, 3).bool(),
                     edge_last_update=torch.tensor([[7, 0]]),
                 ),
                 graphical_input_seq=(
@@ -2660,20 +2747,22 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False]),
                         groundtruth_event_dst_ids=torch.tensor([0]),
                         groundtruth_event_dst_mask=torch.tensor([False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 530]]),
-                        groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[530, 3]]
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2, 530]]
                         ),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                        groundtruth_event_label_groundtruth_word_ids=torch.tensor(
+                            [[2, 530, 3]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_label_mask=torch.tensor([True]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
-                            x=torch.tensor([[530, 3], [425, 3]]),
-                            node_label_mask=torch.ones(2, 2).bool(),
+                            x=torch.tensor([[2, 530, 3], [2, 425, 3]]),
+                            node_label_mask=torch.ones(2, 3).bool(),
                             node_last_update=torch.tensor([[5, 0], [6, 0]]),
                             edge_index=torch.tensor([[0], [1]]),
-                            edge_attr=torch.tensor([[382, 3]]),
-                            edge_label_mask=torch.ones(1, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3]]),
+                            edge_label_mask=torch.ones(1, 3).bool(),
                             edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
@@ -2683,8 +2772,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([0]),
-                        tgt_event_label_word_ids=torch.tensor([[530, 3]]),
-                        tgt_event_label_mask=torch.ones(1, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor([[2, 530, 3]]),
+                        tgt_event_label_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["node-add"]]
                         ),
@@ -2693,20 +2782,22 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False]),
                         groundtruth_event_dst_ids=torch.tensor([0]),
                         groundtruth_event_dst_mask=torch.tensor([False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 402]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2, 402]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[402, 3]]
+                            [[2, 402, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0]),
-                            x=torch.tensor([[530, 3], [425, 3]]),
-                            node_label_mask=torch.ones(2, 2).bool(),
+                            x=torch.tensor([[2, 530, 3], [2, 425, 3]]),
+                            node_label_mask=torch.ones(2, 3).bool(),
                             node_last_update=torch.tensor([[5, 0], [6, 0]]),
                             edge_index=torch.tensor([[0], [1]]),
-                            edge_attr=torch.tensor([[382, 3]]),
-                            edge_label_mask=torch.ones(1, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3]]),
+                            edge_label_mask=torch.ones(1, 3).bool(),
                             edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
@@ -2716,8 +2807,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([0]),
-                        tgt_event_label_word_ids=torch.tensor([[402, 3]]),
-                        tgt_event_label_mask=torch.ones(1, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor([[2, 402, 3]]),
+                        tgt_event_label_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["edge-add"]]
                         ),
@@ -2726,20 +2817,22 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([True]),
                         groundtruth_event_dst_ids=torch.tensor([1]),
                         groundtruth_event_dst_mask=torch.tensor([True]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 382]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2, 382]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[382, 3]]
+                            [[2, 382, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0]),
-                            x=torch.tensor([[530, 3], [425, 3], [530, 3]]),
-                            node_label_mask=torch.ones(3, 2).bool(),
+                            x=torch.tensor([[2, 530, 3], [2, 425, 3], [2, 530, 3]]),
+                            node_label_mask=torch.ones(3, 3).bool(),
                             node_last_update=torch.tensor([[5, 0], [6, 0], [9, 0]]),
                             edge_index=torch.tensor([[0], [1]]),
-                            edge_attr=torch.tensor([[382, 3]]),
-                            edge_label_mask=torch.ones(1, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3]]),
+                            edge_label_mask=torch.ones(1, 3).bool(),
                             edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
@@ -2749,8 +2842,8 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0]),
                         tgt_event_dst_ids=torch.tensor([1]),
-                        tgt_event_label_word_ids=torch.tensor([[382, 3]]),
-                        tgt_event_label_mask=torch.ones(1, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor([[2, 382, 3]]),
+                        tgt_event_label_mask=torch.ones(1, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["end"]]
                         ),
@@ -2759,22 +2852,24 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False]),
                         groundtruth_event_dst_ids=torch.tensor([0]),
                         groundtruth_event_dst_mask=torch.tensor([False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2]]),
-                        groundtruth_event_label_tgt_mask=torch.ones(1, 1).bool(),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2, 2]]),
+                        groundtruth_event_label_tgt_mask=torch.ones(1, 2).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[3]]
+                            [[2, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([False]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0, 0]),
-                            x=torch.tensor([[530, 3], [425, 3], [530, 3], [402, 3]]),
-                            node_label_mask=torch.ones(4, 2).bool(),
+                            x=torch.tensor(
+                                [[2, 530, 3], [2, 425, 3], [2, 530, 3], [2, 402, 3]]
+                            ),
+                            node_label_mask=torch.ones(4, 3).bool(),
                             node_last_update=torch.tensor(
                                 [[5, 0], [6, 0], [9, 0], [9, 1]]
                             ),
                             edge_index=torch.tensor([[0], [1]]),
-                            edge_attr=torch.tensor([[382, 3]]),
-                            edge_label_mask=torch.ones(1, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3]]),
+                            edge_label_mask=torch.ones(1, 3).bool(),
                             edge_last_update=torch.tensor([[7, 0]]),
                         ),
                     ),
@@ -2905,36 +3000,41 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                 step_input=TWCmdGenGraphEventStepInput(
                     obs_word_ids=torch.tensor(
                         [
-                            [769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21],
-                            [769, 663, 676, 404, 315, 676, 661, 21, 0, 0, 0],
+                            [2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3],
+                            [2, 769, 663, 676, 404, 315, 676, 661, 21, 3, 0, 0, 0],
                         ]
                     ),
-                    obs_mask=torch.tensor([[True] * 11, [True] * 8 + [False] * 3]),
+                    obs_mask=torch.tensor([[True] * 13, [True] * 10 + [False] * 3]),
                     prev_action_word_ids=torch.tensor(
-                        [[257, 404, 0, 0], [663, 404, 315, 661]]
+                        [[2, 257, 404, 3, 0, 0], [2, 663, 404, 315, 661, 3]]
                     ),
                     prev_action_mask=torch.tensor(
-                        [[True, True, False, False], [True] * 4]
+                        [[True, True, True, True, False, False], [True] * 6]
                     ),
                     timestamps=torch.tensor([6, 9]),
                 ),
                 initial_batched_graph=Batch(
                     batch=torch.tensor([0, 0, 1, 1]),
                     x=torch.tensor(
-                        [[402, 3, 0], [192, 415, 3], [530, 3, 0], [425, 3, 0]]
+                        [
+                            [2, 402, 3, 0],
+                            [2, 192, 415, 3],
+                            [2, 530, 3, 0],
+                            [2, 425, 3, 0],
+                        ]
                     ),
                     node_label_mask=torch.tensor(
                         [
-                            [True, True, False],
-                            [True, True, True],
-                            [True, True, False],
-                            [True, True, False],
+                            [True, True, True, False],
+                            [True, True, True, True],
+                            [True, True, True, False],
+                            [True, True, True, False],
                         ]
                     ),
                     node_last_update=torch.tensor([[2, 0], [3, 1], [5, 0], [6, 0]]),
                     edge_index=torch.tensor([[1, 2], [0, 3]]),
-                    edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                    edge_label_mask=torch.ones(2, 2).bool(),
+                    edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                    edge_label_mask=torch.ones(2, 3).bool(),
                     edge_last_update=torch.tensor([[4, 0], [7, 0]]),
                 ),
                 graphical_input_seq=(
@@ -2961,32 +3061,37 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_dst_ids=torch.tensor([0, 1]),
                         groundtruth_event_dst_mask=torch.tensor([False, True]),
                         groundtruth_event_label_tgt_word_ids=torch.tensor(
-                            [[2, 530], [2, 382]]
+                            [[2, 2, 530], [2, 2, 382]]
                         ),
-                        groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                        groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[530, 3], [382, 3]]
+                            [[2, 530, 3], [2, 382, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True, False]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 1, 1]),
                             x=torch.tensor(
-                                [[402, 3, 0], [192, 415, 3], [530, 3, 0], [425, 3, 0]]
+                                [
+                                    [2, 402, 3, 0],
+                                    [2, 192, 415, 3],
+                                    [2, 530, 3, 0],
+                                    [2, 425, 3, 0],
+                                ]
                             ),
                             node_label_mask=torch.tensor(
                                 [
-                                    [True, True, False],
-                                    [True, True, True],
-                                    [True, True, False],
-                                    [True, True, False],
+                                    [True, True, True, False],
+                                    [True, True, True, True],
+                                    [True, True, True, False],
+                                    [True, True, True, False],
                                 ]
                             ),
                             node_last_update=torch.tensor(
                                 [[2, 0], [3, 1], [5, 0], [6, 0]]
                             ),
                             edge_index=torch.tensor([[1, 2], [0, 3]]),
-                            edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                            edge_label_mask=torch.ones(2, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                            edge_label_mask=torch.ones(2, 3).bool(),
                             edge_last_update=torch.tensor([[4, 0], [7, 0]]),
                         ),
                     ),
@@ -2999,8 +3104,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0, 0]),
                         tgt_event_dst_ids=torch.tensor([0, 1]),
-                        tgt_event_label_word_ids=torch.tensor([[530, 3], [382, 3]]),
-                        tgt_event_label_mask=torch.ones(2, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor(
+                            [[2, 530, 3], [2, 382, 3]]
+                        ),
+                        tgt_event_label_mask=torch.ones(2, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [
                                 EVENT_TYPE_ID_MAP["node-add"],
@@ -3013,32 +3120,37 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_dst_ids=torch.tensor([0, 0]),
                         groundtruth_event_dst_mask=torch.tensor([False, False]),
                         groundtruth_event_label_tgt_word_ids=torch.tensor(
-                            [[2, 402], [2, 402]]
+                            [[2, 2, 402], [2, 2, 402]]
                         ),
-                        groundtruth_event_label_tgt_mask=torch.ones(2, 2).bool(),
+                        groundtruth_event_label_tgt_mask=torch.ones(2, 3).bool(),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[402, 3], [402, 3]]
+                            [[2, 402, 3], [2, 402, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([True, False]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 1, 1]),
                             x=torch.tensor(
-                                [[402, 3, 0], [192, 415, 3], [530, 3, 0], [425, 3, 0]]
+                                [
+                                    [2, 402, 3, 0],
+                                    [2, 192, 415, 3],
+                                    [2, 530, 3, 0],
+                                    [2, 425, 3, 0],
+                                ]
                             ),
                             node_label_mask=torch.tensor(
                                 [
-                                    [True, True, False],
-                                    [True, True, True],
-                                    [True, True, False],
-                                    [True, True, False],
+                                    [True, True, True, False],
+                                    [True, True, True, True],
+                                    [True, True, True, False],
+                                    [True, True, True, False],
                                 ]
                             ),
                             node_last_update=torch.tensor(
                                 [[2, 0], [3, 1], [5, 0], [6, 0]]
                             ),
                             edge_index=torch.tensor([[1, 2], [0, 3]]),
-                            edge_attr=torch.tensor([[382, 3], [382, 3]]),
-                            edge_label_mask=torch.ones(2, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3], [2, 382, 3]]),
+                            edge_label_mask=torch.ones(2, 3).bool(),
                             edge_last_update=torch.tensor([[4, 0], [7, 0]]),
                         ),
                     ),
@@ -3051,8 +3163,10 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0, 1]),
                         tgt_event_dst_ids=torch.tensor([0, 0]),
-                        tgt_event_label_word_ids=torch.tensor([[402, 3], [402, 3]]),
-                        tgt_event_label_mask=torch.ones(2, 2).bool(),
+                        tgt_event_label_word_ids=torch.tensor(
+                            [[2, 402, 3], [2, 402, 3]]
+                        ),
+                        tgt_event_label_mask=torch.ones(2, 3).bool(),
                         groundtruth_event_type_ids=torch.tensor(
                             [
                                 EVENT_TYPE_ID_MAP["end"],
@@ -3065,41 +3179,41 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_dst_ids=torch.tensor([0, 0]),
                         groundtruth_event_dst_mask=torch.tensor([False, False]),
                         groundtruth_event_label_tgt_word_ids=torch.tensor(
-                            [[2, 0], [2, 530]]
+                            [[2, 2, 3], [2, 2, 530]]
                         ),
                         groundtruth_event_label_tgt_mask=torch.tensor(
-                            [[True, False], [True, True]]
+                            [[True, True, False], [True, True, True]]
                         ),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[3, 0], [530, 3]]
+                            [[2, 3, 0], [2, 530, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([False, False]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0, 1, 1]),
                             x=torch.tensor(
                                 [
-                                    [402, 3, 0],
-                                    [192, 415, 3],
-                                    [530, 3, 0],
-                                    [530, 3, 0],
-                                    [425, 3, 0],
+                                    [2, 402, 3, 0],
+                                    [2, 192, 415, 3],
+                                    [2, 530, 3, 0],
+                                    [2, 530, 3, 0],
+                                    [2, 425, 3, 0],
                                 ]
                             ),
                             node_label_mask=torch.tensor(
                                 [
-                                    [True, True, False],
-                                    [True, True, True],
-                                    [True, True, False],
-                                    [True, True, False],
-                                    [True, True, False],
+                                    [True, True, True, False],
+                                    [True, True, True, True],
+                                    [True, True, True, False],
+                                    [True, True, True, False],
+                                    [True, True, True, False],
                                 ]
                             ),
                             node_last_update=torch.tensor(
                                 [[2, 0], [3, 1], [6, 0], [5, 0], [6, 0]]
                             ),
                             edge_index=torch.tensor([[1], [0]]),
-                            edge_attr=torch.tensor([[382, 3]]),
-                            edge_label_mask=torch.ones(1, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3]]),
+                            edge_label_mask=torch.ones(1, 3).bool(),
                             edge_last_update=torch.tensor([[4, 0]]),
                         ),
                     ),
@@ -3112,9 +3226,9 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         ),
                         tgt_event_src_ids=torch.tensor([0, 0]),
                         tgt_event_dst_ids=torch.tensor([0, 0]),
-                        tgt_event_label_word_ids=torch.tensor([[3, 0], [530, 3]]),
+                        tgt_event_label_word_ids=torch.tensor([[2, 3, 0], [2, 530, 3]]),
                         tgt_event_label_mask=torch.tensor(
-                            [[True, False], [True, True]]
+                            [[True, True, False], [True, True, True]]
                         ),
                         groundtruth_event_type_ids=torch.tensor(
                             [EVENT_TYPE_ID_MAP["pad"], EVENT_TYPE_ID_MAP["end"]]
@@ -3124,38 +3238,42 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
                         groundtruth_event_src_mask=torch.tensor([False, False]),
                         groundtruth_event_dst_ids=torch.tensor([0, 0]),
                         groundtruth_event_dst_mask=torch.tensor([False, False]),
-                        groundtruth_event_label_tgt_word_ids=torch.tensor([[2], [2]]),
-                        groundtruth_event_label_tgt_mask=torch.tensor([[True], [True]]),
+                        groundtruth_event_label_tgt_word_ids=torch.tensor(
+                            [[2, 2], [2, 2]]
+                        ),
+                        groundtruth_event_label_tgt_mask=torch.tensor(
+                            [[True, True], [True, True]]
+                        ),
                         groundtruth_event_label_groundtruth_word_ids=torch.tensor(
-                            [[3], [3]]
+                            [[2, 3], [2, 3]]
                         ),
                         groundtruth_event_label_mask=torch.tensor([False, False]),
                         prev_batched_graph=Batch(
                             batch=torch.tensor([0, 0, 0, 0, 1]),
                             x=torch.tensor(
                                 [
-                                    [402, 3, 0],
-                                    [192, 415, 3],
-                                    [530, 3, 0],
-                                    [402, 3, 0],
-                                    [530, 3, 0],
+                                    [2, 402, 3, 0],
+                                    [2, 192, 415, 3],
+                                    [2, 530, 3, 0],
+                                    [2, 402, 3, 0],
+                                    [2, 530, 3, 0],
                                 ]
                             ),
                             node_label_mask=torch.tensor(
                                 [
-                                    [True, True, False],
-                                    [True, True, True],
-                                    [True, True, False],
-                                    [True, True, False],
-                                    [True, True, False],
+                                    [True, True, True, False],
+                                    [True, True, True, True],
+                                    [True, True, True, False],
+                                    [True, True, True, False],
+                                    [True, True, True, False],
                                 ]
                             ),
                             node_last_update=torch.tensor(
                                 [[2, 0], [3, 1], [6, 0], [6, 1], [5, 0]]
                             ),
                             edge_index=torch.tensor([[1], [0]]),
-                            edge_attr=torch.tensor([[382, 3]]),
-                            edge_label_mask=torch.ones(1, 2).bool(),
+                            edge_attr=torch.tensor([[2, 382, 3]]),
+                            edge_label_mask=torch.ones(1, 3).bool(),
                             edge_last_update=torch.tensor([[4, 0]]),
                         ),
                     ),
@@ -3170,3 +3288,108 @@ def test_tw_cmd_gen_collator_collate_prev_graph_events(
 )
 def test_tw_cmd_gen_collator_call(tw_cmd_gen_collator, batch, expected):
     assert tw_cmd_gen_collator(batch) == expected
+
+
+@pytest.mark.parametrize(
+    "batch,expected",
+    [
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "steps": [
+                        {
+                            "observation": "you are hungry ! "
+                            "let 's cook a delicious meal .",
+                            "previous_action": "drop knife",
+                        }
+                    ],
+                }
+            ],
+            TWCmdGenObsGenBatch(
+                ids=(("g1", 0),),
+                step_inputs=(
+                    TWCmdGenGraphEventStepInput(
+                        obs_word_ids=torch.tensor(
+                            [[2, 769, 122, 377, 5, 416, 12, 215, 94, 237, 441, 21, 3]]
+                        ),
+                        obs_mask=torch.ones(1, 13).bool(),
+                        prev_action_word_ids=torch.tensor([[2, 257, 404, 3]]),
+                        prev_action_mask=torch.ones(1, 4).bool(),
+                        timestamps=torch.tensor([0]),
+                    ),
+                ),
+                step_mask=torch.tensor([[True]]),
+            ),
+        ),
+        (
+            [
+                {
+                    "game": "g1",
+                    "walkthrough_step": 0,
+                    "steps": [
+                        {
+                            "observation": "you are hungry ! ",
+                            "previous_action": "drop knife",
+                        },
+                        {
+                            "observation": "let 's cook a delicious meal .",
+                            "previous_action": "drop knife",
+                        },
+                    ],
+                },
+                {
+                    "game": "g2",
+                    "walkthrough_step": 0,
+                    "steps": [
+                        {
+                            "observation": "let 's cook a delicious meal .",
+                            "previous_action": "drop knife",
+                        }
+                    ],
+                },
+            ],
+            TWCmdGenObsGenBatch(
+                ids=(("g1", 0), ("g2", 0)),
+                step_inputs=(
+                    TWCmdGenGraphEventStepInput(
+                        obs_word_ids=torch.tensor(
+                            [
+                                [2, 769, 122, 377, 5, 3, 0, 0, 0],
+                                [2, 416, 12, 215, 94, 237, 441, 21, 3],
+                            ]
+                        ),
+                        obs_mask=torch.tensor([[True] * 6 + [False] * 3, [True] * 9]),
+                        prev_action_word_ids=torch.tensor(
+                            [[2, 257, 404, 3], [2, 257, 404, 3]]
+                        ),
+                        prev_action_mask=torch.ones(2, 4).bool(),
+                        timestamps=torch.tensor([0, 0]),
+                    ),
+                    TWCmdGenGraphEventStepInput(
+                        obs_word_ids=torch.tensor(
+                            [
+                                [2, 416, 12, 215, 94, 237, 441, 21, 3],
+                                [2, 3, 0, 0, 0, 0, 0, 0, 0],
+                            ]
+                        ),
+                        obs_mask=torch.tensor([[True] * 9, [True] * 2 + [False] * 7]),
+                        prev_action_word_ids=torch.tensor(
+                            [[2, 257, 404, 3], [2, 3, 0, 0]]
+                        ),
+                        prev_action_mask=torch.tensor(
+                            [[True] * 4, [True] * 2 + [False] * 2]
+                        ),
+                        timestamps=torch.tensor([1, 0]),
+                    ),
+                ),
+                step_mask=torch.tensor([[True, True], [True, False]]),
+            ),
+        ),
+    ],
+)
+def test_tw_cmd_gen_obs_gen_data_collator(
+    tw_cmd_gen_obs_gen_data_collator, batch, expected
+):
+    assert tw_cmd_gen_obs_gen_data_collator(batch) == expected

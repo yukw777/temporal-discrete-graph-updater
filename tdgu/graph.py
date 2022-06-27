@@ -287,7 +287,10 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
         )
         subgraph = Data(
             x=F.pad(
-                batch.x[node_mask], (0, max_node_label_len - batch.x[node_mask].size(1))
+                batch.x[node_mask],
+                (0, max_node_label_len - batch.x[node_mask].size(1))
+                if batch.x.dim() == 2
+                else (0, 0, 0, max_node_label_len - batch.x[node_mask].size(1)),
             ),
             node_label_mask=F.pad(
                 batch.node_label_mask[node_mask],
@@ -297,7 +300,9 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
             edge_index=batch.edge_index[:, edge_mask] - node_id_offsets[i],
             edge_attr=F.pad(
                 batch.edge_attr[edge_mask],
-                (0, max_edge_label_len - batch.edge_attr[edge_mask].size(1)),
+                (0, max_edge_label_len - batch.edge_attr[edge_mask].size(1))
+                if batch.edge_attr.dim() == 2
+                else (0, 0, 0, max_edge_label_len - batch.edge_attr[edge_mask].size(1)),
             ),
             edge_label_mask=F.pad(
                 batch.edge_label_mask[edge_mask],
@@ -319,7 +324,12 @@ def data_list_to_batch(data_list: List[Data]) -> Batch:
     return Batch.from_data_list(
         [
             Data(
-                x=F.pad(data.x, (0, max_node_label_len - data.x.size(1))),
+                x=F.pad(
+                    data.x,
+                    (0, max_node_label_len - data.x.size(1))
+                    if data.x.dim() == 2
+                    else (0, 0, 0, max_node_label_len - data.x.size(1)),
+                ),
                 node_label_mask=F.pad(
                     data.node_label_mask,
                     (0, max_node_label_len - data.node_label_mask.size(1)),
@@ -327,7 +337,10 @@ def data_list_to_batch(data_list: List[Data]) -> Batch:
                 node_last_update=data.node_last_update,
                 edge_index=data.edge_index,
                 edge_attr=F.pad(
-                    data.edge_attr, (0, max_edge_label_len - data.edge_attr.size(1))
+                    data.edge_attr,
+                    (0, max_edge_label_len - data.edge_attr.size(1))
+                    if data.edge_attr.dim() == 2
+                    else (0, 0, 0, max_edge_label_len - data.edge_attr.size(1)),
                 ),
                 edge_label_mask=F.pad(
                     data.edge_label_mask,

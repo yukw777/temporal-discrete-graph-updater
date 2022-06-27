@@ -9,10 +9,14 @@ class ExactMatch(Metric):
     Measures accuracy or direct overlap between the predictions and ground truth
     """
 
+    is_differentiable = False
+    higher_is_better = True
+    full_state_update = False
+
     def __init__(self) -> None:
         super().__init__()
 
-        self.add_state("scores", default=torch.empty(0), dist_reduce_fx="cat")
+        self.add_state("score", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def update(  # type: ignore
@@ -23,19 +27,7 @@ class ExactMatch(Metric):
             # calculate the exact match score for each example in the batch
             if len(preds) == 0:
                 if len(targets) == 0:
-                    self.scores = torch.cat(
-                        [
-                            self.scores,  # type: ignore
-                            torch.tensor(1, device=self.device).unsqueeze(-1),
-                        ]
-                    )
-                else:
-                    self.scores = torch.cat(
-                        [
-                            self.scores,  # type: ignore
-                            torch.tensor(0, device=self.device).unsqueeze(-1),
-                        ]
-                    )
+                    self.score += 1  # type: ignore
             else:
                 matches = 0
                 pred_set = set(preds)
@@ -43,17 +35,10 @@ class ExactMatch(Metric):
                 for pred in pred_set:
                     if pred in target_set:
                         matches += 1
-                self.scores = torch.cat(
-                    [
-                        self.scores,
-                        torch.tensor(
-                            matches / len(pred_set), device=self.device
-                        ).unsqueeze(-1),
-                    ]
-                )
+                self.score += matches / len(pred_set)  # type: ignore
             self.total += 1  # type: ignore
 
     def compute(self) -> torch.Tensor:
         if self.total == 0:
             return torch.zeros_like(self.total, dtype=torch.float)  # type: ignore
-        return self.scores.sum() / self.total  # type: ignore
+        return self.score / self.total  # type: ignore

@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch.nn.functional as F
 
 from pathlib import Path
 from torch_geometric.data import Batch
@@ -8,6 +9,7 @@ from tdgu.nn.utils import (
     masked_mean,
     masked_softmax,
     masked_log_softmax,
+    masked_gumbel_softmax,
     compute_masks_from_event_type_ids,
     load_fasttext,
     find_indices,
@@ -19,6 +21,8 @@ from tdgu.nn.utils import (
     update_node_features,
     update_edge_index,
     PositionalEncoder,
+    generate_square_subsequent_mask,
+    shift_tokens_right,
 )
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.preprocessor import PAD, UNK
@@ -93,6 +97,46 @@ def test_masked_softmax(batched_input, batched_mask):
     # 0 if all the items are masked out.
     assert batched_output.sum(dim=1).equal(
         torch.any(batched_mask.float() == 1, dim=1).float()
+    )
+    # multiplying the output by the mask shouldn't change the values now.
+    assert (batched_output * batched_mask).equal(batched_output)
+
+
+@pytest.mark.parametrize("hard", [True, False])
+@pytest.mark.parametrize("tau", [0.1, 0.5, 1])
+@pytest.mark.parametrize(
+    "batched_input,batched_mask",
+    [
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor([[1, 1, 0], [0, 1, 1], [1, 1, 1]]).float(),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.tensor(
+                [[True, True, False], [False, True, True], [True, True, True]]
+            ),
+        ),
+        (
+            torch.tensor([[1, 2, 3], [1, 1, 2], [3, 2, 1]]).float(),
+            torch.zeros(3, 3).bool(),
+        ),
+    ],
+)
+def test_masked_gumbel_softmax(batched_input, batched_mask, tau, hard):
+    batched_output = masked_gumbel_softmax(
+        batched_input, batched_mask, tau=tau, hard=hard
+    )
+    # ensure that softmax outputs add up to 1 if at least one item is not maksed out
+    # 0 if all the items are masked out.
+    assert (
+        batched_output.sum(dim=1)
+        .isclose(torch.any(batched_mask.float() == 1, dim=1).float())
+        .all()
     )
     # multiplying the output by the mask shouldn't change the values now.
     assert (batched_output * batched_mask).equal(batched_output)
@@ -1503,6 +1547,193 @@ def test_calculate_node_id_offsets(batch_size, batch, expected):
                 edge_last_update=torch.tensor([[4, 1], [3, 2], [2, 0]]),
             ),
         ),
+        (
+            Batch(
+                batch=torch.empty(0).long(),
+                x=torch.empty(0, 0, 13),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2).long(),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 0, 13),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2).long(),
+            ),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["node-add"], EVENT_TYPE_ID_MAP["node-add"]]
+            ),
+            torch.tensor([0, 0]),
+            torch.tensor([0, 0]),
+            F.one_hot(torch.tensor([[11] * 2, [12] * 2]), num_classes=13).float(),
+            torch.tensor([[True, False], [True, True]]),
+            torch.tensor([[6, 7], [8, 9]]),
+            Batch(
+                batch=torch.tensor([0, 1]),
+                x=F.one_hot(torch.tensor([[11] * 2, [12] * 2]), num_classes=13).float(),
+                node_label_mask=torch.tensor([[True, False], [True, True]]),
+                node_last_update=torch.tensor([[6, 7], [8, 9]]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 0, 13),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2).long(),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=F.one_hot(
+                    torch.tensor([[8] * 2, [9] * 2, [11] * 2, [12] * 2]), num_classes=13
+                ).float(),
+                node_label_mask=torch.tensor(
+                    [[True, True], [True, False], [True, False], [True, True]]
+                ),
+                node_last_update=torch.tensor([[2, 3], [3, 4], [6, 7], [8, 9]]),
+                edge_index=torch.empty(2, 0).long(),
+                edge_attr=torch.empty(0, 0, 13),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2).long(),
+            ),
+            torch.tensor(
+                [EVENT_TYPE_ID_MAP["edge-add"], EVENT_TYPE_ID_MAP["edge-add"]]
+            ),
+            torch.tensor([0, 1]),
+            torch.tensor([1, 0]),
+            F.one_hot(torch.tensor([[11] * 2, [12] * 2]), num_classes=13).float(),
+            torch.tensor([[True, False], [True, True]]),
+            torch.tensor([[6, 7], [8, 9]]),
+            Batch(
+                batch=torch.tensor([0, 0, 1, 1]),
+                x=F.one_hot(
+                    torch.tensor([[8] * 2, [9] * 2, [11] * 2, [12] * 2]), num_classes=13
+                ).float(),
+                node_label_mask=torch.tensor(
+                    [[True, True], [True, False], [True, False], [True, True]]
+                ),
+                node_last_update=torch.tensor([[2, 3], [3, 4], [6, 7], [8, 9]]),
+                edge_index=torch.tensor([[0, 3], [1, 2]]),
+                edge_attr=F.one_hot(
+                    torch.tensor([[11] * 2, [12] * 2]), num_classes=13
+                ).float(),
+                edge_label_mask=torch.tensor([[True, False], [True, True]]),
+                edge_last_update=torch.tensor([[6, 7], [8, 9]]),
+            ),
+        ),
+        (
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 1, 2, 2]),
+                x=torch.cat(
+                    [
+                        F.one_hot(torch.tensor([[4] * 4, [5] * 4]), num_classes=13),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([10] * 3), num_classes=13),
+                                torch.zeros(1, 13),
+                            ]
+                        ).unsqueeze(0),
+                        F.one_hot(torch.tensor([[2] * 4, [1] * 4]), num_classes=13),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([8] * 3), num_classes=13),
+                                torch.zeros(1, 13),
+                            ]
+                        ).unsqueeze(0),
+                        F.one_hot(torch.tensor([[7] * 4]), num_classes=13),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([9] * 3), num_classes=13),
+                                torch.zeros(1, 13),
+                            ]
+                        ).unsqueeze(0),
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                    ]
+                ),
+                node_last_update=torch.tensor(
+                    [[1, 0], [3, 2], [5, 9], [5, 2], [6, 4], [3, 1], [4, 7], [4, 9]]
+                ),
+                edge_index=torch.tensor([[6], [7]]),
+                edge_attr=F.one_hot(torch.tensor([[11] * 3]), num_classes=13).float(),
+                edge_label_mask=torch.ones(1, 3).bool(),
+                edge_last_update=torch.tensor([[2, 4]]),
+            ),
+            torch.tensor(
+                [
+                    EVENT_TYPE_ID_MAP["edge-add"],
+                    EVENT_TYPE_ID_MAP["node-delete"],
+                    EVENT_TYPE_ID_MAP["edge-delete"],
+                    EVENT_TYPE_ID_MAP["node-add"],
+                ]
+            ),
+            torch.tensor([2, 1, 0, 0]),
+            torch.tensor([0, 0, 1, 0]),
+            F.one_hot(
+                torch.tensor([[12] * 2, [1] * 2, [11] * 2, [12] * 2]), num_classes=13
+            ).float(),
+            torch.tensor([[True, True], [True, False], [True, False], [True, True]]),
+            torch.tensor([[3, 8], [1, 4], [6, 7], [8, 9]]),
+            Batch(
+                batch=torch.tensor([0, 0, 0, 1, 1, 2, 2, 3]),
+                x=torch.cat(
+                    [
+                        F.one_hot(torch.tensor([[4] * 4, [5] * 4]), num_classes=13),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([10] * 3), num_classes=13),
+                                torch.zeros(1, 13),
+                            ]
+                        ).unsqueeze(0),
+                        F.one_hot(torch.tensor([[2] * 4]), num_classes=13),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([8] * 3), num_classes=13),
+                                torch.zeros(1, 13),
+                            ]
+                        ).unsqueeze(0),
+                        F.one_hot(torch.tensor([[7] * 4]), num_classes=13),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([9] * 3), num_classes=13),
+                                torch.zeros(1, 13),
+                            ]
+                        ).unsqueeze(0),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([12] * 2), num_classes=13),
+                                torch.zeros(2, 13),
+                            ]
+                        ).unsqueeze(0),
+                    ]
+                ).float(),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, False, False, False],
+                        [True, True, True, True],
+                        [True, True, False, False],
+                        [True, True, True, True],
+                        [True, True, True, False],
+                        [True, True, False, False],
+                    ]
+                ),
+                node_last_update=torch.tensor(
+                    [[1, 0], [3, 2], [5, 9], [5, 2], [3, 1], [4, 7], [4, 9], [8, 9]]
+                ),
+                edge_index=torch.tensor([[2], [0]]),
+                edge_attr=F.one_hot(torch.tensor([[12] * 2]), num_classes=13).float(),
+                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_last_update=torch.tensor([[3, 8]]),
+            ),
+        ),
     ],
 )
 def test_update_batched_graph(
@@ -1587,6 +1818,34 @@ def test_update_batched_graph(
             6,
             torch.tensor(
                 [[0] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [4] * 4, [4] * 4, [5] * 4]
+            ),
+        ),
+        (
+            F.one_hot(
+                torch.tensor(
+                    [[1] * 4, [1] * 4, [2] * 4, [3] * 4, [3] * 4, [3] * 4, [5] * 4]
+                ),
+                num_classes=6,
+            ),
+            torch.tensor([1, 1, 2, 3, 3, 3, 5]),
+            torch.tensor([False, True, True, True, False, True, True]),
+            F.one_hot(torch.tensor([[0] * 4, [4] * 4, [4] * 4]), num_classes=6),
+            torch.tensor([0, 4, 4]),
+            6,
+            F.one_hot(
+                torch.tensor(
+                    [
+                        [0] * 4,
+                        [1] * 4,
+                        [2] * 4,
+                        [3] * 4,
+                        [3] * 4,
+                        [4] * 4,
+                        [4] * 4,
+                        [5] * 4,
+                    ]
+                ),
+                num_classes=6,
             ),
         ),
     ],
@@ -1684,3 +1943,21 @@ def test_pos_encoder(channels, max_len, position_size):
     flat_positions = positions.flatten()
     assert flat_encoding[:, 0].equal(torch.sin(flat_positions.float()))
     assert flat_encoding[:, channels // 2].equal(torch.cos(flat_positions.float()))
+
+
+@pytest.mark.parametrize("size", [1, 3, 5, 7])
+def test_generate_subsequent_mask(size):
+    mask = generate_square_subsequent_mask(size)
+    # assert that the sum of tril and triu is the original mask
+    assert mask.equal(torch.tril(mask) + torch.triu(mask, diagonal=1))
+
+
+@pytest.mark.parametrize(
+    "input_ids,decoder_start_token_id,expected",
+    [
+        (torch.tensor([[1, 2, 3]]), 5, torch.tensor([[5, 1, 2]])),
+        (torch.tensor([[1, 2, 3], [2, 3, 0]]), 9, torch.tensor([[9, 1, 2], [9, 2, 3]])),
+    ],
+)
+def test_shift_tokens_right(input_ids, decoder_start_token_id, expected):
+    assert shift_tokens_right(input_ids, decoder_start_token_id).equal(expected)

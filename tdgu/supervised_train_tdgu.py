@@ -8,7 +8,7 @@ from hydra.utils import instantiate, to_absolute_path
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 
-@hydra.main(config_path="train_tdgu_conf", config_name="config")
+@hydra.main(config_path="supervised_train_tdgu_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     print(f"Training with the following config:\n{OmegaConf.to_yaml(cfg)}")
 

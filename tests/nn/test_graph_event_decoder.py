@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import random
 
 from tdgu.nn.graph_event_decoder import (
@@ -13,7 +14,6 @@ from tdgu.nn.graph_event_decoder import (
     TransformerGraphEventDecoder,
 )
 from tdgu.constants import EVENT_TYPES
-from tdgu.preprocessor import BOS, EOS, PAD, SpacyPreprocessor
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
@@ -42,6 +42,7 @@ def test_event_type_head(
     assert logits.size() == (batch, len(EVENT_TYPES))
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize(
     "graph_event_embedding_dim,hidden_dim,autoregressive_embedding_dim,batch",
@@ -51,7 +52,12 @@ def test_event_type_head(
     ],
 )
 def test_event_type_head_get_autoregressive_embedding(
-    graph_event_embedding_dim, hidden_dim, autoregressive_embedding_dim, batch, dropout
+    graph_event_embedding_dim,
+    hidden_dim,
+    autoregressive_embedding_dim,
+    batch,
+    dropout,
+    one_hot,
 ):
     if dropout == 0.0:
         head = EventTypeHead(
@@ -64,14 +70,18 @@ def test_event_type_head_get_autoregressive_embedding(
             autoregressive_embedding_dim,
             dropout=dropout,
         )
+    event_type_ids = torch.randint(len(EVENT_TYPES), (batch,))
+    if one_hot:
+        event_type_ids = F.one_hot(event_type_ids, num_classes=len(EVENT_TYPES)).float()
     autoregressive_embedding = head.get_autoregressive_embedding(
         torch.rand(batch, graph_event_embedding_dim),
-        torch.randint(len(EVENT_TYPES), (batch,)),
+        event_type_ids,
         torch.randint(2, (batch,)).bool(),
     )
     assert autoregressive_embedding.size() == (batch, autoregressive_embedding_dim)
 
 
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "node_embedding_dim,autoregressive_embedding_dim,hidden_dim,"
     "key_query_dim,batch,num_node",
@@ -89,6 +99,7 @@ def test_event_node_head(
     key_query_dim,
     batch,
     num_node,
+    one_hot,
 ):
     head = EventNodeHead(
         node_embedding_dim, autoregressive_embedding_dim, hidden_dim, key_query_dim
@@ -97,11 +108,17 @@ def test_event_node_head(
         torch.rand(batch, autoregressive_embedding_dim),
         torch.rand(batch, num_node, node_embedding_dim),
     )
+    node_ids = (
+        torch.randint(num_node, (batch,)) if num_node > 0 else torch.zeros(batch).long()
+    )
+    if one_hot:
+        if num_node > 0:
+            node_ids = F.one_hot(node_ids, num_classes=num_node).float()
+        else:
+            node_ids = torch.zeros(batch, 0)
     autoregressive_embedding = head.update_autoregressive_embedding(
         torch.rand(batch, autoregressive_embedding_dim),
-        torch.randint(num_node, (batch,))
-        if num_node > 0
-        else torch.zeros(batch).long(),
+        node_ids,
         torch.rand(batch, num_node, node_embedding_dim),
         torch.randint(2, (batch, num_node)).bool(),
         torch.randint(2, (batch,)).bool(),
@@ -134,36 +151,36 @@ def test_event_static_label_head(
     assert label_logits.size() == (batch, num_label)
 
 
-@pytest.fixture
-def preprocessor():
-    return SpacyPreprocessor([PAD, BOS, EOS, "word0", "word1", "word2"])
-
-
+@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize("seq_len", [1, 5, 10])
 @pytest.mark.parametrize(
     "autoregressive_embedding_dim,hidden_dim,word_embedding_dim,batch",
     [(8, 4, 16, 1), (8, 4, 16, 4)],
 )
 def test_event_seq_label_head_forward(
-    preprocessor,
     autoregressive_embedding_dim,
     hidden_dim,
     word_embedding_dim,
     batch,
     seq_len,
+    one_hot,
 ):
+    vocab_size = 6
+    bos_token_id = 1
+    eos_token_id = 2
+    pad_token_id = 0
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         hidden_dim,
-        preprocessor,
-        nn.Embedding(
-            preprocessor.vocab_size,
-            word_embedding_dim,
-            padding_idx=preprocessor.pad_token_id,
-        ),
+        nn.Embedding(vocab_size, word_embedding_dim, padding_idx=pad_token_id),
+        bos_token_id,
+        eos_token_id,
+        pad_token_id,
     )
 
-    output_tgt_seq = torch.randint(preprocessor.vocab_size, (batch, seq_len))
+    output_tgt_seq = torch.randint(vocab_size, (batch, seq_len))
+    if one_hot:
+        output_tgt_seq = F.one_hot(output_tgt_seq, num_classes=vocab_size).float()
     seq_mask_list = [[True] * seq_len]
     for _ in range(batch - 1):
         length = random.randrange(1, seq_len) if seq_len > 1 else 1
@@ -190,18 +207,17 @@ def test_event_seq_label_head_forward(
         output_tgt_seq_mask,
         autoregressive_embedding=autoregressive_embedding,
     )
-    assert output_seq_logits.size() == (batch, seq_len, preprocessor.vocab_size)
+    assert output_seq_logits.size() == (batch, seq_len, vocab_size)
     assert updated_hidden.size() == (batch, hidden_dim)
 
     # forward pass with prev_hidden
     output_seq_logits, updated_hidden = head(
         output_tgt_seq, output_tgt_seq_mask, prev_hidden=prev_hidden
     )
-    assert output_seq_logits.size() == (batch, seq_len, preprocessor.vocab_size)
+    assert output_seq_logits.size() == (batch, seq_len, vocab_size)
     assert updated_hidden.size() == (batch, hidden_dim)
 
 
-# @pytest.mark.parametrize("max_decode_len", [None, 5, 15])
 @pytest.mark.parametrize("autoregressive_embedding_dim", [4, 16])
 @pytest.mark.parametrize(
     "batch,forward_logits,max_decode_len,expected_decoded,expected_mask",
@@ -244,9 +260,7 @@ def test_event_seq_label_head_forward(
                 torch.tensor([[0, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0]])
                 .float()
                 .unsqueeze(1),
-                torch.tensor([[0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 1]])
-                .float()
-                .unsqueeze(1),
+                torch.tensor([[0, 0, 1, 0, 0, 0]]).float().unsqueeze(1),
             ],
             None,
             torch.tensor([[3, 4, 2], [4, 2, 0]]),
@@ -272,7 +286,6 @@ def test_event_seq_label_head_forward(
     ],
 )
 def test_event_seq_label_head_greedy_decode(
-    preprocessor,
     batch,
     forward_logits,
     max_decode_len,
@@ -280,13 +293,17 @@ def test_event_seq_label_head_greedy_decode(
     expected_mask,
     autoregressive_embedding_dim,
 ):
+    vocab_size = 6
+    bos_token_id = 1
+    eos_token_id = 2
+    pad_token_id = 0
     head = EventSequentialLabelHead(
         autoregressive_embedding_dim,
         4,
-        preprocessor,
-        nn.Embedding(
-            preprocessor.vocab_size, 12, padding_idx=preprocessor.pad_token_id
-        ),
+        nn.Embedding(vocab_size, 12, padding_idx=pad_token_id),
+        bos_token_id,
+        eos_token_id,
+        pad_token_id,
     )
 
     class MockForward:
@@ -308,6 +325,141 @@ def test_event_seq_label_head_greedy_decode(
         decoded, mask = head.greedy_decode(
             torch.rand(batch, autoregressive_embedding_dim),
             max_decode_len=max_decode_len,
+        )
+    assert decoded.equal(expected_decoded)
+    assert mask.equal(expected_mask)
+
+
+@pytest.mark.parametrize("tau", [0.1, 0.5, 1])
+@pytest.mark.parametrize("autoregressive_embedding_dim", [4, 16])
+@pytest.mark.parametrize(
+    "batch,forward_logits,max_decode_len,expected_decoded,expected_mask",
+    [
+        (
+            1,
+            [torch.tensor([[0, 0, 1, 0, 0, 0]]).float().unsqueeze(1)],
+            None,
+            F.one_hot(torch.tensor([[2]]), num_classes=6).float(),
+            torch.tensor([[True]]),
+        ),
+        (
+            1,
+            [
+                torch.tensor([[0, 0, 0, 1, 0, 0]]).float().unsqueeze(1),
+                torch.tensor([[0, 0, 0, 0, 1, 0]]).float().unsqueeze(1),
+                torch.tensor([[0, 0, 1, 0, 0, 0]]).float().unsqueeze(1),
+            ],
+            None,
+            F.one_hot(torch.tensor([[3, 4, 2]]), num_classes=6).float(),
+            torch.ones(1, 3).bool(),
+        ),
+        (
+            1,
+            [
+                torch.tensor([[0, 0, 0, 1, 0, 0]]).float().unsqueeze(1),
+                torch.tensor([[0, 0, 0, 0, 1, 0]]).float().unsqueeze(1),
+                torch.tensor([[0, 0, 1, 0, 0, 0]]).float().unsqueeze(1),
+            ],
+            2,
+            F.one_hot(torch.tensor([[3, 4]]), num_classes=6).float(),
+            torch.ones(1, 2).bool(),
+        ),
+        (
+            2,
+            [
+                torch.tensor([[0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 1, 0]])
+                .float()
+                .unsqueeze(1),
+                torch.tensor([[0, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0]])
+                .float()
+                .unsqueeze(1),
+                torch.tensor([[0, 0, 1, 0, 0, 0]]).float().unsqueeze(1),
+            ],
+            None,
+            torch.cat(
+                [
+                    F.one_hot(torch.tensor([[3, 4, 2]]), num_classes=6),
+                    torch.cat(
+                        [
+                            F.one_hot(torch.tensor([4, 2]), num_classes=6),
+                            torch.zeros(1, 6),
+                        ]
+                    ).unsqueeze(0),
+                ]
+            ),
+            torch.tensor([[True, True, True], [True, True, False]]),
+        ),
+        (
+            2,
+            [
+                torch.tensor([[0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 1, 0]])
+                .float()
+                .unsqueeze(1),
+                torch.tensor([[0, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0]])
+                .float()
+                .unsqueeze(1),
+                torch.tensor([[0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 1]])
+                .float()
+                .unsqueeze(1),
+            ],
+            1,
+            F.one_hot(torch.tensor([[3], [4]]), num_classes=6).float(),
+            torch.ones(2, 1).bool(),
+        ),
+    ],
+)
+def test_event_seq_label_head_gumbel_greedy_decode(
+    monkeypatch,
+    batch,
+    forward_logits,
+    max_decode_len,
+    expected_decoded,
+    expected_mask,
+    autoregressive_embedding_dim,
+    tau,
+):
+    vocab_size = 6
+    bos_token_id = 1
+    eos_token_id = 2
+    pad_token_id = 0
+
+    # monkeypatch gumbel_softmax to argmax() + F.one_hot()
+    # to remove randomness for tests
+    def mock_gumbel_softmax(logits, **kwargs):
+        return F.one_hot(logits.argmax(-1), num_classes=vocab_size).float()
+
+    monkeypatch.setattr(
+        "tdgu.nn.graph_event_decoder.F.gumbel_softmax", mock_gumbel_softmax
+    )
+    head = EventSequentialLabelHead(
+        autoregressive_embedding_dim,
+        4,
+        nn.Embedding(vocab_size, 12, padding_idx=pad_token_id),
+        bos_token_id,
+        eos_token_id,
+        pad_token_id,
+    )
+
+    class MockForward:
+        def __init__(self):
+            self.num_calls = 0
+
+        def __call__(self, *args, **kwargs):
+            logits = forward_logits[self.num_calls]
+            self.num_calls += 1
+            return logits, torch.rand(batch, 4)
+
+    head.forward = MockForward()
+
+    if max_decode_len is None:
+        decoded, mask = head.gumbel_greedy_decode(
+            torch.rand(batch, autoregressive_embedding_dim), tau=tau
+        )
+    else:
+        decoded, mask = head.gumbel_greedy_decode(
+            torch.rand(batch, autoregressive_embedding_dim),
+            max_decode_len=max_decode_len,
+            tau=tau,
         )
     assert decoded.equal(expected_decoded)
     assert mask.equal(expected_mask)

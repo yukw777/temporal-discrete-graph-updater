@@ -8,7 +8,7 @@ from typing import Set, Tuple, List
 from pathlib import Path
 from itertools import count
 
-from tdgu.nn.graph_updater import SupervisedTDGU
+from tdgu.train.supervised import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
 from tdgu.utils import draw_graph
@@ -134,9 +134,10 @@ def main(
                 print(cmd)
             print("------graph events---------")
             for results in results_list:
-                decoded_event_labels = lm.decode_label(
+                decoded_event_labels = lm.preprocessor.batch_decode(
                     results["decoded_event_label_word_ids"],
                     results["decoded_event_label_mask"],
+                    skip_special_tokens=True,
                 )
                 for event_type_id, event_src_id, event_dst_id, event_label in zip(
                     results["decoded_event_type_ids"],
@@ -159,21 +160,23 @@ def main(
                             )
                         )
                     else:
-                        event_src_label = lm.decode_label(
+                        event_src_label = lm.preprocessor.batch_decode(
                             results["updated_batched_graph"]
                             .x[event_src_id]
                             .unsqueeze(0),
                             results["updated_batched_graph"]
                             .node_label_mask[event_src_id]
                             .unsqueeze(0),
+                            skip_special_tokens=True,
                         )[0]
-                        event_dst_label = lm.decode_label(
+                        event_dst_label = lm.preprocessor.batch_decode(
                             results["updated_batched_graph"]
                             .x[event_dst_id]
                             .unsqueeze(0),
                             results["updated_batched_graph"]
                             .node_label_mask[event_dst_id]
                             .unsqueeze(0),
+                            skip_special_tokens=True,
                         )[0]
                         print(
                             (

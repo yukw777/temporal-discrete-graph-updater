@@ -1,8 +1,10 @@
 import pytest
 import torch
+import torch.nn.functional as F
 import networkx as nx
 
 from torch_geometric.data import Data, Batch
+from utils import EqualityData, EqualityBatch
 from copy import deepcopy
 
 from tdgu.graph import (
@@ -372,6 +374,138 @@ def test_process_triplet_cmd_allow_objs_with_same_label(
                 ),
             ],
         ),
+        (
+            Batch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, 0, 8),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2, dtype=torch.long),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0, 8),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2, dtype=torch.long),
+            ),
+            3,
+            [
+                Data(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+            ],
+        ),
+        (
+            Batch(
+                batch=torch.tensor([2, 2, 3, 3]),
+                x=torch.cat(
+                    [
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([2, 3]), num_classes=8),
+                                torch.zeros(1, 8),
+                            ]
+                        ).unsqueeze(0),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([4, 3]), num_classes=8),
+                                torch.zeros(1, 8),
+                            ]
+                        ).unsqueeze(0),
+                        F.one_hot(torch.tensor([[5, 4, 3]]), num_classes=8),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([6, 3]), num_classes=8),
+                                torch.zeros(1, 8),
+                            ]
+                        ).unsqueeze(0),
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, False],
+                        [True] * 3,
+                        [True, True, False],
+                    ]
+                ),
+                node_last_update=torch.tensor([[1, 2], [2, 0], [3, 7], [4, 1]]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=F.one_hot(torch.tensor([[2, 3]]), num_classes=8).float(),
+                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_last_update=torch.tensor([[4, 2]]),
+            ),
+            4,
+            [
+                Data(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=F.one_hot(torch.tensor([[2, 3], [4, 3]]), num_classes=8).float(),
+                    node_label_mask=torch.ones(2, 2).bool(),
+                    node_last_update=torch.tensor([[1, 2], [2, 0]]),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                Data(
+                    x=torch.cat(
+                        [
+                            F.one_hot(torch.tensor([[5, 4, 3]]), num_classes=8),
+                            torch.cat(
+                                [
+                                    F.one_hot(torch.tensor([6, 3]), num_classes=8),
+                                    torch.zeros(1, 8),
+                                ]
+                            ).unsqueeze(0),
+                        ]
+                    ),
+                    node_label_mask=torch.tensor([[True] * 3, [True, True, False]]),
+                    node_last_update=torch.tensor([[3, 7], [4, 1]]),
+                    edge_index=torch.tensor([[1], [0]]),
+                    edge_attr=F.one_hot(torch.tensor([[2, 3]]), num_classes=8).float(),
+                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_last_update=torch.tensor([[4, 2]]),
+                ),
+            ],
+        ),
     ],
 )
 def test_batch_to_data_list(batch, batch_size, expected_list):
@@ -392,7 +526,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
     [
         (
             [
-                Data(
+                EqualityData(
                     x=torch.empty(0, 0, dtype=torch.long),
                     node_label_mask=torch.empty(0, 0).bool(),
                     node_last_update=torch.empty(0, 2, dtype=torch.long),
@@ -401,7 +535,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_label_mask=torch.empty(0, 0).bool(),
                     edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
-                Data(
+                EqualityData(
                     x=torch.empty(0, 0, dtype=torch.long),
                     node_label_mask=torch.empty(0, 0).bool(),
                     node_last_update=torch.empty(0, 2, dtype=torch.long),
@@ -410,7 +544,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_label_mask=torch.empty(0, 0).bool(),
                     edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
-                Data(
+                EqualityData(
                     x=torch.empty(0, 0, dtype=torch.long),
                     node_label_mask=torch.empty(0, 0).bool(),
                     node_last_update=torch.empty(0, 2, dtype=torch.long),
@@ -420,7 +554,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
             ],
-            Batch(
+            EqualityBatch(
                 batch=torch.empty(0, dtype=torch.long),
                 x=torch.empty(0, 0, dtype=torch.long),
                 node_label_mask=torch.empty(0, 0).bool(),
@@ -433,7 +567,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
         ),
         (
             [
-                Data(
+                EqualityData(
                     x=torch.empty(0, 0, dtype=torch.long),
                     node_label_mask=torch.empty(0, 0).bool(),
                     node_last_update=torch.empty(0, 2, dtype=torch.long),
@@ -442,7 +576,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_label_mask=torch.empty(0, 0).bool(),
                     edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
-                Data(
+                EqualityData(
                     x=torch.empty(0, 0, dtype=torch.long),
                     node_label_mask=torch.empty(0, 0).bool(),
                     node_last_update=torch.empty(0, 2, dtype=torch.long),
@@ -451,7 +585,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_label_mask=torch.empty(0, 0).bool(),
                     edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
-                Data(
+                EqualityData(
                     x=torch.tensor([[2, 3], [4, 3]]),
                     node_label_mask=torch.ones(2, 2).bool(),
                     node_last_update=torch.tensor([[1, 2], [2, 0]]),
@@ -460,7 +594,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_label_mask=torch.empty(0, 0).bool(),
                     edge_last_update=torch.empty(0, 2, dtype=torch.long),
                 ),
-                Data(
+                EqualityData(
                     x=torch.tensor([[5, 4, 3], [6, 3, 0]]),
                     node_label_mask=torch.tensor([[True] * 3, [True, True, False]]),
                     node_last_update=torch.tensor([[3, 7], [4, 1]]),
@@ -470,7 +604,7 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                     edge_last_update=torch.tensor([[4, 2]]),
                 ),
             ],
-            Batch(
+            EqualityBatch(
                 batch=torch.tensor([2, 2, 3, 3]),
                 x=torch.tensor([[2, 3, 0], [4, 3, 0], [5, 4, 3], [6, 3, 0]]),
                 node_label_mask=torch.tensor(
@@ -488,18 +622,143 @@ def test_batch_to_data_list(batch, batch_size, expected_list):
                 edge_last_update=torch.tensor([[4, 2]]),
             ),
         ),
+        (
+            [
+                EqualityData(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                EqualityData(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                EqualityData(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+            ],
+            EqualityBatch(
+                batch=torch.empty(0, dtype=torch.long),
+                x=torch.empty(0, 0, 8),
+                node_label_mask=torch.empty(0, 0).bool(),
+                node_last_update=torch.empty(0, 2, dtype=torch.long),
+                edge_index=torch.empty(2, 0, dtype=torch.long),
+                edge_attr=torch.empty(0, 0, 8),
+                edge_label_mask=torch.empty(0, 0).bool(),
+                edge_last_update=torch.empty(0, 2, dtype=torch.long),
+            ),
+        ),
+        (
+            [
+                EqualityData(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                EqualityData(
+                    x=torch.empty(0, 0, 8),
+                    node_label_mask=torch.empty(0, 0).bool(),
+                    node_last_update=torch.empty(0, 2, dtype=torch.long),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                EqualityData(
+                    x=F.one_hot(torch.tensor([[2, 3], [4, 3]]), num_classes=8).float(),
+                    node_label_mask=torch.ones(2, 2).bool(),
+                    node_last_update=torch.tensor([[1, 2], [2, 0]]),
+                    edge_index=torch.empty(2, 0, dtype=torch.long),
+                    edge_attr=torch.empty(0, 0, 8),
+                    edge_label_mask=torch.empty(0, 0).bool(),
+                    edge_last_update=torch.empty(0, 2, dtype=torch.long),
+                ),
+                EqualityData(
+                    x=torch.cat(
+                        [
+                            F.one_hot(torch.tensor([[5, 4, 3]]), num_classes=8),
+                            torch.cat(
+                                [
+                                    F.one_hot(torch.tensor([6, 3]), num_classes=8),
+                                    torch.zeros(1, 8),
+                                ]
+                            ).unsqueeze(0),
+                        ]
+                    ),
+                    node_label_mask=torch.tensor([[True] * 3, [True, True, False]]),
+                    node_last_update=torch.tensor([[3, 7], [4, 1]]),
+                    edge_index=torch.tensor([[1], [0]]),
+                    edge_attr=F.one_hot(torch.tensor([[2, 3]]), num_classes=8).float(),
+                    edge_label_mask=torch.ones(1, 2).bool(),
+                    edge_last_update=torch.tensor([[4, 2]]),
+                ),
+            ],
+            EqualityBatch(
+                batch=torch.tensor([2, 2, 3, 3]),
+                x=torch.cat(
+                    [
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([2, 3]), num_classes=8),
+                                torch.zeros(1, 8),
+                            ]
+                        ).unsqueeze(0),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([4, 3]), num_classes=8),
+                                torch.zeros(1, 8),
+                            ]
+                        ).unsqueeze(0),
+                        F.one_hot(torch.tensor([[5, 4, 3]]), num_classes=8),
+                        torch.cat(
+                            [
+                                F.one_hot(torch.tensor([6, 3]), num_classes=8),
+                                torch.zeros(1, 8),
+                            ]
+                        ).unsqueeze(0),
+                    ]
+                ),
+                node_label_mask=torch.tensor(
+                    [
+                        [True, True, False],
+                        [True, True, False],
+                        [True] * 3,
+                        [True, True, False],
+                    ]
+                ),
+                node_last_update=torch.tensor([[1, 2], [2, 0], [3, 7], [4, 1]]),
+                edge_index=torch.tensor([[3], [2]]),
+                edge_attr=F.one_hot(torch.tensor([[2, 3]]), num_classes=8).float(),
+                edge_label_mask=torch.ones(1, 2).bool(),
+                edge_last_update=torch.tensor([[4, 2]]),
+            ),
+        ),
     ],
 )
-def test_data_list_to_batch(data_list, expected):
-    batch = data_list_to_batch(data_list)
-    assert batch.batch.equal(expected.batch)
-    assert batch.x.equal(expected.x)
-    assert batch.node_label_mask.equal(expected.node_label_mask)
-    assert batch.node_last_update.equal(expected.node_last_update)
-    assert batch.edge_index.equal(expected.edge_index)
-    assert batch.edge_attr.equal(expected.edge_attr)
-    assert batch.edge_label_mask.equal(expected.edge_label_mask)
-    assert batch.edge_last_update.equal(expected.edge_last_update)
+def test_data_list_to_batch(monkeypatch, data_list, expected):
+    monkeypatch.setattr("tdgu.graph.Data", EqualityData)
+    monkeypatch.setattr("tdgu.graph.Batch", EqualityBatch)
+
+    assert data_list_to_batch(data_list) == expected
 
 
 @pytest.mark.parametrize(
