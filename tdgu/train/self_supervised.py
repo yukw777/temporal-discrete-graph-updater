@@ -188,6 +188,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                 obs,
                 prev_action,
                 graph_events,
+                gen_obs,
                 is_valid_step,
             ) in zip(
                 batch.ids,
@@ -210,6 +211,11 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                     results["updated_batched_graph_list"],
                     step_mask,
                 ),
+                self.tdgu.preprocessor.batch_decode(
+                    results["text_decoder_output"].argmax(dim=-1),
+                    step_input.obs_mask,
+                    skip_special_tokens=True,
+                ),
                 step_mask.tolist(),
             ):
                 if not is_valid_step:
@@ -220,6 +226,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                         obs,
                         prev_action,
                         graph_events,
+                        gen_obs,
                     )
                 )
         loss = torch.cat(losses).mean()
@@ -364,28 +371,32 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         return [", ".join(graph_events) for graph_events in batched_graph_events]
 
     def wandb_log_gen_obs(
-        self, outputs: List[List[Tuple[str, str, str, str]]], table_title: str
+        self, outputs: List[List[Tuple[str, ...]]], table_title: str
     ) -> None:
         eval_table_artifact = wandb.Artifact(
             table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
         )
         eval_table = wandb.Table(
-            columns=["id", "observation", "previous action", "decoded graph events"],
+            columns=[
+                "id",
+                "observation",
+                "previous action",
+                "decoded graph events",
+                "generated observation",
+            ],
             data=[item for sublist in outputs for item in sublist],
         )
         eval_table_artifact.add(eval_table, "predictions")
         self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
 
     def validation_epoch_end(  # type: ignore
-        self,
-        outputs: List[List[Tuple[str, str, str, str]]],
+        self, outputs: List[List[Tuple[str, ...]]]
     ) -> None:
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "val_graph_events")
 
     def test_epoch_end(  # type: ignore
-        self,
-        outputs: List[List[Tuple[str, str, str, str]]],
+        self, outputs: List[List[Tuple[str, ...]]]
     ) -> None:
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_graph_events")
