@@ -6,6 +6,7 @@ from tdgu.preprocessor import (
     Preprocessor,
     HuggingFacePreprocessor,
     SpacyPreprocessor,
+    BertPreprocessor,
 )
 
 
@@ -306,3 +307,9 @@ def test_hf_preprocessor_batch_decode(token_ids, mask, skip_special_tokens, expe
         hf.batch_decode(token_ids, mask, skip_special_tokens=skip_special_tokens)
         == expected
     )
+
+
+def test_bert_preprocessor():
+    bert = BertPreprocessor("bert-base-uncased")
+    assert bert.bos_token_id == bert.tokenizer.cls_token_id
+    assert bert.eos_token_id == bert.tokenizer.sep_token_id

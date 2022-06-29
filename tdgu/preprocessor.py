@@ -267,3 +267,13 @@ class HuggingFacePreprocessor(Preprocessor):
     @property
     def unk_token_id(self) -> int:
         return self.tokenizer.unk_token_id
+
+
+class BertPreprocessor(HuggingFacePreprocessor):
+    @property
+    def bos_token_id(self) -> int:
+        return self.tokenizer.cls_token_id
+
+    @property
+    def eos_token_id(self) -> int:
+        return self.tokenizer.sep_token_id
