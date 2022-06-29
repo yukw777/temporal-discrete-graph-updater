@@ -17,7 +17,7 @@ from utils import increasing_mask
 
 @pytest.fixture()
 def tdgu():
-    text_encoder = QANetTextEncoder(nn.Embedding(17, 300), 1, 3, 5, 8, 1)
+    text_encoder = QANetTextEncoder(nn.Embedding(17, 300), 1, 3, 5, 8, 1, 8)
     return TemporalDiscreteGraphUpdater(
         text_encoder,
         TransformerConv,
@@ -35,18 +35,6 @@ def tdgu():
         0,
         0.3,
     )
-
-
-@pytest.mark.parametrize("label_len", [2, 4])
-@pytest.mark.parametrize("batch", [1, 8])
-def test_tdgu_embed_label(tdgu, batch, label_len):
-    assert tdgu.embed_label(
-        torch.randint(
-            tdgu.event_label_head.pretrained_word_embeddings.num_embeddings,
-            (batch, label_len),
-        ),
-        torch.randint(2, (batch, label_len)).bool(),
-    ).size() == (batch, tdgu.hidden_dim)
 
 
 @pytest.mark.parametrize(
@@ -950,9 +938,18 @@ def test_tdgu_get_decoder_input(
             ]
         )
     )
-    tdgu.embed_label = (
-        lambda x, y: x[:, 0].unsqueeze(-1).expand(-1, tdgu.hidden_dim).float()
-    )
+
+    class MockTextEncoder(nn.Module):
+        def forward(self, word_ids, mask, return_pooled_output):
+            return {
+                "pooled_output": word_ids[:, 0]
+                .unsqueeze(-1)
+                .expand(-1, tdgu.hidden_dim)
+                .float()
+            }
+
+    tdgu.text_encoder = MockTextEncoder()
+
     assert tdgu.get_decoder_input(
         event_type_ids,
         event_src_ids,
@@ -1220,12 +1217,17 @@ def test_tdgu_get_decoder_input_one_hot(
             ]
         )
     )
-    tdgu.embed_label = (
-        lambda x, y: x.argmax(-1)[:, 0]
-        .unsqueeze(-1)
-        .expand(-1, tdgu.hidden_dim)
-        .float()
-    )
+
+    class MockTextEncoder(nn.Module):
+        def forward(self, word_ids, mask, return_pooled_output):
+            return {
+                "pooled_output": word_ids.argmax(-1)[:, 0]
+                .unsqueeze(-1)
+                .expand(-1, tdgu.hidden_dim)
+                .float()
+            }
+
+    tdgu.text_encoder = MockTextEncoder()
     assert tdgu.get_decoder_input(
         event_type_ids,
         event_src_ids,
