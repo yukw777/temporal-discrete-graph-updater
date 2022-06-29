@@ -1,8 +1,41 @@
 import torch
 import torch.nn as nn
 
+from abc import ABC, abstractmethod
+from typing import Dict
+from transformers import PreTrainedModel
 
-from tdgu.nn.utils import PositionalEncoder, generate_square_subsequent_mask
+from tdgu.nn.utils import (
+    PositionalEncoder,
+    generate_square_subsequent_mask,
+    masked_mean,
+)
+from tdgu.preprocessor import BertPreprocessor
+
+
+class TextEncoder(ABC, nn.Module):
+    @abstractmethod
+    def forward(
+        self,
+        word_ids: torch.Tensor,
+        mask: torch.Tensor,
+        return_pooled_output: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        word_ids: (batch_size, seq_len) or
+            one-hot encoded (batch_size, seq_len, num_word)
+        mask: (batch_size, seq_len)
+        output:
+            {
+                "encoded": (batch_size, seq_len, encoder_hidden_dim),
+                "pooled_output": (batch_size, pooled_hidden_dim)
+                    if return_pooled_output is True
+            }
+        """
+
+    @abstractmethod
+    def get_input_embeddings(self) -> nn.Embedding:
+        pass
 
 
 class DepthwiseSeparableConv1d(nn.Module):
@@ -130,7 +163,7 @@ class TextEncoderBlock(nn.Module):
         return output
 
 
-class QANetTextEncoder(nn.Module):
+class QANetTextEncoder(TextEncoder):
     def __init__(
         self,
         pretrained_word_embeddings: nn.Embedding,
@@ -139,11 +172,13 @@ class QANetTextEncoder(nn.Module):
         enc_block_kernel_size: int,
         enc_block_hidden_dim: int,
         enc_block_num_heads: int,
+        hidden_dim: int,
         dropout: float = 0.3,
     ) -> None:
         super().__init__()
         self.enc_block_hidden_dim = enc_block_hidden_dim
         self.pretrained_word_embeddings = pretrained_word_embeddings
+        self.hidden_dim = hidden_dim
 
         self.word_embedding_linear = nn.Linear(
             self.pretrained_word_embeddings.embedding_dim, enc_block_hidden_dim
@@ -160,33 +195,48 @@ class QANetTextEncoder(nn.Module):
             for _ in range(num_enc_blocks)
         )
 
-    def forward(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        self.output_linear = nn.Linear(enc_block_hidden_dim, hidden_dim)
+
+    def forward(
+        self,
+        word_ids: torch.Tensor,
+        mask: torch.Tensor,
+        return_pooled_output: bool = False,
+    ) -> Dict[str, torch.Tensor]:
         """
         word_ids: (batch_size, seq_len) or
             one-hot encoded (batch_size, seq_len, num_word)
         mask: (batch_size, seq_len)
         output:
-            encoded: (batch_size, seq_len, enc_block_hidden_dim)
+                "encoded": (batch_size, seq_len, hidden_dim)
+                "pooled_output": (batch_size, hidden_dim)
+                    if return_pooled_output is True
         """
         if word_ids.size(1) == 0:
-            return torch.empty(
-                word_ids.size(0), 0, self.enc_block_hidden_dim, device=word_ids.device
+            batch_size = word_ids.size(0)
+            encoded = torch.empty(
+                batch_size, 0, self.enc_block_hidden_dim, device=word_ids.device
             )
-        if word_ids.dim() == 3:
-            # word_ids are one-hot encoded
-            word_embs = word_ids.matmul(self.pretrained_word_embeddings.weight)
         else:
-            # word_ids are not one-hot encoded, so use word_embeddings directly
-            word_embs = self.pretrained_word_embeddings(word_ids)
-        # (batch_size, seq_len, word_embedding_dim)
-        word_embs = self.word_embedding_linear(word_embs)
-        # (batch_size, seq_len, enc_block_hidden_dim)
+            if word_ids.dim() == 3:
+                # word_ids are one-hot encoded
+                encoded = word_ids.matmul(self.pretrained_word_embeddings.weight)
+            else:
+                # word_ids are not one-hot encoded, so use word_embeddings directly
+                encoded = self.pretrained_word_embeddings(word_ids)
+            # (batch_size, seq_len, word_embedding_dim)
+            encoded = self.word_embedding_linear(encoded)
+            # (batch_size, seq_len, enc_block_hidden_dim)
 
-        for enc_block in self.enc_blocks:
-            word_embs = enc_block(word_embs, mask)
-        # (batch_size, seq_len, enc_block_hidden_dim)
+            for enc_block in self.enc_blocks:
+                encoded = enc_block(encoded, mask)
+            # (batch_size, seq_len, enc_block_hidden_dim)
+            encoded = self.output_linear(encoded)
 
-        return word_embs
+        output = {"encoded": encoded}
+        if return_pooled_output:
+            output["pooled_output"] = masked_mean(encoded, mask)
+        return output
 
     def get_input_embeddings(self) -> nn.Embedding:
         return self.pretrained_word_embeddings
@@ -364,3 +414,90 @@ class TextDecoder(nn.Module):
         # (batch_size, input_seq_len, hidden_dim)
 
         return self.output_linear(output)
+
+
+class HuggingFaceTextEncoder(TextEncoder):
+    model: PreTrainedModel
+
+    def get_input_embeddings(self) -> nn.Embedding:
+        return self.model.get_input_embeddings()  # type: ignore
+
+
+class BertTextEncoder(HuggingFaceTextEncoder):
+    def __init__(self, bert_like_model: PreTrainedModel, hidden_dim: int) -> None:
+        super().__init__()
+        self.model = bert_like_model
+        self.hidden_dim = hidden_dim
+
+        self.output_linear = nn.Linear(self.model.config.hidden_size, hidden_dim)
+
+    def forward(
+        self,
+        word_ids: torch.Tensor,
+        mask: torch.Tensor,
+        return_pooled_output: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        word_ids: (batch_size, seq_len) or
+            one-hot encoded (batch_size, seq_len, num_word)
+        mask: (batch_size, seq_len)
+        output:
+            {
+                "encoded": (batch_size, seq_len, hidden_dim),
+                "pooled_output": (batch_size, hidden_dim)
+                    if return_pooled_output is True
+            }
+        """
+        if word_ids.dim() == 2:
+            model_output = self.model(input_ids=word_ids, attention_mask=mask)
+        else:
+            model_output = self.model(
+                inputs_embeds=word_ids.matmul(
+                    self.model.get_input_embeddings().weight  # type: ignore
+                ),
+                attention_mask=mask,
+            )
+        output = {"encoded": self.output_linear(model_output.last_hidden_state)}
+        if return_pooled_output:
+            output["pooled_output"] = self.output_linear(model_output.pooler_output)
+        return output
+
+
+class DistilBertTextEncoder(BertTextEncoder):
+    def forward(
+        self,
+        word_ids: torch.Tensor,
+        mask: torch.Tensor,
+        return_pooled_output: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        word_ids: (batch_size, seq_len) or
+            one-hot encoded (batch_size, seq_len, num_word)
+        mask: (batch_size, seq_len)
+        output:
+            {
+                "encoded": (batch_size, seq_len, hidden_dim),
+                "pooled_output": (batch_size, hidden_dim)
+                    if return_pooled_output is True
+            }
+        """
+        if word_ids.dim() == 2:
+            model_output = self.model(input_ids=word_ids, attention_mask=mask)
+        else:
+            model_output = self.model(
+                inputs_embeds=word_ids.matmul(
+                    self.model.get_input_embeddings().weight  # type: ignore
+                ),
+                attention_mask=mask,
+            )
+        encoded = self.output_linear(model_output.last_hidden_state)
+        output = {"encoded": encoded}
+        if return_pooled_output:
+            output["pooled_output"] = encoded[:, 0]
+        return output
+
+
+HF_TEXT_ENCODER_INIT_MAP = {
+    "bert": (BertPreprocessor, BertTextEncoder),
+    "distil-bert": (BertPreprocessor, DistilBertTextEncoder),
+}

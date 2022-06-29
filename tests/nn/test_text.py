@@ -2,9 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytest
+from transformers import BertConfig, BertModel, DistilBertConfig, DistilBertModel
 
 from tdgu.nn.text import (
+    BertTextEncoder,
     DepthwiseSeparableConv1d,
+    DistilBertTextEncoder,
     TextEncoderConvBlock,
     TextEncoderBlock,
     QANetTextEncoder,
@@ -86,21 +89,24 @@ def test_text_enc_block(
 @pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
     "num_enc_blocks,enc_block_num_conv_layers,enc_block_kernel_size,"
-    "enc_block_hidden_dim,enc_block_num_heads,batch_size,seq_len",
+    "enc_block_hidden_dim,enc_block_num_heads,hidden_dim,batch_size,seq_len",
     [
-        (1, 1, 3, 8, 1, 1, 1),
-        (1, 1, 3, 8, 1, 2, 5),
-        (3, 5, 5, 10, 5, 3, 7),
+        (1, 1, 3, 8, 1, 4, 1, 1),
+        (1, 1, 3, 8, 1, 4, 2, 5),
+        (3, 5, 5, 10, 5, 8, 3, 7),
     ],
 )
 @pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
+@pytest.mark.parametrize("return_pooled_output", [True, False])
 def test_qanet_text_encoder(
+    return_pooled_output,
     dropout,
     num_enc_blocks,
     enc_block_num_conv_layers,
     enc_block_kernel_size,
     enc_block_hidden_dim,
     enc_block_num_heads,
+    hidden_dim,
     batch_size,
     seq_len,
     one_hot,
@@ -115,6 +121,7 @@ def test_qanet_text_encoder(
             enc_block_kernel_size,
             enc_block_hidden_dim,
             enc_block_num_heads,
+            hidden_dim,
         )
     else:
         text_encoder = QANetTextEncoder(
@@ -124,6 +131,7 @@ def test_qanet_text_encoder(
             enc_block_kernel_size,
             enc_block_hidden_dim,
             enc_block_num_heads,
+            hidden_dim,
             dropout=dropout,
         )
     # random word ids
@@ -134,11 +142,12 @@ def test_qanet_text_encoder(
     mask = torch.tensor(
         [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
     )
-    assert text_encoder(word_ids, mask).size() == (
-        batch_size,
-        seq_len,
-        enc_block_hidden_dim,
-    )
+    output = text_encoder(word_ids, mask, return_pooled_output=return_pooled_output)
+    output["encoded"].size() == (batch_size, seq_len, hidden_dim)
+    if return_pooled_output:
+        output["pooled_output"].size() == (batch_size, hidden_dim)
+    else:
+        assert "pooled_output" not in output
 
 
 @pytest.mark.parametrize("empty_graph", [True, False])
@@ -232,3 +241,55 @@ def test_text_decoder(
             ]
         ),
     ).size() == (batch_size, input_seq_len, num_embeddings)
+
+
+@pytest.mark.parametrize("one_hot", [True, False])
+@pytest.mark.parametrize(
+    "hidden_dim,batch_size,seq_len", [(4, 1, 1), (4, 2, 5), (8, 3, 7)]
+)
+@pytest.mark.parametrize("return_pooled_output", [True, False])
+def test_bert_text_encoder(
+    return_pooled_output, hidden_dim, batch_size, seq_len, one_hot
+):
+    config = BertConfig()
+    text_encoder = BertTextEncoder(BertModel(config), hidden_dim)
+    # random word ids
+    word_ids = torch.randint(0, config.vocab_size, size=(batch_size, seq_len))
+    if one_hot:
+        word_ids = F.one_hot(word_ids, num_classes=config.vocab_size).float()
+    # increasing masks
+    mask = torch.tensor(
+        [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+    )
+    output = text_encoder(word_ids, mask, return_pooled_output=return_pooled_output)
+    output["encoded"].size() == (batch_size, seq_len, hidden_dim)
+    if return_pooled_output:
+        output["pooled_output"].size() == (batch_size, hidden_dim)
+    else:
+        assert "pooled_output" not in output
+
+
+@pytest.mark.parametrize("one_hot", [True, False])
+@pytest.mark.parametrize(
+    "hidden_dim,batch_size,seq_len", [(4, 1, 1), (4, 2, 5), (8, 3, 7)]
+)
+@pytest.mark.parametrize("return_pooled_output", [True, False])
+def test_distil_bert_text_encoder(
+    return_pooled_output, hidden_dim, batch_size, seq_len, one_hot
+):
+    config = DistilBertConfig()
+    text_encoder = DistilBertTextEncoder(DistilBertModel(config), hidden_dim)
+    # random word ids
+    word_ids = torch.randint(0, config.vocab_size, size=(batch_size, seq_len))
+    if one_hot:
+        word_ids = F.one_hot(word_ids, num_classes=config.vocab_size).float()
+    # increasing masks
+    mask = torch.tensor(
+        [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+    )
+    output = text_encoder(word_ids, mask, return_pooled_output=return_pooled_output)
+    output["encoded"].size() == (batch_size, seq_len, hidden_dim)
+    if return_pooled_output:
+        output["pooled_output"].size() == (batch_size, hidden_dim)
+    else:
+        assert "pooled_output" not in output
