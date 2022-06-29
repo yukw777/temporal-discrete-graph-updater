@@ -1,13 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import sys
 
-if sys.version_info >= (3, 8):
-    from typing import Optional, Dict, List, Tuple, Protocol
-else:
-    from typing import Optional, Dict, List, Tuple
-    from typing_extensions import Protocol
+from typing import Optional, Dict, List, Tuple, Protocol
 
 from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
