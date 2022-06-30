@@ -2,17 +2,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytest
-from transformers import BertConfig, BertModel, DistilBertConfig, DistilBertModel
+
+from transformers import BertConfig, BertModel
+from transformers import AutoModel
 
 from tdgu.nn.text import (
     BertTextEncoder,
     DepthwiseSeparableConv1d,
-    DistilBertTextEncoder,
     TextEncoderConvBlock,
     TextEncoderBlock,
     QANetTextEncoder,
     TextDecoderBlock,
     TextDecoder,
+    HF_TEXT_ENCODER_INIT_MAP,
 )
 from utils import increasing_mask
 
@@ -245,7 +247,7 @@ def test_text_decoder(
 
 @pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
-    "hidden_dim,batch_size,seq_len", [(4, 1, 1), (4, 2, 5), (8, 3, 7)]
+    "hidden_dim,batch_size,seq_len", [(2, 1, 1), (2, 2, 5), (4, 2, 0), (4, 0, 0)]
 )
 @pytest.mark.parametrize("return_pooled_output", [True, False])
 def test_bert_text_encoder(
@@ -258,9 +260,12 @@ def test_bert_text_encoder(
     if one_hot:
         word_ids = F.one_hot(word_ids, num_classes=config.vocab_size).float()
     # increasing masks
-    mask = torch.tensor(
-        [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
-    )
+    if batch_size == 0 or seq_len == 0:
+        mask = torch.ones(batch_size, seq_len).bool()
+    else:
+        mask = torch.tensor(
+            [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+        )
     output = text_encoder(word_ids, mask, return_pooled_output=return_pooled_output)
     output["encoded"].size() == (batch_size, seq_len, hidden_dim)
     if return_pooled_output:
@@ -269,27 +274,28 @@ def test_bert_text_encoder(
         assert "pooled_output" not in output
 
 
-@pytest.mark.parametrize("one_hot", [True, False])
 @pytest.mark.parametrize(
-    "hidden_dim,batch_size,seq_len", [(4, 1, 1), (4, 2, 5), (8, 3, 7)]
+    "model_type,pretrained_model_name",
+    [("bert", "bert-base-uncased"), ("albert", "albert-base-v2")],
 )
-@pytest.mark.parametrize("return_pooled_output", [True, False])
-def test_distil_bert_text_encoder(
-    return_pooled_output, hidden_dim, batch_size, seq_len, one_hot
-):
-    config = DistilBertConfig()
-    text_encoder = DistilBertTextEncoder(DistilBertModel(config), hidden_dim)
-    # random word ids
-    word_ids = torch.randint(0, config.vocab_size, size=(batch_size, seq_len))
-    if one_hot:
-        word_ids = F.one_hot(word_ids, num_classes=config.vocab_size).float()
-    # increasing masks
-    mask = torch.tensor(
-        [[1.0] * (i + 1) + [0.0] * (seq_len - i - 1) for i in range(batch_size)]
+@pytest.mark.slow
+def test_id_one_hot_parity(model_type, pretrained_model_name):
+    preprocessor_init, text_encoder_init = HF_TEXT_ENCODER_INIT_MAP[model_type]
+    preprocessor = preprocessor_init(pretrained_model_name)
+    text_encoder = text_encoder_init(
+        AutoModel.from_pretrained(pretrained_model_name), 8
     )
-    output = text_encoder(word_ids, mask, return_pooled_output=return_pooled_output)
-    output["encoded"].size() == (batch_size, seq_len, hidden_dim)
-    if return_pooled_output:
-        output["pooled_output"].size() == (batch_size, hidden_dim)
-    else:
-        assert "pooled_output" not in output
+
+    token_ids, mask = preprocessor.preprocess(
+        ["My dog's name is Astor.", "She's such a cute dog."]
+    )
+
+    token_ids_one_hot = F.one_hot(
+        token_ids, num_classes=text_encoder.pretrained_model.config.vocab_size
+    ).float()
+
+    outputs = text_encoder(token_ids, mask, return_pooled_output=True)
+    outputs_one_hot = text_encoder(token_ids_one_hot, mask, return_pooled_output=True)
+
+    assert outputs["encoded"].equal(outputs_one_hot["encoded"])
+    assert outputs["pooled_output"].equal(outputs_one_hot["pooled_output"])

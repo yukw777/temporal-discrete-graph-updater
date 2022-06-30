@@ -10,7 +10,7 @@ from tdgu.nn.utils import (
     generate_square_subsequent_mask,
     masked_mean,
 )
-from tdgu.preprocessor import BertPreprocessor
+from tdgu.preprocessor import BertPreprocessor, HuggingFacePreprocessor
 
 
 class TextEncoder(ABC, nn.Module):
@@ -417,20 +417,20 @@ class TextDecoder(nn.Module):
 
 
 class HuggingFaceTextEncoder(TextEncoder):
-    model: PreTrainedModel
+    def __init__(self, pretrained_model: PreTrainedModel, hidden_dim: int) -> None:
+        super().__init__()
+        self.pretrained_model = pretrained_model
+        self.hidden_dim = hidden_dim
+
+        self.output_linear = nn.Linear(
+            self.pretrained_model.config.hidden_size, hidden_dim
+        )
 
     def get_input_embeddings(self) -> nn.Embedding:
-        return self.model.get_input_embeddings()  # type: ignore
+        return self.pretrained_model.get_input_embeddings()  # type: ignore
 
 
 class BertTextEncoder(HuggingFaceTextEncoder):
-    def __init__(self, bert_like_model: PreTrainedModel, hidden_dim: int) -> None:
-        super().__init__()
-        self.model = bert_like_model
-        self.hidden_dim = hidden_dim
-
-        self.output_linear = nn.Linear(self.model.config.hidden_size, hidden_dim)
-
     def forward(
         self,
         word_ids: torch.Tensor,
@@ -441,6 +441,7 @@ class BertTextEncoder(HuggingFaceTextEncoder):
         word_ids: (batch_size, seq_len) or
             one-hot encoded (batch_size, seq_len, num_word)
         mask: (batch_size, seq_len)
+        return_pooled_output: whether to return pooled output or not
         output:
             {
                 "encoded": (batch_size, seq_len, hidden_dim),
@@ -448,12 +449,26 @@ class BertTextEncoder(HuggingFaceTextEncoder):
                     if return_pooled_output is True
             }
         """
+        batch_size, seq_len = mask.size()
+        if batch_size == 0 or seq_len == 0:
+            output = {
+                "encoded": torch.zeros(
+                    batch_size, seq_len, self.hidden_dim, device=mask.device
+                )
+            }
+            if return_pooled_output:
+                output["pooled_output"] = torch.zeros(
+                    batch_size, self.hidden_dim, device=mask.device
+                )
+            return output
         if word_ids.dim() == 2:
-            model_output = self.model(input_ids=word_ids, attention_mask=mask)
+            model_output = self.pretrained_model(
+                input_ids=word_ids, attention_mask=mask
+            )
         else:
-            model_output = self.model(
+            model_output = self.pretrained_model(
                 inputs_embeds=word_ids.matmul(
-                    self.model.get_input_embeddings().weight  # type: ignore
+                    self.pretrained_model.get_input_embeddings().weight  # type: ignore
                 ),
                 attention_mask=mask,
             )
@@ -463,41 +478,7 @@ class BertTextEncoder(HuggingFaceTextEncoder):
         return output
 
 
-class DistilBertTextEncoder(BertTextEncoder):
-    def forward(
-        self,
-        word_ids: torch.Tensor,
-        mask: torch.Tensor,
-        return_pooled_output: bool = False,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        word_ids: (batch_size, seq_len) or
-            one-hot encoded (batch_size, seq_len, num_word)
-        mask: (batch_size, seq_len)
-        output:
-            {
-                "encoded": (batch_size, seq_len, hidden_dim),
-                "pooled_output": (batch_size, hidden_dim)
-                    if return_pooled_output is True
-            }
-        """
-        if word_ids.dim() == 2:
-            model_output = self.model(input_ids=word_ids, attention_mask=mask)
-        else:
-            model_output = self.model(
-                inputs_embeds=word_ids.matmul(
-                    self.model.get_input_embeddings().weight  # type: ignore
-                ),
-                attention_mask=mask,
-            )
-        encoded = self.output_linear(model_output.last_hidden_state)
-        output = {"encoded": encoded}
-        if return_pooled_output:
-            output["pooled_output"] = encoded[:, 0]
-        return output
-
-
 HF_TEXT_ENCODER_INIT_MAP = {
     "bert": (BertPreprocessor, BertTextEncoder),
-    "distil-bert": (BertPreprocessor, DistilBertTextEncoder),
+    "albert": (HuggingFacePreprocessor, BertTextEncoder),
 }

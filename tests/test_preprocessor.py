@@ -65,7 +65,7 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
     ],
 )
 def test_hf_preprocessor_preprocess(batch, expected_preprocessed, expected_mask):
-    sp = HuggingFacePreprocessor("distilbert-base-uncased")
+    sp = HuggingFacePreprocessor("bert-base-uncased")
     preprocessed, mask = sp.preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
     assert mask.equal(expected_mask)
@@ -87,7 +87,7 @@ def test_spacy_preprocessor_load():
 
 
 def test_hf_preprocessor_load():
-    sp = HuggingFacePreprocessor("distilbert-base-uncased")
+    sp = HuggingFacePreprocessor("bert-base-uncased")
     assert sp.vocab_size == 30522
     assert sp.pad_token_id == 0
     assert sp.unk_token_id == 100
@@ -302,7 +302,7 @@ def test_spacy_preprocessor_batch_decode(
     ],
 )
 def test_hf_preprocessor_batch_decode(token_ids, mask, skip_special_tokens, expected):
-    hf = HuggingFacePreprocessor("distilbert-base-uncased")
+    hf = HuggingFacePreprocessor("bert-base-uncased")
     assert (
         hf.batch_decode(token_ids, mask, skip_special_tokens=skip_special_tokens)
         == expected
