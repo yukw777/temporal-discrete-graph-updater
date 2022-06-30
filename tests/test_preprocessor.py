@@ -45,12 +45,12 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
         (
             ["My name is Peter"],
             torch.tensor([[101, 2026, 2171, 2003, 2848, 102]]),
-            torch.tensor([[1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[True] * 6]),
         ),
         (
             ["my name is peter"],
             torch.tensor([[101, 2026, 2171, 2003, 2848, 102]]),
-            torch.tensor([[1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[True] * 6]),
         ),
         (
             ["My name is Peter", "Is my name David?"],
@@ -60,7 +60,7 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
                     [101, 2003, 2026, 2171, 2585, 1029, 102],
                 ]
             ),
-            torch.tensor([[1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[True, True, True, True, True, True, False], [True] * 7]),
         ),
     ],
 )

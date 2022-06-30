@@ -222,7 +222,7 @@ class HuggingFacePreprocessor(Preprocessor):
         )
         return (
             processed["input_ids"].to(device=device),
-            processed["attention_mask"].to(device=device),
+            processed["attention_mask"].bool().to(device=device),
         )
 
     @property
