@@ -32,9 +32,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         **kwargs,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(
-            ignore=["word_vocab_path", "pretrained_word_embedding_path"]
-        )
+        self.save_hyperparameters(ignore=["text_encoder_conf"])
         self.truncated_bptt_steps = truncated_bptt_steps
 
         self.tdgu = TDGULightningModule(**kwargs)

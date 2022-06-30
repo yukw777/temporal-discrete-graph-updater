@@ -9,13 +9,15 @@ from torch_geometric.data import Batch
 from hydra.utils import to_absolute_path
 from pathlib import Path
 
+from transformers import AutoModel
+
 from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
-from tdgu.nn.text import QANetTextEncoder
+from tdgu.nn.text import TextEncoder, QANetTextEncoder, HF_TEXT_ENCODER_INIT_MAP
 from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
 from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.nn.utils import masked_softmax, load_fasttext, masked_gumbel_softmax
-from tdgu.preprocessor import SpacyPreprocessor, PAD, UNK, BOS, EOS
+from tdgu.preprocessor import BOS, EOS, PAD, UNK, Preprocessor, SpacyPreprocessor
 
 
 class TDGULightningModule(  # type: ignore
@@ -27,17 +29,14 @@ class TDGULightningModule(  # type: ignore
 
     def __init__(
         self,
+        text_encoder_hparams: Optional[Dict[str, Any]] = None,
+        text_encoder_conf: Optional[Dict[str, Any]] = None,
         hidden_dim: int = 8,
         dgnn_gnn: str = "TransformerConv",
         dgnn_timestamp_enc_dim: int = 8,
         dgnn_num_gnn_block: int = 1,
         dgnn_num_gnn_head: int = 1,
         dgnn_zero_timestamp_encoder: bool = False,
-        text_encoder_word_emb_dim: int = 300,
-        text_encoder_num_blocks: int = 1,
-        text_encoder_num_conv_layers: int = 3,
-        text_encoder_kernel_size: int = 5,
-        text_encoder_num_heads: int = 1,
         graph_event_decoder_event_type_emb_dim: int = 8,
         graph_event_decoder_hidden_dim: int = 8,
         graph_event_decoder_autoregressive_emb_dim: int = 8,
@@ -49,47 +48,75 @@ class TDGULightningModule(  # type: ignore
         learning_rate: float = 5e-4,
         dropout: float = 0.3,
         allow_objs_with_same_label: bool = False,
-        word_vocab_path: Optional[str] = None,
-        pretrained_word_embedding_path: Optional[str] = None,
     ) -> None:
-        # preprocessor
-        self.preprocessor = (
-            SpacyPreprocessor([PAD, UNK, BOS, EOS])
-            if word_vocab_path is None
-            else SpacyPreprocessor.load_from_file(to_absolute_path(word_vocab_path))
-        )
+        if text_encoder_hparams is None:
+            text_encoder_hparams = {
+                "type": "qanet",
+                "word_emb_dim": 300,
+                "num_blocks": 1,
+                "num_conv_layers": 3,
+                "kernel_size": 5,
+                "num_heads": 1,
+            }
+        self.preprocessor: Preprocessor
+        text_encoder: TextEncoder
+        if text_encoder_hparams["type"] == "qanet":
+            # preprocessor
+            self.preprocessor = (
+                SpacyPreprocessor.load_from_file(
+                    to_absolute_path(text_encoder_conf["word_vocab_path"])
+                )
+                if text_encoder_conf is not None
+                else SpacyPreprocessor([PAD, UNK, BOS, EOS])
+            )
 
-        # pretrained word embeddings
-        pretrained_word_embeddings: Optional[nn.Embedding]
-        if pretrained_word_embedding_path is None:
-            pretrained_word_embeddings = nn.Embedding(
-                self.preprocessor.vocab_size, text_encoder_word_emb_dim
+            # pretrained word embeddings
+            if (
+                text_encoder_conf is None
+                or text_encoder_conf.get("pretrained_word_embedding_path") is None
+            ):
+                pretrained_word_embeddings = nn.Embedding(
+                    self.preprocessor.vocab_size, text_encoder_hparams["word_emb_dim"]
+                )
+            else:
+                abs_pretrained_word_embedding_path = Path(
+                    to_absolute_path(
+                        text_encoder_conf["pretrained_word_embedding_path"]
+                    )
+                )
+                serialized_path = abs_pretrained_word_embedding_path.parent / (
+                    abs_pretrained_word_embedding_path.stem + ".pt"
+                )
+                pretrained_word_embeddings = load_fasttext(
+                    str(abs_pretrained_word_embedding_path),
+                    serialized_path,
+                    self.preprocessor.get_vocab(),
+                    self.preprocessor.pad_token_id,
+                )
+                pretrained_word_embeddings.requires_grad_(requires_grad=False)
+
+            # text encoder
+            text_encoder = QANetTextEncoder(
+                pretrained_word_embeddings,
+                text_encoder_hparams["num_blocks"],
+                text_encoder_hparams["num_conv_layers"],
+                text_encoder_hparams["kernel_size"],
+                hidden_dim,
+                text_encoder_hparams["num_heads"],
+                hidden_dim,
+                dropout=dropout,
             )
         else:
-            abs_pretrained_word_embedding_path = Path(
-                to_absolute_path(pretrained_word_embedding_path)
+            preprocessor_init, text_encoder_init = HF_TEXT_ENCODER_INIT_MAP[
+                text_encoder_hparams["type"]
+            ]
+            self.preprocessor = preprocessor_init(text_encoder_hparams["pretrained"])
+            text_encoder = text_encoder_init(
+                AutoModel.from_pretrained(text_encoder_hparams["pretrained"]),
+                hidden_dim,
             )
-            serialized_path = abs_pretrained_word_embedding_path.parent / (
-                abs_pretrained_word_embedding_path.stem + ".pt"
-            )
-            pretrained_word_embeddings = load_fasttext(
-                str(abs_pretrained_word_embedding_path),
-                serialized_path,
-                self.preprocessor.get_vocab(),
-                self.preprocessor.pad_token_id,
-            )
-            pretrained_word_embeddings.requires_grad_(requires_grad=False)
-
-        # text encoder
-        text_encoder = QANetTextEncoder(
-            pretrained_word_embeddings,
-            text_encoder_num_blocks,
-            text_encoder_num_conv_layers,
-            text_encoder_kernel_size,
-            hidden_dim,
-            text_encoder_num_heads,
-            dropout=dropout,
-        )
+            if text_encoder_hparams["freeze_pretrained"]:
+                text_encoder.pretrained_model.requires_grad_(requires_grad=False)
         # temporal graph network
         gnn_module: nn.Module
         if dgnn_gnn == "TransformerConv":
@@ -122,9 +149,7 @@ class TDGULightningModule(  # type: ignore
             self.preprocessor.pad_token_id,
             dropout,
         )
-        self.save_hyperparameters(
-            ignore=["word_vocab_path", "pretrained_word_embedding_path"]
-        )
+        self.save_hyperparameters(ignore=["text_encoder_conf"])
 
     def greedy_decode(
         self,

@@ -13,8 +13,10 @@ from tdgu.train.supervised import SupervisedTDGU, UncertaintyWeightedLoss
 def supervised_tdgu(tmp_path):
     shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
     return SupervisedTDGU(
-        pretrained_word_embedding_path=f"{tmp_path}/test-fasttext.vec",
-        word_vocab_path="tests/data/test_word_vocab.txt",
+        text_encoder_conf={
+            "pretrained_word_embedding_path": f"{tmp_path}/test-fasttext.vec",
+            "word_vocab_path": "tests/data/test_word_vocab.txt",
+        }
     )
 
 
