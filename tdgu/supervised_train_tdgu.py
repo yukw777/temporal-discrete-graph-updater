@@ -52,6 +52,6 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     main()
