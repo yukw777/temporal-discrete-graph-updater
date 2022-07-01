@@ -407,7 +407,7 @@ class SupervisedTDGU(TDGULightningModule):
                 )
             ]
         ).mean()
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
     def eval_step(
@@ -447,7 +447,7 @@ class SupervisedTDGU(TDGULightningModule):
         # TODO: Remove batch_size when
         # https://github.com/PyTorchLightning/pytorch-lightning/pull/12573
         # is released.
-        self.log(log_prefix + "_loss", loss, batch_size=len(batch.ids))
+        self.log(log_prefix + "_loss", loss, batch_size=len(batch.ids), sync_dist=True)
 
         # log classification F1s from teacher forcing
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):

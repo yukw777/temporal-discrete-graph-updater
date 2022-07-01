@@ -140,7 +140,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             prev_batched_graph = results["updated_batched_graph_list"][-1]
             losses.append(results["loss"])
         loss = torch.stack(losses).mean()
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, sync_dist=True)
         assert prev_batched_graph is not None
         return {"loss": loss, "hiddens": prev_batched_graph.detach()}
 
@@ -229,7 +229,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                 )
         loss = torch.cat(losses).mean()
         batch_size = batch.step_mask.size(1)
-        self.log(f"{log_prefix}_loss", loss, batch_size=batch_size)
+        self.log(f"{log_prefix}_loss", loss, batch_size=batch_size, sync_dist=True)
         self.log(f"{log_prefix}_f1", f1, batch_size=batch_size)
 
         return table_data
