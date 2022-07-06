@@ -371,9 +371,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def wandb_log_gen_obs(
         self, outputs: List[List[Tuple[str, ...]]], table_title: str
     ) -> None:
-        eval_table_artifact = wandb.Artifact(
-            table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
-        )
+        eval_table_artifact = wandb.Artifact(table_title, "predictions")  # type: ignore
         eval_table = wandb.Table(
             columns=[
                 "id",
