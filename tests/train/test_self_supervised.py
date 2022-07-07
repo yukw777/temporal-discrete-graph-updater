@@ -61,18 +61,36 @@ def obs_gen_self_supervised_tdgu(tmp_path):
                     TWCmdGenGraphEventStepInput(),
                     TWCmdGenGraphEventStepInput(),
                     TWCmdGenGraphEventStepInput(),
+                    TWCmdGenGraphEventStepInput(),
                 ),
-                torch.tensor([[True] * 3, [True, False, True], [False, False, True]]),
+                torch.tensor(
+                    [
+                        [True] * 3,
+                        [True, False, True],
+                        [False, False, True],
+                        [False, False, True],
+                    ]
+                ),
             ),
-            2,
+            3,
             [
                 TWCmdGenObsGenBatch(
-                    (("g1", 0), ("g2", 1)),
-                    (TWCmdGenGraphEventStepInput(), TWCmdGenGraphEventStepInput()),
-                    torch.tensor([[True] * 3, [True, False, True]]),
+                    (("g1", 0), ("g2", 1), ("g1", 1)),
+                    (
+                        TWCmdGenGraphEventStepInput(),
+                        TWCmdGenGraphEventStepInput(),
+                        TWCmdGenGraphEventStepInput(),
+                    ),
+                    torch.tensor(
+                        [
+                            [True] * 3,
+                            [True, False, True],
+                            [False, False, True],
+                        ]
+                    ),
                 ),
                 TWCmdGenObsGenBatch(
-                    (("g1", 1),),
+                    (("g1", 0), ("g2", 1), ("g1", 1)),
                     (TWCmdGenGraphEventStepInput(),),
                     torch.tensor([[False, False, True]]),
                 ),

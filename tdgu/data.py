@@ -915,14 +915,14 @@ class TWCmdGenObsGenDataCollator:
         """
         Each batch is a tuple of step inputs and a step mask.
         (
-            ids: ((game, walkthrough_step), ...)
-            step_inputs: (TWCmdGenGraphEventStepInput(
+            ids: len(((game, walkthrough_step), ...)) == batch
+            step_inputs: len((TWCmdGenGraphEventStepInput(
                 obs_word_ids: (batch, obs_len),
                 obs_mask: (batch, obs_len),
                 prev_action_word_ids: (batch, prev_action_len),
                 prev_action_mask: (batch, prev_action_len),
                 timestamps: (batch)
-            ), ...),
+            ), ...)) == max_step,
             step_mask: (max_step, batch)
         )
         """

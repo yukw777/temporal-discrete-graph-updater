@@ -251,7 +251,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         for i in range(0, len(batch.step_inputs), split_size):
             splits.append(
                 TWCmdGenObsGenBatch(
-                    ids=batch.ids[i : i + split_size],
+                    ids=batch.ids,
                     step_inputs=batch.step_inputs[i : i + split_size],
                     step_mask=batch.step_mask[i : i + split_size],
                 )
