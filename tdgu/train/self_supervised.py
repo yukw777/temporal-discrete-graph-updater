@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
-import wandb
 
 from torch.optim import AdamW, Optimizer
 from typing import Dict, Tuple, Any, List, Optional, Union
@@ -371,8 +370,8 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def wandb_log_gen_obs(
         self, outputs: List[List[Tuple[str, ...]]], table_title: str
     ) -> None:
-        eval_table_artifact = wandb.Artifact(table_title, "predictions")  # type: ignore
-        eval_table = wandb.Table(
+        self.logger.log_table(  # type: ignore
+            key=table_title,
             columns=[
                 "id",
                 "observation",
@@ -382,8 +381,6 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             ],
             data=[item for sublist in outputs for item in sublist],
         )
-        eval_table_artifact.add(eval_table, "predictions")
-        self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
 
     def validation_epoch_end(  # type: ignore
         self, outputs: List[List[Tuple[str, ...]]]
