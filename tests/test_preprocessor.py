@@ -6,6 +6,7 @@ from tdgu.preprocessor import (
     Preprocessor,
     HuggingFacePreprocessor,
     SpacyPreprocessor,
+    BertPreprocessor,
 )
 
 
@@ -44,12 +45,12 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
         (
             ["My name is Peter"],
             torch.tensor([[101, 2026, 2171, 2003, 2848, 102]]),
-            torch.tensor([[1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[True] * 6]),
         ),
         (
             ["my name is peter"],
             torch.tensor([[101, 2026, 2171, 2003, 2848, 102]]),
-            torch.tensor([[1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[True] * 6]),
         ),
         (
             ["My name is Peter", "Is my name David?"],
@@ -59,12 +60,12 @@ def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_ma
                     [101, 2003, 2026, 2171, 2585, 1029, 102],
                 ]
             ),
-            torch.tensor([[1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 1]]),
+            torch.tensor([[True, True, True, True, True, True, False], [True] * 7]),
         ),
     ],
 )
 def test_hf_preprocessor_preprocess(batch, expected_preprocessed, expected_mask):
-    sp = HuggingFacePreprocessor("distilbert-base-uncased")
+    sp = HuggingFacePreprocessor("bert-base-uncased")
     preprocessed, mask = sp.preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
     assert mask.equal(expected_mask)
@@ -86,7 +87,7 @@ def test_spacy_preprocessor_load():
 
 
 def test_hf_preprocessor_load():
-    sp = HuggingFacePreprocessor("distilbert-base-uncased")
+    sp = HuggingFacePreprocessor("bert-base-uncased")
     assert sp.vocab_size == 30522
     assert sp.pad_token_id == 0
     assert sp.unk_token_id == 100
@@ -301,8 +302,14 @@ def test_spacy_preprocessor_batch_decode(
     ],
 )
 def test_hf_preprocessor_batch_decode(token_ids, mask, skip_special_tokens, expected):
-    hf = HuggingFacePreprocessor("distilbert-base-uncased")
+    hf = HuggingFacePreprocessor("bert-base-uncased")
     assert (
         hf.batch_decode(token_ids, mask, skip_special_tokens=skip_special_tokens)
         == expected
     )
+
+
+def test_bert_preprocessor():
+    bert = BertPreprocessor("bert-base-uncased")
+    assert bert.bos_token_id == bert.tokenizer.cls_token_id
+    assert bert.eos_token_id == bert.tokenizer.sep_token_id

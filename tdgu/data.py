@@ -11,7 +11,7 @@ from hydra.utils import to_absolute_path
 from dataclasses import dataclass, field
 from torch_geometric.data import Batch
 
-from tdgu.preprocessor import SpacyPreprocessor, Preprocessor
+from tdgu.preprocessor import Preprocessor
 from tdgu.nn.utils import (
     compute_masks_from_event_type_ids,
     shift_tokens_right,
@@ -609,7 +609,7 @@ def collate_step_inputs(
 
 
 class TWCmdGenGraphEventDataCollator:
-    def __init__(self, preprocessor: SpacyPreprocessor) -> None:
+    def __init__(self, preprocessor: Preprocessor) -> None:
         self.preprocessor = preprocessor
 
     def collate_graphical_input_seq(
@@ -908,21 +908,21 @@ class TWCmdGenObsGenBatch:
 
 
 class TWCmdGenObsGenDataCollator:
-    def __init__(self, preprocessor: SpacyPreprocessor) -> None:
+    def __init__(self, preprocessor: Preprocessor) -> None:
         self.preprocessor = preprocessor
 
     def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenObsGenBatch:
         """
         Each batch is a tuple of step inputs and a step mask.
         (
-            ids: ((game, walkthrough_step), ...)
-            step_inputs: (TWCmdGenGraphEventStepInput(
+            ids: len(((game, walkthrough_step), ...)) == batch
+            step_inputs: len((TWCmdGenGraphEventStepInput(
                 obs_word_ids: (batch, obs_len),
                 obs_mask: (batch, obs_len),
                 prev_action_word_ids: (batch, prev_action_len),
                 prev_action_mask: (batch, prev_action_len),
                 timestamps: (batch)
-            ), ...),
+            ), ...)) == max_step,
             step_mask: (max_step, batch)
         )
         """
@@ -979,7 +979,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         test_path: str,
         test_batch_size: int,
         test_num_worker: int,
-        word_vocab_path: str,
+        preprocessor: Preprocessor,
         allow_objs_with_same_label: bool = False,
         sort_commands: bool = False,
     ) -> None:
@@ -996,9 +996,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         self.allow_objs_with_same_label = allow_objs_with_same_label
         self.sort_commands = sort_commands
 
-        self.preprocessor = SpacyPreprocessor.load_from_file(
-            to_absolute_path(word_vocab_path)
-        )
+        self.preprocessor = preprocessor
         self.collator = TWCmdGenGraphEventDataCollator(self.preprocessor)
 
     def prepare_data(self) -> None:
@@ -1104,7 +1102,7 @@ class TWCmdGenObsGenDataModule(pl.LightningDataModule):
         test_path: str,
         test_batch_size: int,
         test_num_worker: int,
-        word_vocab_path: str,
+        preprocessor: Preprocessor,
     ) -> None:
         super().__init__()
         self.train_path = to_absolute_path(train_path)
@@ -1117,10 +1115,8 @@ class TWCmdGenObsGenDataModule(pl.LightningDataModule):
         self.test_batch_size = test_batch_size
         self.test_num_worker = test_num_worker
 
-        self.preprocessor = SpacyPreprocessor.load_from_file(
-            to_absolute_path(word_vocab_path)
-        )
-        self.collator = TWCmdGenObsGenDataCollator(self.preprocessor)
+        self.preprocessor = preprocessor
+        self.collator = TWCmdGenObsGenDataCollator(preprocessor)
 
     def prepare_data(self) -> None:
         pass

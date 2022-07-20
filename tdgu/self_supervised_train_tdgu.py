@@ -27,20 +27,18 @@ def main(cfg: DictConfig) -> None:
         ],
     )
 
-    # data module
-    dm = instantiate(cfg.data_module)
-
     # checkpoint path
     ckpt_path = to_absolute_path(cfg.ckpt_path) if "ckpt_path" in cfg else None
 
     if ckpt_path is not None:
         # don't load the pretrained embeddings since we're loading from a checkpoint
-        del cfg.model.pretrained_word_embedding_path
+        del cfg.model.text_encoder_conf.pretrained_word_embedding_path
 
     # lightning module
-    lm = instantiate(
-        cfg.model, **cfg.train, word_vocab_path=cfg.data_module.word_vocab_path
-    )
+    lm = instantiate(cfg.model, **cfg.train)
+
+    # data module
+    dm = instantiate(cfg.data_module, preprocessor=lm.tdgu.preprocessor)
 
     if cfg.test_only:
         trainer.test(model=lm, datamodule=dm, ckpt_path=ckpt_path)

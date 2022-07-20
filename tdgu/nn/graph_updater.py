@@ -1,13 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import sys
 
-if sys.version_info >= (3, 8):
-    from typing import Optional, Dict, List, Tuple, Protocol
-else:
-    from typing import Optional, Dict, List, Tuple
-    from typing_extensions import Protocol
+from typing import Optional, Dict, List, Tuple, Protocol
 
 from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
@@ -15,7 +10,6 @@ from torch_geometric.utils import to_dense_batch
 from tdgu.nn.rep_aggregator import ReprAggregator
 from tdgu.nn.utils import (
     compute_masks_from_event_type_ids,
-    masked_mean,
     calculate_node_id_offsets,
     masked_softmax,
     masked_gumbel_softmax,
@@ -28,14 +22,7 @@ from tdgu.nn.graph_event_decoder import (
 )
 from tdgu.nn.dynamic_gnn import DynamicGNN
 from tdgu.constants import EVENT_TYPE_ID_MAP
-
-
-class TextEncoderProto(Protocol):
-    def __call__(self, word_ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        pass
-
-    def get_input_embeddings(self) -> nn.Embedding:
-        pass
+from tdgu.nn.text import TextEncoder
 
 
 class GraphEventDecoder(Protocol):
@@ -69,7 +56,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
 
     def __init__(
         self,
-        text_encoder: TextEncoderProto,
+        text_encoder: TextEncoder,
         gnn_module: nn.Module,
         hidden_dim: int,
         dgnn_timestamp_enc_dim: int,
@@ -275,13 +262,13 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         """
         if encoded_obs is None:
             assert obs_word_ids is not None
-            encoded_obs = self.text_encoder(obs_word_ids, obs_mask)
+            encoded_obs = self.text_encoder(obs_word_ids, obs_mask)["encoded"]
             # (batch, obs_len, hidden_dim)
         if encoded_prev_action is None:
             assert prev_action_word_ids is not None
             encoded_prev_action = self.text_encoder(
                 prev_action_word_ids, prev_action_mask
-            )
+            )["encoded"]
             # (batch, prev_action_len, hidden_dim)
 
         # update the batched graph
@@ -341,15 +328,18 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             node_embeddings = self.dynamic_gnn(
                 Batch(
                     batch=updated_batched_graph.batch,
-                    x=self.embed_label(
-                        updated_batched_graph.x, updated_batched_graph.node_label_mask
-                    ),
+                    x=self.text_encoder(
+                        updated_batched_graph.x,
+                        updated_batched_graph.node_label_mask,
+                        return_pooled_output=True,
+                    )["pooled_output"],
                     node_last_update=updated_batched_graph.node_last_update,
                     edge_index=updated_batched_graph.edge_index,
-                    edge_attr=self.embed_label(
+                    edge_attr=self.text_encoder(
                         updated_batched_graph.edge_attr,
                         updated_batched_graph.edge_label_mask,
-                    ),
+                        return_pooled_output=True,
+                    )["pooled_output"],
                     edge_last_update=updated_batched_graph.edge_last_update,
                 )
             )
@@ -535,18 +525,6 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             output["decoded_event_label_mask"] = decoded_event_label_mask
         return output
 
-    def embed_label(
-        self, label_word_ids: torch.Tensor, label_mask: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        label_word_ids: (batch, label_len) or
-            one-hot encoded (batch, label_len, num_word)
-        label_mask: (batch, label_len)
-
-        output: (batch, hidden_dim)
-        """
-        return masked_mean(self.text_encoder(label_word_ids, label_mask), label_mask)
-
     def get_decoder_input(
         self,
         event_type_ids: torch.Tensor,
@@ -595,10 +573,11 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             batch_size, self.hidden_dim, device=event_type_ids.device
         )
         # (batch, label_embedding_dim)
-        event_label_embs[masks["label_mask"]] = self.embed_label(
+        event_label_embs[masks["label_mask"]] = self.text_encoder(
             event_label_word_ids[masks["label_mask"]],
             event_label_mask[masks["label_mask"]],
-        )
+            return_pooled_output=True,
+        )["pooled_output"]
         # (batch, label_embedding_dim)
 
         # event source/destination node embeddings
@@ -614,23 +593,25 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             node_id_offsets = calculate_node_id_offsets(batch_size, batch)
             # (batch)
             if masks["src_mask"].any():
-                event_src_embs[masks["src_mask"]] = self.embed_label(
+                event_src_embs[masks["src_mask"]] = self.text_encoder(
                     node_label_word_ids[
                         (event_src_ids + node_id_offsets)[masks["src_mask"]]
                     ],
                     node_label_mask[
                         (event_src_ids + node_id_offsets)[masks["src_mask"]]
                     ],
-                )
+                    return_pooled_output=True,
+                )["pooled_output"]
             if masks["dst_mask"].any():
-                event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                event_dst_embs[masks["dst_mask"]] = self.text_encoder(
                     node_label_word_ids[
                         (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
                     ],
                     node_label_mask[
                         (event_dst_ids + node_id_offsets)[masks["dst_mask"]]
                     ],
-                )
+                    return_pooled_output=True,
+                )["pooled_output"]
         else:
             batch_node_label_word_ids, _ = to_dense_batch(
                 node_label_word_ids, batch=batch, batch_size=batch_size
@@ -643,7 +624,7 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             # batch_node_label_mask: one-hot encoded
             # (batch, prev_max_sub_graph_num_node, node_label_len)
             if masks["src_mask"].any():
-                event_src_embs[masks["src_mask"]] = self.embed_label(
+                event_src_embs[masks["src_mask"]] = self.text_encoder(
                     torch.sum(
                         batch_node_label_word_ids
                         * event_src_ids.view(batch_size, -1, 1, 1),
@@ -652,11 +633,12 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                     # (batch, node_label_len, num_word)
                     torch.sum(
                         batch_node_label_mask * event_src_ids.unsqueeze(-1), dim=1
-                    ).bool()[masks["src_mask"]]
+                    ).bool()[masks["src_mask"]],
                     # (batch, node_label_len)
-                )
+                    return_pooled_output=True,
+                )["pooled_output"]
             if masks["dst_mask"].any():
-                event_dst_embs[masks["dst_mask"]] = self.embed_label(
+                event_dst_embs[masks["dst_mask"]] = self.text_encoder(
                     torch.sum(
                         batch_node_label_word_ids
                         * event_dst_ids.view(batch_size, -1, 1, 1),
@@ -665,9 +647,10 @@ class TemporalDiscreteGraphUpdater(nn.Module):
                     # (batch, node_label_len, num_word)
                     torch.sum(
                         batch_node_label_mask * event_dst_ids.unsqueeze(-1), dim=1
-                    ).bool()[masks["dst_mask"]]
+                    ).bool()[masks["dst_mask"]],
                     # (batch, node_label_len)
-                )
+                    return_pooled_output=True,
+                )["pooled_output"]
 
         return torch.cat(
             [event_type_embs, event_src_embs, event_dst_embs, event_label_embs], dim=1

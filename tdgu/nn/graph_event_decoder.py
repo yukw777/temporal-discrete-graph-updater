@@ -259,6 +259,7 @@ class EventSequentialLabelHead(nn.Module):
             output sequence logits: (batch, seq_len, num_word)
             updated hidden state: (batch, hidden_dim)
         """
+        self.gru.flatten_parameters()
         # can't provide both autoregressive embedding and previous hidden state
         assert not (autoregressive_embedding is not None and prev_hidden is not None)
 

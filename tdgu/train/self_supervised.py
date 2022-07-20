@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
-import wandb
 
 from torch.optim import AdamW, Optimizer
 from typing import Dict, Tuple, Any, List, Optional, Union
@@ -32,9 +31,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         **kwargs,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(
-            ignore=["word_vocab_path", "pretrained_word_embedding_path"]
-        )
+        self.save_hyperparameters(ignore=["text_encoder_conf"])
         self.truncated_bptt_steps = truncated_bptt_steps
 
         self.tdgu = TDGULightningModule(**kwargs)
@@ -142,7 +139,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             prev_batched_graph = results["updated_batched_graph_list"][-1]
             losses.append(results["loss"])
         loss = torch.stack(losses).mean()
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, sync_dist=True)
         assert prev_batched_graph is not None
         return {"loss": loss, "hiddens": prev_batched_graph.detach()}
 
@@ -231,7 +228,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                 )
         loss = torch.cat(losses).mean()
         batch_size = batch.step_mask.size(1)
-        self.log(f"{log_prefix}_loss", loss, batch_size=batch_size)
+        self.log(f"{log_prefix}_loss", loss, batch_size=batch_size, sync_dist=True)
         self.log(f"{log_prefix}_f1", f1, batch_size=batch_size)
 
         return table_data
@@ -253,7 +250,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         for i in range(0, len(batch.step_inputs), split_size):
             splits.append(
                 TWCmdGenObsGenBatch(
-                    ids=batch.ids[i : i + split_size],
+                    ids=batch.ids,
                     step_inputs=batch.step_inputs[i : i + split_size],
                     step_mask=batch.step_mask[i : i + split_size],
                 )
@@ -373,10 +370,8 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def wandb_log_gen_obs(
         self, outputs: List[List[Tuple[str, ...]]], table_title: str
     ) -> None:
-        eval_table_artifact = wandb.Artifact(
-            table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
-        )
-        eval_table = wandb.Table(
+        self.logger.log_table(  # type: ignore
+            key=table_title,
             columns=[
                 "id",
                 "observation",
@@ -386,8 +381,6 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             ],
             data=[item for sublist in outputs for item in sublist],
         )
-        eval_table_artifact.add(eval_table, "predictions")
-        self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
 
     def validation_epoch_end(  # type: ignore
         self, outputs: List[List[Tuple[str, ...]]]
