@@ -43,3 +43,10 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.mypy]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+norecursedirs = "tests/helpers"
+markers = [
+    "slow: mark test as slow."
+]
+addopts = "-m 'not slow'"
