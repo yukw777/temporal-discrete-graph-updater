@@ -80,7 +80,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[False] * 7]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -100,7 +102,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[False] * 7]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -120,7 +124,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[False] * 7]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -140,7 +146,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[False] * 7]),
-            torch.tensor([[[0, 1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 1 + [1] + [0] * 15, [0] * 2 + [1] + [0] * 14]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -160,7 +168,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[1, 0, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[True, True, True] + [False] * 4]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -168,7 +178,7 @@ def test_uncertainty_weighted_loss(
             torch.tensor([False]),
             torch.tensor([False]),
             1,
-            1,
+            1 / 7,
             0,
             0,
         ),
@@ -180,7 +190,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[True, True, True] + [False] * 4]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -200,7 +212,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 0, 0, 1, 0, 0, 0]]).float(),
             torch.tensor([3]),
             torch.tensor([[True, True, True, True, True, False, False]]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -208,8 +222,8 @@ def test_uncertainty_weighted_loss(
             torch.tensor([True]),
             torch.tensor([True]),
             1,
-            1,
-            1,
+            1 / 7,
+            1 / 7,
             1,
         ),
         (
@@ -220,7 +234,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[True, True, True, True, True, False, False]]),
-            torch.tensor([[[0, 1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 1 + [1] + [0] * 15, [0] * 2 + [1] + [0] * 14]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -240,7 +256,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 0, 0, 1, 0, 0, 0]]).float(),
             torch.tensor([3]),
             torch.tensor([[True, True, True, True, True, False, False]]),
-            torch.tensor([[[0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -248,8 +266,8 @@ def test_uncertainty_weighted_loss(
             torch.tensor([True]),
             torch.tensor([False]),
             1,
-            1,
-            1,
+            1 / 7,
+            1 / 7,
             0,
         ),
         (
@@ -260,7 +278,9 @@ def test_uncertainty_weighted_loss(
             torch.tensor([[0, 1, 0, 0, 0, 0, 0]]).float(),
             torch.tensor([0]),
             torch.tensor([[True, True, True, True, True, False, False]]),
-            torch.tensor([[[0, 1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0]]]).float(),
+            torch.tensor(
+                [[[0] * 1 + [1] + [0] * 15, [0] * 2 + [1] + [0] * 14]]
+            ).float(),
             torch.tensor([[2, 3]]),
             torch.ones(1, 2).bool(),
             torch.tensor([True]),
@@ -357,18 +377,18 @@ def test_uncertainty_weighted_loss(
             ),
             torch.tensor(
                 [
-                    [[0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0]],
-                    [[0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1]],
-                    [[0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0]],
-                    [[0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0]],
-                    [[0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0]],
-                    [[0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1, 0, 0]],
-                    [[0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 1, 0, 0, 0, 0]],
-                    [[0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0]],
-                    [[0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 0]],
-                    [[0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0]],
-                    [[0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0]],
-                    [[0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0]],
+                    [[0] * 2 + [1] + [0] * 14, [0] * 3 + [1] + [0] * 13],
+                    [[0] * 3 + [1] + [0] * 13, [0] * 7 + [1] + [0] * 9],
+                    [[0] * 5 + [1] + [0] * 11, [0] * 4 + [1] + [0] * 12],
+                    [[0] * 2 + [1] + [0] * 14, [0] * 4 + [1] + [0] * 12],
+                    [[0] * 3 + [1] + [0] * 13, [0] * 6 + [1] + [0] * 10],
+                    [[0] * 6 + [1] + [0] * 10, [0] * 5 + [1] + [0] * 11],
+                    [[0] * 7 + [1] + [0] * 9, [0] * 3 + [1] + [0] * 13],
+                    [[0] * 5 + [1] + [0] * 11, [0] * 3 + [1] + [0] * 13],
+                    [[0] * 4 + [1] + [0] * 12, [0] * 2 + [1] + [0] * 14],
+                    [[0] * 5 + [1] + [0] * 11, [0] * 6 + [1] + [0] * 10],
+                    [[0] * 3 + [1] + [0] * 13, [0] * 5 + [1] + [0] * 11],
+                    [[0] * 4 + [1] + [0] * 12, [0] * 3 + [1] + [0] * 13],
                 ]
             ).float(),
             torch.tensor(
@@ -453,8 +473,8 @@ def test_uncertainty_weighted_loss(
                 ]
             ),
             1,
-            1,
-            1,
+            3 / 8,
+            1 / 8,
             1,
         ),
     ],

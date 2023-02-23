@@ -11,9 +11,9 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.trainer.states import RunningStage
 from torch_geometric.data import Batch, Data
 from torch.utils.data import DataLoader
-from torchmetrics.classification.f_beta import F1Score
+from torchmetrics.classification import MulticlassF1Score
 
-from tdgu.metrics import F1, ExactMatch
+from tdgu.metrics import F1, ExactMatch, DynamicGraphNodeF1
 from tdgu.nn.utils import (
     index_edge_attr,
     masked_log_softmax,
@@ -35,6 +35,7 @@ from tdgu.graph import (
     update_rdf_graph,
 )
 from tdgu.train.common import TDGULightningModule
+from tdgu.constants import EVENT_TYPES
 
 
 class SupervisedTDGU(TDGULightningModule):
@@ -46,14 +47,18 @@ class SupervisedTDGU(TDGULightningModule):
         super().__init__(**kwargs)
         self.criterion = UncertaintyWeightedLoss()
 
-        self.val_event_type_f1 = F1Score()
-        self.val_src_node_f1 = F1Score()
-        self.val_dst_node_f1 = F1Score()
-        self.val_label_f1 = F1Score()
-        self.test_event_type_f1 = F1Score()
-        self.test_src_node_f1 = F1Score()
-        self.test_dst_node_f1 = F1Score()
-        self.test_label_f1 = F1Score()
+        self.val_event_type_f1 = MulticlassF1Score(len(EVENT_TYPES), average="micro")
+        self.val_src_node_f1 = DynamicGraphNodeF1()
+        self.val_dst_node_f1 = DynamicGraphNodeF1()
+        self.val_label_f1 = MulticlassF1Score(
+            self.preprocessor.vocab_size, average="micro"
+        )
+        self.test_event_type_f1 = MulticlassF1Score(len(EVENT_TYPES), average="micro")
+        self.test_src_node_f1 = DynamicGraphNodeF1()
+        self.test_dst_node_f1 = DynamicGraphNodeF1()
+        self.test_label_f1 = MulticlassF1Score(
+            self.preprocessor.vocab_size, average="micro"
+        )
 
         self.val_graph_tf_exact_match = ExactMatch()
         self.val_token_tf_exact_match = ExactMatch()
@@ -191,10 +196,10 @@ class SupervisedTDGU(TDGULightningModule):
         groundtruth_event_dst_mask: (batch)
         groundtruth_event_label_mask: (batch)
         """
-        event_type_f1 = getattr(self, f"{log_prefix}_event_type_f1")
-        src_node_f1 = getattr(self, f"{log_prefix}_src_node_f1")
-        dst_node_f1 = getattr(self, f"{log_prefix}_dst_node_f1")
-        label_f1 = getattr(self, f"{log_prefix}_label_f1")
+        event_type_f1: MulticlassF1Score = getattr(self, f"{log_prefix}_event_type_f1")
+        src_node_f1: DynamicGraphNodeF1 = getattr(self, f"{log_prefix}_src_node_f1")
+        dst_node_f1: DynamicGraphNodeF1 = getattr(self, f"{log_prefix}_dst_node_f1")
+        label_f1: MulticlassF1Score = getattr(self, f"{log_prefix}_label_f1")
 
         event_type_f1.update(
             event_type_logits[groundtruth_event_mask].softmax(dim=1),
