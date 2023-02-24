@@ -1,26 +1,26 @@
-import pytest
 import json
-import torch
-
-from torch_geometric.data import Batch
 from unittest.mock import Mock
 
+import pytest
+import torch
+from torch_geometric.data import Batch
+
+from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.data import (
-    TWCmdGenGraphEventDataset,
+    TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventDataCollator,
+    TWCmdGenGraphEventDataset,
+    TWCmdGenGraphEventFreeRunDataset,
+    TWCmdGenGraphEventGraphicalInput,
+    TWCmdGenGraphEventStepInput,
     TWCmdGenObsGenBatch,
     TWCmdGenObsGenDataCollator,
     TWCmdGenObsGenDataset,
-    read_label_vocab_files,
-    TWCmdGenGraphEventStepInput,
-    TWCmdGenGraphEventBatch,
-    TWCmdGenGraphEventGraphicalInput,
-    sort_target_commands,
-    TWCmdGenGraphEventFreeRunDataset,
     collate_step_inputs,
+    read_label_vocab_files,
+    sort_target_commands,
 )
 from tdgu.preprocessor import SpacyPreprocessor
-from tdgu.constants import EVENT_TYPE_ID_MAP
 
 
 @pytest.fixture

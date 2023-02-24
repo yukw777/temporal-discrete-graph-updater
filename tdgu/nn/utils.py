@@ -1,13 +1,13 @@
+from pathlib import Path
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from typing import Optional, List, Any, Dict
-from tqdm import tqdm
-from pathlib import Path
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
+from tqdm import tqdm
 
 from tdgu.constants import EVENT_TYPE_ID_MAP
 
@@ -26,11 +26,9 @@ def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 
 def masked_softmax(
-    input: torch.Tensor, mask: torch.Tensor, dim: Optional[int] = None
+    input: torch.Tensor, mask: torch.Tensor, dim: int | None = None
 ) -> torch.Tensor:
-    """
-    input, mask and output all have the same dimensions
-    """
+    """Input, mask and output all have the same dimensions."""
     # replace the values to be ignored with the minimum value of the data type
     return (
         F.softmax(
@@ -47,9 +45,7 @@ def masked_softmax(
 def masked_gumbel_softmax(
     input: torch.Tensor, mask: torch.Tensor, **kwargs
 ) -> torch.Tensor:
-    """
-    input, mask and output all have the same dimensions
-    """
+    """Input, mask and output all have the same dimensions."""
     # replace the values to be ignored with a small number -1e20
     # can't use torch.finfo(input.dtype).min since it's too small
     # and results in nan's.
@@ -63,11 +59,9 @@ def masked_gumbel_softmax(
 
 
 def masked_log_softmax(
-    input: torch.Tensor, mask: torch.Tensor, dim: Optional[int] = None
+    input: torch.Tensor, mask: torch.Tensor, dim: int | None = None
 ) -> torch.Tensor:
-    """
-    input, mask and output all have the same dimensions
-    """
+    """Input, mask and output all have the same dimensions."""
     # replace the values to be ignored with the minimum value of the data type
     log_mask = torch.log(mask + torch.finfo(input.dtype).tiny)
     return F.log_softmax(input + log_mask, dim=dim) + log_mask
@@ -75,7 +69,7 @@ def masked_log_softmax(
 
 def compute_masks_from_event_type_ids(
     event_type_ids: torch.Tensor,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Compute three boolean masks from the given event type ids tensor.
     1. event mask: masks out pad event
@@ -124,21 +118,21 @@ def compute_masks_from_event_type_ids(
 
 
 def load_fasttext(
-    fname: str, serialized_path: Path, vocab: Dict[str, int], pad_token_id: int
+    fname: str, serialized_path: Path, vocab: dict[str, int], pad_token_id: int
 ) -> nn.Embedding:
     # check if we have already serialized it
     if serialized_path.exists():
         with open(serialized_path, "rb") as serialized:
             return torch.load(serialized)
 
-    with open(fname, "r") as f:
+    with open(fname) as f:
         _, emb_dim = map(int, f.readline().split())
 
         data = {}
         for line in tqdm(f, desc="loading fasttext embeddings"):
             parts = line.rstrip().split(" ", 1)
             data[parts[0]] = parts[1]
-    # embedding for pad is initalized to 0
+    # embedding for pad is initialized to 0
     # embeddings for OOVs are randomly initialized from N(0, 1)
     emb = nn.Embedding(len(vocab), emb_dim, padding_idx=pad_token_id)
     for word, i in tqdm(vocab.items(), desc="constructing word embeddings"):
@@ -157,7 +151,7 @@ def find_indices(haystack: torch.Tensor, needle: torch.Tensor) -> torch.Tensor:
 
 
 def pad_batch_seq_of_seq(
-    batch_seq_of_seq: List[List[List[Any]]],
+    batch_seq_of_seq: list[list[list[Any]]],
     max_len_outer: int,
     max_len_inner: int,
     outer_padding_value: Any,
@@ -192,8 +186,7 @@ def pad_batch_seq_of_seq(
 def get_edge_index_co_occurrence_matrix(
     edge_index_a: torch.Tensor, edge_index_b: torch.Tensor
 ) -> torch.Tensor:
-    """
-    Calculate the co-occurrence matrix between two edge index matrices.
+    """Calculate the co-occurrence matrix between two edge index matrices.
 
     edge_index_a: (2, num_edge_a)
     edge_index_b: (2, num_edge_b)
@@ -238,9 +231,8 @@ def index_edge_attr(
 
 
 def calculate_node_id_offsets(batch_size: int, batch: torch.Tensor) -> torch.Tensor:
-    """
-    Calculate the node id offsets for turning subgraph node IDs into a batched
-    graph node IDs.
+    """Calculate the node id offsets for turning subgraph node IDs into a
+    batched graph node IDs.
 
     batch_size: scalar
     batch: (num_node)
@@ -262,10 +254,9 @@ def update_batched_graph(
     event_label_mask: torch.Tensor,
     event_timestamps: torch.Tensor,
 ) -> Batch:
-    """
-    Update the given batched graph based on the given batch of graph events. All
-    the events are assumed to be valid, and each event in the batch is assuemd to
-    be applied only to the corresponding graph in the batched graph.
+    """Update the given batched graph based on the given batch of graph events.
+    All the events are assumed to be valid, and each event in the batch is
+    assuemd to be applied only to the corresponding graph in the batched graph.
 
     batched_graph: diagonally stacked graph BEFORE the given graph events: Batch(
         batch: (num_node)
@@ -541,10 +532,9 @@ def update_node_features(
     added_batch: torch.Tensor,
     batch_size: int,
 ) -> torch.Tensor:
-    """
-    Update the given node features using delete mask and added features.
-    We first delete the features using the delete mask, then append new
-    features for each graph in the batch.
+    """Update the given node features using delete mask and added features. We
+    first delete the features using the delete mask, then append new features
+    for each graph in the batch.
 
     node_features: (num_node, *)
     batch: (num_node)
@@ -583,10 +573,9 @@ def update_edge_index(
     delete_node_mask: torch.Tensor,
     node_add_event_mask: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    Update the given edge indices based on the added and deleted nodes.
-    Note that only deleted nodes can affect the subgraph indices as nodes
-    are added to the back.
+    """Update the given edge indices based on the added and deleted nodes. Note
+    that only deleted nodes can affect the subgraph indices as nodes are added
+    to the back.
 
     edge_index: (2, num_edge)
     batch: (num_node)
@@ -610,8 +599,9 @@ def update_edge_index(
 
 
 class PositionalEncoder(nn.Module):
-    """
-    Return positional encodings for the given positions. This is the tensor2tensor
+    """Return positional encodings for the given positions.
+
+    This is the tensor2tensor
     implementation of the positional encoding, which is slightly different
     from the one used by the original Transformer paper.
     Specifically, there are 2 key differences:
@@ -658,15 +648,13 @@ class PositionalEncoder(nn.Module):
 
 
 def generate_square_subsequent_mask(
-    size: int, device: Optional[torch.device] = None
+    size: int, device: torch.device | None = None
 ) -> torch.Tensor:
-    """
-    Generate a square subsequent mask of the given size.
-    Useful for attn_mask in MultiheadAttention.
-    For example, if size == 3:
-    [[False,  True,  True],
-     [False, False,  True],
-     [False, False, False]]
+    """Generate a square subsequent mask of the given size. Useful for
+    attn_mask in MultiheadAttention. For example, if size == 3:
+
+    [[False,  True,  True],  [False, False,  True],  [False, False,
+    False]]
     """
     return torch.triu(torch.full((size, size), True, device=device), diagonal=1)
 
@@ -674,8 +662,8 @@ def generate_square_subsequent_mask(
 def shift_tokens_right(
     input_ids: torch.Tensor, decoder_start_token_id: int
 ) -> torch.Tensor:
-    """
-    Shift input ids one token to the right. Based on Hugging Face Transformers.
+    """Shift input ids one token to the right. Based on Hugging Face
+    Transformers.
 
     input_ids: (batch, input_seq_len)
     output: (batch, input_seq_len)

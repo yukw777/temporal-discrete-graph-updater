@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from tdgu.metrics import F1
+from tdgu.metrics import F1, DynamicGraphNodeF1
 
 
 @pytest.mark.parametrize(
@@ -119,4 +119,25 @@ from tdgu.metrics import F1
 def test_f1(batch_preds, batch_targets, expected):
     f1 = F1()
     f1.update(batch_preds, batch_targets)
+    assert f1.compute().equal(expected)
+
+
+@pytest.mark.parametrize(
+    "preds,target,expected",
+    [
+        (torch.zeros(0, 0), torch.zeros(0, 0).int(), torch.tensor(0)),
+        (torch.zeros(1, 0), torch.zeros(1, 0).int(), torch.tensor(0)),
+        (torch.ones(1, 1), torch.zeros(1).int(), torch.tensor(0)),
+        (
+            torch.tensor([[0, 1, 0], [1, 0, 0], [0, 0, 1]]).float(),
+            torch.tensor([1, 1, 2]),
+            torch.tensor((0 + 2 / 3 + 1) / 3),
+        ),
+    ],
+)
+def test_dynamic_graph_node_f1(
+    preds: torch.Tensor, target: torch.Tensor, expected: torch.Tensor
+) -> None:
+    f1 = DynamicGraphNodeF1()
+    f1.update(preds, target)
     assert f1.compute().equal(expected)

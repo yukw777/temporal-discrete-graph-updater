@@ -1,28 +1,27 @@
+from typing import Protocol
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from typing import Optional, Dict, List, Tuple, Protocol
-
 from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
 
-from tdgu.nn.rep_aggregator import ReprAggregator
-from tdgu.nn.utils import (
-    compute_masks_from_event_type_ids,
-    calculate_node_id_offsets,
-    masked_softmax,
-    masked_gumbel_softmax,
-    update_batched_graph,
-)
+from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.nn.dynamic_gnn import DynamicGNN
 from tdgu.nn.graph_event_decoder import (
-    EventTypeHead,
     EventNodeHead,
     EventSequentialLabelHead,
+    EventTypeHead,
 )
-from tdgu.nn.dynamic_gnn import DynamicGNN
-from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.nn.rep_aggregator import ReprAggregator
 from tdgu.nn.text import TextEncoder
+from tdgu.nn.utils import (
+    calculate_node_id_offsets,
+    compute_masks_from_event_type_ids,
+    masked_gumbel_softmax,
+    masked_softmax,
+    update_batched_graph,
+)
 
 
 class GraphEventDecoder(Protocol):
@@ -41,18 +40,16 @@ class GraphEventDecoder(Protocol):
         aggr_graph_obs: torch.Tensor,
         aggr_graph_prev_action: torch.Tensor,
         node_mask: torch.Tensor,
-        prev_input_event_emb_seq: Optional[torch.Tensor] = None,
-        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, List[torch.Tensor]]]:
+        prev_input_event_emb_seq: torch.Tensor | None = None,
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None,
+    ) -> tuple[dict[str, torch.Tensor], dict[str, list[torch.Tensor]]]:
         pass
 
 
 class TemporalDiscreteGraphUpdater(nn.Module):
-    """
-    TemporalDiscreteGraphUpdater is essentially a Seq2Seq model which encodes
-    a sequence of game steps, each with an observation and a previous action, and
-    decodes a sequence of graph events.
-    """
+    """TemporalDiscreteGraphUpdater is essentially a Seq2Seq model which
+    encodes a sequence of game steps, each with an observation and a previous
+    action, and decodes a sequence of graph events."""
 
     def __init__(
         self,
@@ -143,19 +140,19 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         obs_mask: torch.Tensor,
         prev_action_mask: torch.Tensor,
         timestamps: torch.Tensor,
-        obs_word_ids: Optional[torch.Tensor] = None,
-        prev_action_word_ids: Optional[torch.Tensor] = None,
-        encoded_obs: Optional[torch.Tensor] = None,
-        encoded_prev_action: Optional[torch.Tensor] = None,
+        obs_word_ids: torch.Tensor | None = None,
+        prev_action_word_ids: torch.Tensor | None = None,
+        encoded_obs: torch.Tensor | None = None,
+        encoded_prev_action: torch.Tensor | None = None,
         # previous input event embedding sequence
-        prev_input_event_emb_seq: Optional[torch.Tensor] = None,
-        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
+        prev_input_event_emb_seq: torch.Tensor | None = None,
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None,
         # groundtruth events for decoder teacher-force training
-        groundtruth_event: Optional[Dict[str, torch.Tensor]] = None,
+        groundtruth_event: dict[str, torch.Tensor] | None = None,
         max_label_decode_len: int = 10,
         gumbel_greedy_decode: bool = False,
         gumbel_tau: float = 0.5,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         graph events: {
             event_type_ids: (batch) or one-hot encoded (batch, num_event_type)
@@ -535,10 +532,10 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         batch: torch.Tensor,
         node_label_word_ids: torch.Tensor,
         node_label_mask: torch.Tensor,
-        masks: Dict[str, torch.Tensor],
+        masks: dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        """
-        Turn the graph events into decoder inputs by concatenating their embeddings.
+        """Turn the graph events into decoder inputs by concatenating their
+        embeddings.
 
         input:
             event_type_ids_or_one_hot: (batch) or
@@ -665,9 +662,8 @@ class TemporalDiscreteGraphUpdater(nn.Module):
         batch: torch.Tensor,
         edge_index: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Return a mask for invalid events. False for valid events and
-        True for invalid events.
+        """Return a mask for invalid events. False for valid events and True
+        for invalid events.
 
         node-add: all are valid
         node-delete:

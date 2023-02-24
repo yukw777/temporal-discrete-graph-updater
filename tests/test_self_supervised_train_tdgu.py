@@ -1,8 +1,9 @@
 import shutil
+
 import pytest
+from hydra import compose, initialize
 
 from tdgu.self_supervised_train_tdgu import main
-from hydra import initialize, compose
 
 
 @pytest.mark.slow

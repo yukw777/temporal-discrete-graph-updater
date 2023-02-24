@@ -1,7 +1,0 @@
-pytest
-flake8
-mypy
-black
-ipython
-line_profiler
-coverage

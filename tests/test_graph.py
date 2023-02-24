@@ -1,26 +1,24 @@
+from copy import deepcopy
+
+import networkx as nx
 import pytest
 import torch
 import torch.nn.functional as F
-import networkx as nx
-
-from torch_geometric.data import Data, Batch
-from utils import EqualityData, EqualityBatch
-from copy import deepcopy
+from torch_geometric.data import Batch, Data
+from utils import EqualityBatch, EqualityData, EqualityDiGraph
 
 from tdgu.graph import (
-    Node,
     DstNode,
     ExitNode,
-    FoodNameNode,
     FoodAdjNode,
-    process_triplet_cmd,
+    FoodNameNode,
+    Node,
     batch_to_data_list,
     data_list_to_batch,
     networkx_to_rdf,
+    process_triplet_cmd,
     update_rdf_graph,
 )
-
-from utils import EqualityDiGraph
 
 
 @pytest.mark.parametrize(

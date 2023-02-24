@@ -1,16 +1,12 @@
 import torch
 import torch.nn as nn
 
-from typing import Tuple
-
 from tdgu.nn.utils import masked_softmax
 
 
 class ContextQueryAttention(nn.Module):
-    """
-    Based on Context-Query Attention Layer from QANet, which is in turn
-    based on Attention Flow Layer from https://arxiv.org/abs/1611.01603
-    """
+    """Based on Context-Query Attention Layer from QANet, which is in turn
+    based on Attention Flow Layer from https://arxiv.org/abs/1611.01603."""
 
     def __init__(self, hidden_dim: int) -> None:
         super().__init__()
@@ -111,7 +107,7 @@ class ReprAggregator(nn.Module):
         repr2: torch.Tensor,
         repr1_mask: torch.Tensor,
         repr2_mask: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         repr1: (batch, repr1_seq_len, hidden_dim)
         repr2: (batch, repr2_seq_len, hidden_dim)

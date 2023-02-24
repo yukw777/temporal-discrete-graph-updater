@@ -1,16 +1,19 @@
+"""
+NOTE: This script does not work with the latest version of the model.
+TODO: Fix it!
+"""
+import json
+from itertools import count
+from pathlib import Path
+
 import textworld
 import torch
-import json
+from torch_geometric.data import Batch, Data
 
-from torch_geometric.data import Data, Batch
-from tdgu.graph import batch_to_data_list, networkx_to_rdf, update_rdf_graph
-from typing import Set, Tuple, List
-from pathlib import Path
-from itertools import count
-
-from tdgu.train.supervised import SupervisedTDGU
-from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import COMMANDS_TO_IGNORE, EVENT_TYPES
+from tdgu.data import TWCmdGenGraphEventStepInput
+from tdgu.graph import batch_to_data_list, networkx_to_rdf, update_rdf_graph
+from tdgu.train.supervised import SupervisedTDGU
 from tdgu.utils import draw_graph
 
 
@@ -31,7 +34,7 @@ class Env:
         else:
             raise ValueError(f"Unknown game file type: {self.game_file_type}")
 
-    def reset(self) -> Tuple[str, List[str]]:
+    def reset(self) -> tuple[str, list[str]]:
         if self.game_file_type == ".z8":
             obs, infos = self.env.reset()
             return obs, infos["admissible_commands"]
@@ -44,7 +47,7 @@ class Env:
         else:
             raise ValueError(f"Unknown game file type: {self.game_file_type}")
 
-    def step(self, action: str) -> Tuple[str, bool, List[str]]:
+    def step(self, action: str) -> tuple[str, bool, list[str]]:
         if self.game_file_type == ".z8":
             obs, _, done, infos = self.env.step(action)
             return obs, done, infos["admissible_commands"]
@@ -72,7 +75,7 @@ def main(
     verbose: bool,
 ) -> None:
     # load the model
-    lm = SupervisedTDGU.load_from_checkpoint(
+    lm: SupervisedTDGU = SupervisedTDGU.load_from_checkpoint(
         ckpt_filename, word_vocab_path=word_vocab_path
     )
     lm.eval()
@@ -90,7 +93,7 @@ def main(
         edge_label_mask=torch.empty(0, 0).bool(),
         edge_last_update=torch.empty(0, 2, dtype=torch.long),
     ).to(device)
-    rdf_graph: Set[str] = set()
+    rdf_graph: set[str] = set()
 
     done = False
     for step in count():
@@ -149,7 +152,7 @@ def main(
                     if event_type == "node-add":
                         print((event_type, event_label))
                     elif event_type == "node-delete":
-                        event_src_label = lm.labels[
+                        event_src_label = lm.labels[  # type: ignore
                             results["updated_batched_graph"].x[event_src_id]
                         ]
                         print(

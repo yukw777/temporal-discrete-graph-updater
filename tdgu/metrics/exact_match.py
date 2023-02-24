@@ -1,13 +1,10 @@
 import torch
-
-from typing import List
 from torchmetrics import Metric
 
 
 class ExactMatch(Metric):
-    """
-    Measures accuracy or direct overlap between the predictions and ground truth
-    """
+    """Measures accuracy or direct overlap between the predictions and ground
+    truth."""
 
     is_differentiable = False
     higher_is_better = True
@@ -20,7 +17,7 @@ class ExactMatch(Metric):
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def update(  # type: ignore
-        self, batch_preds: List[List[str]], batch_targets: List[List[str]]
+        self, batch_preds: list[list[str]], batch_targets: list[list[str]]
     ) -> None:
         assert len(batch_preds) == len(batch_targets)
         for preds, targets in zip(batch_preds, batch_targets):

@@ -2,9 +2,8 @@ import os
 
 import hydra
 import pytorch_lightning as pl
-
-from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate, to_absolute_path
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 

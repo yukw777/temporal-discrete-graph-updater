@@ -1,13 +1,13 @@
+import shutil
+
 import pytest
 import torch
-import shutil
 import torch.nn.functional as F
-
 from torch_geometric.data import Batch
 
-from tdgu.train.self_supervised import ObsGenSelfSupervisedTDGU
-from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
 from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
+from tdgu.train.self_supervised import ObsGenSelfSupervisedTDGU
 
 
 @pytest.fixture

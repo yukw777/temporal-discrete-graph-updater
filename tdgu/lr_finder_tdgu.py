@@ -1,8 +1,7 @@
 import hydra
 import pytorch_lightning as pl
-
-from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
 
 
 @hydra.main(config_path="train_tdgu_conf", config_name="config")

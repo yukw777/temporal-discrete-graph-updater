@@ -1,25 +1,19 @@
+from collections.abc import Sequence
+from typing import Any
+
+import networkx as nx
 import torch
 import torch.nn as nn
-import wandb
 import tqdm
-import networkx as nx
-
-from typing import Optional, Dict, List, Sequence, Tuple, Any
-from torch.optim import AdamW, Optimizer
-
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.trainer.states import RunningStage
-from torch_geometric.data import Batch, Data
+from torch.optim import AdamW, Optimizer
 from torch.utils.data import DataLoader
-from torchmetrics.classification.f_beta import F1Score
+from torch_geometric.data import Batch, Data
+from torchmetrics.classification import MulticlassF1Score
 
-from tdgu.metrics import F1, ExactMatch
-from tdgu.nn.utils import (
-    index_edge_attr,
-    masked_log_softmax,
-    calculate_node_id_offsets,
-    masked_softmax,
-)
+from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 from tdgu.data import (
     TWCmdGenGraphEventBatch,
     TWCmdGenGraphEventFreeRunDataset,
@@ -27,33 +21,42 @@ from tdgu.data import (
     TWCmdGenGraphEventStepInput,
     collate_step_inputs,
 )
-from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.graph import (
     batch_to_data_list,
     data_list_to_batch,
     networkx_to_rdf,
     update_rdf_graph,
 )
+from tdgu.metrics import F1, DynamicGraphNodeF1, ExactMatch
+from tdgu.nn.utils import (
+    calculate_node_id_offsets,
+    index_edge_attr,
+    masked_log_softmax,
+    masked_softmax,
+)
 from tdgu.train.common import TDGULightningModule
 
 
 class SupervisedTDGU(TDGULightningModule):
-    """
-    A LightningModule for supervised training of the temporal discrete graph updater.
-    """
+    """A LightningModule for supervised training of the temporal discrete graph
+    updater."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.criterion = UncertaintyWeightedLoss()
 
-        self.val_event_type_f1 = F1Score()
-        self.val_src_node_f1 = F1Score()
-        self.val_dst_node_f1 = F1Score()
-        self.val_label_f1 = F1Score()
-        self.test_event_type_f1 = F1Score()
-        self.test_src_node_f1 = F1Score()
-        self.test_dst_node_f1 = F1Score()
-        self.test_label_f1 = F1Score()
+        self.val_event_type_f1 = MulticlassF1Score(len(EVENT_TYPES), average="micro")
+        self.val_src_node_f1 = DynamicGraphNodeF1()
+        self.val_dst_node_f1 = DynamicGraphNodeF1()
+        self.val_label_f1 = MulticlassF1Score(
+            self.preprocessor.vocab_size, average="micro"
+        )
+        self.test_event_type_f1 = MulticlassF1Score(len(EVENT_TYPES), average="micro")
+        self.test_src_node_f1 = DynamicGraphNodeF1()
+        self.test_dst_node_f1 = DynamicGraphNodeF1()
+        self.test_label_f1 = MulticlassF1Score(
+            self.preprocessor.vocab_size, average="micro"
+        )
 
         self.val_graph_tf_exact_match = ExactMatch()
         self.val_token_tf_exact_match = ExactMatch()
@@ -82,7 +85,7 @@ class SupervisedTDGU(TDGULightningModule):
         self,
         step_input: TWCmdGenGraphEventStepInput,
         graphical_input_seq: Sequence[TWCmdGenGraphEventGraphicalInput],
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         step_input: the current step input
         graphical_input_seq: sequence of graphical inputs
@@ -91,11 +94,11 @@ class SupervisedTDGU(TDGULightningModule):
         output:
         [forward pass output, ...]
         """
-        prev_input_event_emb_seq: Optional[torch.Tensor] = None
-        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None
-        encoded_obs: Optional[torch.Tensor] = None
-        encoded_prev_action: Optional[torch.Tensor] = None
-        results_list: List[Dict[str, torch.Tensor]] = []
+        prev_input_event_emb_seq: torch.Tensor | None = None
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None
+        encoded_obs: torch.Tensor | None = None
+        encoded_prev_action: torch.Tensor | None = None
+        results_list: list[dict[str, torch.Tensor]] = []
         for graphical_input in graphical_input_seq:
             results = self(
                 graphical_input.tgt_event_type_ids,
@@ -173,8 +176,7 @@ class SupervisedTDGU(TDGULightningModule):
         groundtruth_event_label_mask: torch.Tensor,
         log_prefix: str,
     ) -> None:
-        """
-        Calculate various F1 scores.
+        """Calculate various F1 scores.
 
         event_type_logits: (batch, num_event_type)
         groundtruth_event_type_ids: (batch)
@@ -191,10 +193,10 @@ class SupervisedTDGU(TDGULightningModule):
         groundtruth_event_dst_mask: (batch)
         groundtruth_event_label_mask: (batch)
         """
-        event_type_f1 = getattr(self, f"{log_prefix}_event_type_f1")
-        src_node_f1 = getattr(self, f"{log_prefix}_src_node_f1")
-        dst_node_f1 = getattr(self, f"{log_prefix}_dst_node_f1")
-        label_f1 = getattr(self, f"{log_prefix}_label_f1")
+        event_type_f1: MulticlassF1Score = getattr(self, f"{log_prefix}_event_type_f1")
+        src_node_f1: DynamicGraphNodeF1 = getattr(self, f"{log_prefix}_src_node_f1")
+        dst_node_f1: DynamicGraphNodeF1 = getattr(self, f"{log_prefix}_dst_node_f1")
+        label_f1: MulticlassF1Score = getattr(self, f"{log_prefix}_label_f1")
 
         event_type_f1.update(
             event_type_logits[groundtruth_event_mask].softmax(dim=1),
@@ -236,9 +238,8 @@ class SupervisedTDGU(TDGULightningModule):
         batch_label_word_ids: torch.Tensor,
         batch_label_mask: torch.Tensor,
         batched_graph: Batch,
-    ) -> Tuple[List[str], List[List[str]]]:
-        """
-        Generate graph triplets based on the given batch of graph events.
+    ) -> tuple[list[str], list[list[str]]]:
+        """Generate graph triplets based on the given batch of graph events.
 
         event_type_ids: (batch)
         src_ids: (batch)
@@ -261,8 +262,8 @@ class SupervisedTDGU(TDGULightningModule):
         batch_dst_ids = dst_ids + node_id_offsets
         # (batch)
 
-        cmds: List[str] = []
-        tokens: List[List[str]] = []
+        cmds: list[str] = []
+        tokens: list[list[str]] = []
         for event_type_id, src_id, dst_id, label_word_ids, label_mask in zip(
             event_type_ids.tolist(),
             batch_src_ids,
@@ -324,12 +325,12 @@ class SupervisedTDGU(TDGULightningModule):
         label_word_id_seq: Sequence[torch.Tensor],
         label_mask_seq: Sequence[torch.Tensor],
         batched_graph_seq: Sequence[Batch],
-    ) -> Tuple[List[List[str]], List[List[str]]]:
+    ) -> tuple[list[list[str]], list[list[str]]]:
         batch_size = event_type_id_seq[0].size(0)
         # (batch, event_seq_len, cmd_len)
-        batch_cmds: List[List[str]] = [[] for _ in range(batch_size)]
+        batch_cmds: list[list[str]] = [[] for _ in range(batch_size)]
         # (batch, event_seq_len, token_len)
-        batch_tokens: List[List[str]] = [[] for _ in range(batch_size)]
+        batch_tokens: list[list[str]] = [[] for _ in range(batch_size)]
         for (
             event_type_ids,
             src_ids,
@@ -368,8 +369,8 @@ class SupervisedTDGU(TDGULightningModule):
     @staticmethod
     def generate_batch_groundtruth_graph_triple_tokens(
         groundtruth_cmd_seq: Sequence[Sequence[str]],
-    ) -> List[List[str]]:
-        batch_groundtruth_tokens: List[List[str]] = []
+    ) -> list[list[str]]:
+        batch_groundtruth_tokens: list[list[str]] = []
         for groundtruth_cmds in groundtruth_cmd_seq:
             batch_groundtruth_tokens.append(
                 " , <sep> , ".join(groundtruth_cmds).split(" , ")
@@ -412,10 +413,10 @@ class SupervisedTDGU(TDGULightningModule):
 
     def eval_step(
         self, batch: TWCmdGenGraphEventBatch, log_prefix: str
-    ) -> List[Tuple[str, ...]]:
+    ) -> list[tuple[str, ...]]:
         # [(id, groundtruth commands, teacher-force commands, greedy-decode commands)]
         # id = (game|walkthrough_step|random_step)
-        table_data: List[Tuple[str, ...]] = []
+        table_data: list[tuple[str, ...]] = []
 
         # loss from teacher forcing
         tf_results_list = self.teacher_force(
@@ -480,10 +481,10 @@ class SupervisedTDGU(TDGULightningModule):
         self.log(log_prefix + "_label_f1", getattr(self, f"{log_prefix}_label_f1"))
 
         # calculate graph tuples from teacher forcing graph events
-        tf_event_type_id_seq: List[torch.Tensor] = []
-        tf_src_id_seq: List[torch.Tensor] = []
-        tf_dst_id_seq: List[torch.Tensor] = []
-        tf_label_word_id_seq: List[torch.Tensor] = []
+        tf_event_type_id_seq: list[torch.Tensor] = []
+        tf_src_id_seq: list[torch.Tensor] = []
+        tf_dst_id_seq: list[torch.Tensor] = []
+        tf_label_word_id_seq: list[torch.Tensor] = []
         for results, graphical_input in zip(tf_results_list, batch.graphical_input_seq):
             # filter out pad events
             unfiltered_event_type_ids = (
@@ -496,7 +497,7 @@ class SupervisedTDGU(TDGULightningModule):
                     results["event_src_logits"], results["batch_node_mask"], dim=1
                 ).argmax(dim=1)
                 if results["event_src_logits"].size(1) > 0
-                else torch.zeros(
+                else torch.zeros(  # type: ignore
                     results["event_src_logits"].size(0),
                     dtype=torch.long,
                     device=self.device,
@@ -507,7 +508,7 @@ class SupervisedTDGU(TDGULightningModule):
                     results["event_dst_logits"], results["batch_node_mask"], dim=1
                 ).argmax(dim=1)
                 if results["event_dst_logits"].size(1) > 0
-                else torch.zeros(
+                else torch.zeros(  # type: ignore
                     results["event_dst_logits"].size(0),
                     dtype=torch.long,
                     device=self.device,
@@ -609,11 +610,11 @@ class SupervisedTDGU(TDGULightningModule):
         return table_data
 
     def data_to_networkx(self, data: Data) -> nx.DiGraph:
-        """
-        Turn torch_geometric.Data into a networkx graph.
+        """Turn torch_geometric.Data into a networkx graph.
 
-        There is a bug in to_networkx() where it turns an attribute that is a list
-        with one element into a scalar, so we just manually construct a networkx graph.
+        There is a bug in to_networkx() where it turns an attribute that
+        is a list with one element into a scalar, so we just manually
+        construct a networkx graph.
         """
         graph = nx.DiGraph()
         graph.add_nodes_from(
@@ -669,8 +670,8 @@ class SupervisedTDGU(TDGULightningModule):
         self,
         dataset: TWCmdGenGraphEventFreeRunDataset,
         dataloader: DataLoader,
-        total: Optional[int] = None,
-    ) -> Tuple[List[List[str]], List[List[str]]]:
+        total: int | None = None,
+    ) -> tuple[list[list[str]], list[list[str]]]:
         if total is None:
             is_sanity_checking = (
                 self.trainer.state.stage == RunningStage.SANITY_CHECKING  # type: ignore
@@ -696,9 +697,9 @@ class SupervisedTDGU(TDGULightningModule):
                 else:
                     total = len(dataset)
 
-        game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
-        generated_rdfs_list: List[List[str]] = []
-        groundtruth_rdfs_list: List[List[str]] = []
+        game_id_to_step_data_graph: dict[int, tuple[dict[str, Any], Data]] = {}
+        generated_rdfs_list: list[list[str]] = []
+        groundtruth_rdfs_list: list[list[str]] = []
         with tqdm.tqdm(desc="Free Run", total=total) as pbar:
             for batch in dataloader:
                 # finished games are the ones that were in game_id_to_graph, but are not
@@ -751,10 +752,10 @@ class SupervisedTDGU(TDGULightningModule):
                 ]
 
                 # construct a batch
-                batched_obs: List[str] = []
-                batched_prev_actions: List[str] = []
-                batched_timestamps: List[int] = []
-                graph_list: List[Data] = []
+                batched_obs: list[str] = []
+                batched_prev_actions: list[str] = []
+                batched_timestamps: list[int] = []
+                graph_list: list[Data] = []
                 for game_id, (step_data, graph) in game_id_to_step_data_graph.items():
                     batched_obs.append(step_data["observation"])
                     batched_prev_actions.append(step_data["previous_action"])
@@ -784,16 +785,16 @@ class SupervisedTDGU(TDGULightningModule):
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
-    ) -> List[Tuple[str, ...]]:
+    ) -> list[tuple[str, ...]]:
         return self.eval_step(batch, "val")
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
-    ) -> List[Tuple[str, ...]]:
+    ) -> list[tuple[str, ...]]:
         return self.eval_step(batch, "test")
 
     def wandb_log_gen_obs(
-        self, outputs: List[List[Tuple[str, str, str, str]]], table_title: str
+        self, outputs: list[list[tuple[str, str, str, str]]], table_title: str
     ) -> None:
         eval_table_artifact = wandb.Artifact(
             table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
@@ -807,7 +808,7 @@ class SupervisedTDGU(TDGULightningModule):
 
     def validation_epoch_end(  # type: ignore
         self,
-        outputs: List[List[Tuple[str, str, str, str]]],
+        outputs: list[list[tuple[str, str, str, str]]],
     ) -> None:
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.valid_free_run,  # type: ignore
@@ -822,7 +823,7 @@ class SupervisedTDGU(TDGULightningModule):
 
     def test_epoch_end(  # type: ignore
         self,
-        outputs: List[List[Tuple[str, str, str, str]]],
+        outputs: list[list[tuple[str, str, str, str]]],
     ) -> None:
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
@@ -840,10 +841,9 @@ class SupervisedTDGU(TDGULightningModule):
 
     @staticmethod
     def generate_predict_table_rows(
-        ids: Sequence[Tuple[str, int, int]], *args: Sequence[Sequence[str]]
-    ) -> List[Tuple[str, ...]]:
-        """
-        Generate rows for the prediction table.
+        ids: Sequence[tuple[str, int, int]], *args: Sequence[Sequence[str]]
+    ) -> list[tuple[str, ...]]:
+        """Generate rows for the prediction table.
 
         ids: len([(game, walkthrough_step, random_step), ...]) = batch
         args: various commands of shape (batch, event_seq_len)
@@ -887,9 +887,8 @@ class UncertaintyWeightedLoss(nn.Module):
         groundtruth_event_dst_mask: torch.Tensor,
         groundtruth_event_label_mask: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Calculate the total loss using the weighting strategy from Kendall, et al. 2018.
-        with a small modification from Liebel, et al. 2018.
+        """Calculate the total loss using the weighting strategy from Kendall,
+        et al. 2018. with a small modification from Liebel, et al. 2018.
 
         event_type_logits: (batch, num_event_type)
         groundtruth_event_type_ids: (batch)

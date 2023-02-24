@@ -1,9 +1,9 @@
 from torch.utils.data import DataLoader
 
-from tdgu.train.supervised import SupervisedTDGU
 from tdgu.data import TWCmdGenGraphEventFreeRunDataset
-from tdgu.metrics.f1 import F1
 from tdgu.metrics.exact_match import ExactMatch
+from tdgu.metrics.f1 import F1
+from tdgu.train.supervised import SupervisedTDGU
 
 
 def main(

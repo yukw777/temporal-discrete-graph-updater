@@ -1,6 +1,4 @@
 import torch
-
-from typing import List
 from scipy.stats import ttest_rel, wilcoxon
 
 
@@ -9,8 +7,8 @@ def main(scores_a_filename: str, scores_b_filename: str) -> None:
     scores_b_dict = torch.load(scores_b_filename)
     assert scores_a_dict.keys() == scores_b_dict.keys()
 
-    scores_a: List[float] = []
-    scores_b: List[float] = []
+    scores_a: list[float] = []
+    scores_b: list[float] = []
     for key in scores_a_dict.keys():
         scores_a.append(scores_a_dict[key])
         scores_b.append(scores_b_dict[key])

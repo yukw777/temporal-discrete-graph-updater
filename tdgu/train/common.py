@@ -1,36 +1,31 @@
+from pathlib import Path
+from typing import Any
+
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 import torch.nn.functional as F
-
-from typing import Optional, List, Dict, Any
-from torch_geometric.nn import TransformerConv, GATv2Conv
-from torch_geometric.data import Batch
 from hydra.utils import to_absolute_path
-from pathlib import Path
-
+from torch_geometric.data import Batch
+from torch_geometric.nn import GATv2Conv, TransformerConv
 from transformers import AutoModel
 
-from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
-from tdgu.nn.text import TextEncoder, QANetTextEncoder, HF_TEXT_ENCODER_INIT_MAP
-from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
-from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.nn.utils import masked_softmax, load_fasttext, masked_gumbel_softmax
+from tdgu.data import TWCmdGenGraphEventStepInput
+from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
+from tdgu.nn.text import HF_TEXT_ENCODER_INIT_MAP, QANetTextEncoder, TextEncoder
+from tdgu.nn.utils import load_fasttext, masked_gumbel_softmax, masked_softmax
 from tdgu.preprocessor import BOS, EOS, PAD, UNK, Preprocessor, SpacyPreprocessor
 
 
-class TDGULightningModule(  # type: ignore
-    TemporalDiscreteGraphUpdater, pl.LightningModule
-):
-    """
-    Base LightningModule class for TDGU.
-    """
+class TDGULightningModule(TemporalDiscreteGraphUpdater, pl.LightningModule):
+    """Base LightningModule class for TDGU."""
 
     def __init__(
         self,
-        text_encoder_hparams: Optional[Dict[str, Any]] = None,
-        text_encoder_conf: Optional[Dict[str, Any]] = None,
+        text_encoder_hparams: dict[str, Any] | None = None,
+        text_encoder_conf: dict[str, Any] | None = None,
         hidden_dim: int = 8,
         dgnn_gnn: str = "TransformerConv",
         dgnn_timestamp_enc_dim: int = 8,
@@ -159,7 +154,7 @@ class TDGULightningModule(  # type: ignore
         max_label_decode_len: int = 10,
         gumbel_greedy_decode: bool = False,
         gumbel_tau: float = 0.5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         step_input: the current step input
         prev_batch_graph: diagonally stacked batch of current graphs
@@ -203,7 +198,7 @@ class TDGULightningModule(  # type: ignore
         batch_size = step_input.obs_word_ids.size(0)
         if gumbel_greedy_decode:
             decoded_event_type_ids = F.one_hot(
-                torch.full(
+                torch.full(  # type: ignore
                     (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
                 ),
                 num_classes=len(EVENT_TYPE_ID_MAP),
@@ -214,15 +209,15 @@ class TDGULightningModule(  # type: ignore
                 if prev_batched_graph.num_nodes > 0
                 else 0
             )
-            decoded_src_ids = torch.zeros(
+            decoded_src_ids = torch.zeros(  # type: ignore
                 batch_size, prev_max_sub_graph_num_node, device=self.device
             )
             # (batch, prev_max_sub_graph_num_node)
-            decoded_dst_ids = torch.zeros(
+            decoded_dst_ids = torch.zeros(  # type: ignore
                 batch_size, prev_max_sub_graph_num_node, device=self.device
             )
             # (batch, prev_max_sub_graph_num_node)
-            decoded_label_word_ids = torch.empty(
+            decoded_label_word_ids = torch.empty(  # type: ignore
                 batch_size,
                 0,
                 self.preprocessor.vocab_size,
@@ -230,35 +225,39 @@ class TDGULightningModule(  # type: ignore
             )
             # (batch, 0, num_word)
         else:
-            decoded_event_type_ids = torch.full(
+            decoded_event_type_ids = torch.full(  # type: ignore
                 (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
             )
             # (batch)
-            decoded_src_ids = torch.zeros(
+            decoded_src_ids = torch.zeros(  # type: ignore
                 batch_size, device=self.device, dtype=torch.long
             )
             # (batch)
-            decoded_dst_ids = torch.zeros(
+            decoded_dst_ids = torch.zeros(  # type: ignore
                 batch_size, device=self.device, dtype=torch.long
             )
             # (batch)
-            decoded_label_word_ids = torch.empty(
+            decoded_label_word_ids = torch.empty(  # type: ignore
                 batch_size, 0, device=self.device, dtype=torch.long
             )
             # (batch, 0)
-        decoded_label_mask = torch.empty(
+        decoded_label_mask = torch.empty(  # type: ignore
             batch_size, 0, device=self.device, dtype=torch.bool
         )
         # (batch, 0)
 
-        end_event_mask = torch.full((batch_size,), False, device=self.device)
+        end_event_mask = torch.full(
+            (batch_size,),
+            False,
+            device=self.device,
+        )  # type: ignore
         # (batch)
 
-        prev_input_event_emb_seq: Optional[torch.Tensor] = None
-        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None
-        encoded_obs: Optional[torch.Tensor] = None
-        encoded_prev_action: Optional[torch.Tensor] = None
-        results_list: List[Dict[str, Any]] = []
+        prev_input_event_emb_seq: torch.Tensor | None = None
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None
+        encoded_obs: torch.Tensor | None = None
+        encoded_prev_action: torch.Tensor | None = None
+        results_list: list[dict[str, Any]] = []
         for _ in range(max_event_decode_len):
             results = self(
                 decoded_event_type_ids,
@@ -299,10 +298,14 @@ class TDGULightningModule(  # type: ignore
 
             if results["event_src_logits"].size(1) == 0:
                 if gumbel_greedy_decode:
-                    decoded_src_ids = torch.zeros(batch_size, 0, device=self.device)
+                    decoded_src_ids = torch.zeros(
+                        batch_size,
+                        0,
+                        device=self.device,
+                    )  # type: ignore
                     # (batch, 0)
                 else:
-                    decoded_src_ids = torch.zeros(
+                    decoded_src_ids = torch.zeros(  # type: ignore
                         batch_size, dtype=torch.long, device=self.device
                     )
                     # (batch)
@@ -322,10 +325,14 @@ class TDGULightningModule(  # type: ignore
                     # (batch)
             if results["event_dst_logits"].size(1) == 0:
                 if gumbel_greedy_decode:
-                    decoded_dst_ids = torch.zeros(batch_size, 0, device=self.device)
+                    decoded_dst_ids = torch.zeros(  # type: ignore
+                        batch_size,
+                        0,
+                        device=self.device,
+                    )
                     # (batch, 0)
                 else:
-                    decoded_dst_ids = torch.zeros(
+                    decoded_dst_ids = torch.zeros(  # type: ignore
                         batch_size, dtype=torch.long, device=self.device
                     )
                     # (batch)

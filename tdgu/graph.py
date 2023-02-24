@@ -1,12 +1,11 @@
+from dataclasses import dataclass
+from typing import Any
+
 import networkx as nx
 import torch.nn.functional as F
+from torch_geometric.data import Batch, Data
 
-from dataclasses import dataclass
-from typing import Dict, List, Any, Set
-
-from torch_geometric.data import Data, Batch
-
-from tdgu.constants import FOOD_COLORS, IS, FOOD_KINDS
+from tdgu.constants import FOOD_COLORS, FOOD_KINDS, IS
 from tdgu.nn.utils import calculate_node_id_offsets
 
 
@@ -43,8 +42,8 @@ def process_add_triplet_cmd(
     rel_label: str,
     dst_label: str,
     allow_objs_with_same_label: bool,
-) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
     # take care of the source node
     src_node: Node
     if src_label == "exit":
@@ -123,8 +122,8 @@ def process_delete_triplet_cmd(
     rel_label: str,
     dst_label: str,
     allow_objs_with_same_label: bool,
-) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
     # get the source node
     src_node: Node
     if src_label == "exit":
@@ -220,12 +219,11 @@ def process_triplet_cmd(
     timestamp: int,
     cmd: str,
     allow_objs_with_same_label: bool = False,
-) -> List[Dict[str, Any]]:
-    """
-    Update the internal graph based on the given triplet command and return
+) -> list[dict[str, Any]]:
+    """Update the internal graph based on the given triplet command and return
     corresponding graph events.
 
-    There are four event types: node addtion/deletion and edge addition/deletion.
+    There are four event types: node addition/deletion and edge addition/deletion.
     Each node event contains the following information:
         {
             "type": "node-{add,delete}",
@@ -264,14 +262,15 @@ def process_triplet_cmd(
     raise ValueError(f"Unknown command {cmd}")
 
 
-def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
-    """
-    Split the given batched graph into a list of Data. We have to implement our own
-    b/c Batch.to_data_list() doesn't handle batched graphs that have not been created
-    using Batch.from_data_list(), which is what we have when we use
+def batch_to_data_list(batch: Batch, batch_size: int) -> list[Data]:
+    """Split the given batched graph into a list of Data.
+
+    We have to implement our own b/c Batch.to_data_list() doesn't handle
+    batched graphs that have not been created using
+    Batch.from_data_list(), which is what we have when we use
     update_batched_graph().
     """
-    data_list: List[Data] = []
+    data_list: list[Data] = []
     node_id_offsets = calculate_node_id_offsets(batch_size, batch.batch)
     for i in range(batch_size):
         # mask for all the nodes that belong to the i'th subgraph
@@ -314,10 +313,11 @@ def batch_to_data_list(batch: Batch, batch_size: int) -> List[Data]:
     return data_list
 
 
-def data_list_to_batch(data_list: List[Data]) -> Batch:
-    """
-    Inverse of batch_to_data_list(). Can't use Batch.from_data_list() directly due to
-    variable length labels.
+def data_list_to_batch(data_list: list[Data]) -> Batch:
+    """Inverse of batch_to_data_list().
+
+    Can't use Batch.from_data_list() directly due to variable length
+    labels.
     """
     max_node_label_len = max(data.x.size(1) for data in data_list)
     max_edge_label_len = max(data.edge_attr.size(1) for data in data_list)
@@ -355,11 +355,9 @@ def data_list_to_batch(data_list: List[Data]) -> Batch:
 
 def networkx_to_rdf(
     graph: nx.DiGraph, allow_objs_with_same_label: bool = False
-) -> Set[str]:
-    """
-    Turn the given networkx graph into a set of RDF triples.
-    """
-    rdfs: Set[str] = set()
+) -> set[str]:
+    """Turn the given networkx graph into a set of RDF triples."""
+    rdfs: set[str] = set()
     for src, dst, edge_data in graph.edges.data():
         src_label = graph.nodes[src]["label"]
         dst_label = graph.nodes[dst]["label"]
@@ -367,7 +365,7 @@ def networkx_to_rdf(
             if src_label in FOOD_COLORS and dst_label in FOOD_COLORS[src_label]:
                 continue
             elif graph.nodes[src]["label"] in FOOD_COLORS:
-                colors: List[str] = []
+                colors: list[str] = []
                 for _, food_dst, food_edge_data in graph.out_edges(src, data=True):
                     food_dst_label = graph.nodes[food_dst]["label"]
                     if (
@@ -384,9 +382,8 @@ def networkx_to_rdf(
     return rdfs
 
 
-def update_rdf_graph(rdfs: Set[str], graph_cmds: List[str]) -> Set[str]:
-    """
-    Update the given RDF triple graph using the given graph commands.
+def update_rdf_graph(rdfs: set[str], graph_cmds: list[str]) -> set[str]:
+    """Update the given RDF triple graph using the given graph commands.
 
     We remove duplicate graph commands while preserving order.
 

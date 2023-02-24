@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from typing import Tuple, Optional, List, Dict
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from tdgu.nn.utils import masked_mean, PositionalEncoder
 from tdgu.constants import EVENT_TYPES
+from tdgu.nn.utils import PositionalEncoder, masked_mean
 
 
 class EventTypeHead(nn.Module):
@@ -105,7 +103,7 @@ class EventNodeHead(nn.Module):
 
     def forward(
         self, autoregressive_embedding: torch.Tensor, node_embeddings: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         node_embeddings: (batch, num_node, node_embedding_dim)
@@ -245,9 +243,9 @@ class EventSequentialLabelHead(nn.Module):
         self,
         output_tgt_seq: torch.Tensor,
         output_tgt_seq_mask: torch.Tensor,
-        autoregressive_embedding: Optional[torch.Tensor] = None,
-        prev_hidden: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        autoregressive_embedding: torch.Tensor | None = None,
+        prev_hidden: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         output_tgt_seq: (batch, seq_len) or
             one-hot encoded (batch, seq_len, num_word)
@@ -303,7 +301,7 @@ class EventSequentialLabelHead(nn.Module):
 
     def greedy_decode(
         self, autoregressive_embedding: torch.Tensor, max_decode_len: int = 10
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         max_decode_len: max decode length, default 10
@@ -325,8 +323,8 @@ class EventSequentialLabelHead(nn.Module):
             (batch_size, 1), False, device=autoregressive_embedding.device
         )
         # (batch, 1)
-        decoded_seq: List[torch.Tensor] = []
-        decoded_seq_mask: List[torch.Tensor] = []
+        decoded_seq: list[torch.Tensor] = []
+        decoded_seq_mask: list[torch.Tensor] = []
         for i in range(max_decode_len):
             # we have to slice decoded and not_end_mask and deselect empty
             # sequences b/c no sequence in the batch can be empty when packing.
@@ -368,7 +366,7 @@ class EventSequentialLabelHead(nn.Module):
         autoregressive_embedding: torch.Tensor,
         max_decode_len: int = 10,
         tau: float = 1,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         autoregressive_embedding: (batch, autoregressive_embedding_dim)
         max_decode_len: max decode length, default 10
@@ -394,8 +392,8 @@ class EventSequentialLabelHead(nn.Module):
             (batch_size, 1), False, device=autoregressive_embedding.device
         )
         # (batch, 1)
-        decoded_seq: List[torch.Tensor] = []
-        decoded_seq_mask: List[torch.Tensor] = []
+        decoded_seq: list[torch.Tensor] = []
+        decoded_seq_mask: list[torch.Tensor] = []
         for i in range(max_decode_len):
             # we have to slice decoded and not_end_mask and deselect empty
             # sequences b/c no sequence in the batch can be empty when packing.
@@ -457,7 +455,7 @@ class RNNGraphEventDecoder(nn.Module):
         aggr_graph_obs: torch.Tensor,
         aggr_graph_prev_action: torch.Tensor,
         node_mask: torch.Tensor,
-        hidden: Optional[torch.Tensor] = None,
+        hidden: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         input:
@@ -572,7 +570,7 @@ class TransformerGraphEventDecoderBlock(nn.Module):
         node_mask: torch.Tensor,
         prev_input_seq: torch.Tensor,
         prev_input_seq_mask: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         input: (batch, hidden_dim)
         input_mask: (batch)
@@ -796,9 +794,9 @@ class TransformerGraphEventDecoder(nn.Module):
         aggr_graph_obs: torch.Tensor,
         aggr_graph_prev_action: torch.Tensor,
         node_mask: torch.Tensor,
-        prev_input_event_emb_seq: Optional[torch.Tensor] = None,
-        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, List[torch.Tensor]]]:
+        prev_input_event_emb_seq: torch.Tensor | None = None,
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None,
+    ) -> tuple[dict[str, torch.Tensor], dict[str, list[torch.Tensor]]]:
         """
         input_event_embedding: (batch, input_dim)
         event_mask: (batch)
@@ -861,12 +859,12 @@ class TransformerGraphEventDecoder(nn.Module):
         # keep track of inputs for each block per step
         output = pos_encoded_input
         # (batch, hidden_dim)
-        block_inputs: List[torch.Tensor] = []
-        self_attn_weights: List[torch.Tensor] = []
-        obs_graph_attn_weights: List[torch.Tensor] = []
-        prev_action_graph_attn_weights: List[torch.Tensor] = []
-        graph_obs_attn_weights: List[torch.Tensor] = []
-        graph_prev_action_attn_weights: List[torch.Tensor] = []
+        block_inputs: list[torch.Tensor] = []
+        self_attn_weights: list[torch.Tensor] = []
+        obs_graph_attn_weights: list[torch.Tensor] = []
+        prev_action_graph_attn_weights: list[torch.Tensor] = []
+        graph_obs_attn_weights: list[torch.Tensor] = []
+        graph_prev_action_attn_weights: list[torch.Tensor] = []
         for i, dec_block in enumerate(self.dec_blocks):
             block_inputs.append(output)
             dec_block_results = dec_block(
