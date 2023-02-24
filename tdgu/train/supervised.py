@@ -501,7 +501,7 @@ class SupervisedTDGU(TDGULightningModule):
                     results["event_src_logits"], results["batch_node_mask"], dim=1
                 ).argmax(dim=1)
                 if results["event_src_logits"].size(1) > 0
-                else torch.zeros(
+                else torch.zeros(  # type: ignore
                     results["event_src_logits"].size(0),
                     dtype=torch.long,
                     device=self.device,
@@ -512,7 +512,7 @@ class SupervisedTDGU(TDGULightningModule):
                     results["event_dst_logits"], results["batch_node_mask"], dim=1
                 ).argmax(dim=1)
                 if results["event_dst_logits"].size(1) > 0
-                else torch.zeros(
+                else torch.zeros(  # type: ignore
                     results["event_dst_logits"].size(0),
                     dtype=torch.long,
                     device=self.device,

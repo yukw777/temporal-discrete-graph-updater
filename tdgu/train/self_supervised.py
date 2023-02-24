@@ -318,10 +318,18 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                     event_type_ids.argmax(dim=-1).tolist(),
                     src_ids.argmax(dim=-1)
                     if src_ids.size(-1) > 0
-                    else torch.zeros(batch_size, device=self.device, dtype=torch.long),
+                    else torch.zeros(
+                        batch_size,
+                        device=self.device,
+                        dtype=torch.long,
+                    ),  # type: ignore
                     dst_ids.argmax(dim=-1)
                     if dst_ids.size(-1) > 0
-                    else torch.zeros(batch_size, device=self.device, dtype=torch.long),
+                    else torch.zeros(
+                        batch_size,
+                        device=self.device,
+                        dtype=torch.long,
+                    ),  # type: ignore
                     batched_labels,
                     batch_to_data_list(batched_graph, batch_size),
                     step_mask.tolist(),
