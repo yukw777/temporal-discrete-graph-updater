@@ -1,30 +1,30 @@
+from pathlib import Path
+
 import pytest
 import torch
 import torch.nn.functional as F
-
-from pathlib import Path
 from torch_geometric.data import Batch
 
+from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.nn.utils import (
-    masked_mean,
-    masked_softmax,
-    masked_log_softmax,
-    masked_gumbel_softmax,
+    PositionalEncoder,
+    calculate_node_id_offsets,
     compute_masks_from_event_type_ids,
-    load_fasttext,
     find_indices,
-    pad_batch_seq_of_seq,
+    generate_square_subsequent_mask,
     get_edge_index_co_occurrence_matrix,
     index_edge_attr,
-    calculate_node_id_offsets,
-    update_batched_graph,
-    update_node_features,
-    update_edge_index,
-    PositionalEncoder,
-    generate_square_subsequent_mask,
+    load_fasttext,
+    masked_gumbel_softmax,
+    masked_log_softmax,
+    masked_mean,
+    masked_softmax,
+    pad_batch_seq_of_seq,
     shift_tokens_right,
+    update_batched_graph,
+    update_edge_index,
+    update_node_features,
 )
-from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.preprocessor import PAD, UNK
 
 

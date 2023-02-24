@@ -1,14 +1,11 @@
 import torch
-
-from typing import List
 from torchmetrics import Metric
 from torchmetrics.functional.classification import multiclass_f1_score
 
 
 class F1(Metric):
-    """
-    Measures accuracy or direct overlap between the predictions and ground truth
-    """
+    """Measures accuracy or direct overlap between the predictions and ground
+    truth."""
 
     is_differentiable = False
     higher_is_better = True
@@ -24,7 +21,7 @@ class F1(Metric):
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def update(
-        self, batch_preds: List[List[str]], batch_targets: List[List[str]]
+        self, batch_preds: list[list[str]], batch_targets: list[list[str]]
     ) -> None:
         assert len(batch_preds) == len(batch_targets)
         for preds, targets in zip(batch_preds, batch_targets):
@@ -51,9 +48,8 @@ class F1(Metric):
 
 
 class DynamicGraphNodeF1(Metric):
-    """
-    Measures the F1 score of dynamic graph nodes where the number of nodes varies.
-    """
+    """Measures the F1 score of dynamic graph nodes where the number of nodes
+    varies."""
 
     is_differentiable = False
     higher_is_better = True

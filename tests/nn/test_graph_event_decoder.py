@@ -1,19 +1,20 @@
+import random
+
 import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import random
 
-from tdgu.nn.graph_event_decoder import (
-    EventTypeHead,
-    EventNodeHead,
-    EventStaticLabelHead,
-    EventSequentialLabelHead,
-    RNNGraphEventDecoder,
-    TransformerGraphEventDecoderBlock,
-    TransformerGraphEventDecoder,
-)
 from tdgu.constants import EVENT_TYPES
+from tdgu.nn.graph_event_decoder import (
+    EventNodeHead,
+    EventSequentialLabelHead,
+    EventStaticLabelHead,
+    EventTypeHead,
+    RNNGraphEventDecoder,
+    TransformerGraphEventDecoder,
+    TransformerGraphEventDecoderBlock,
+)
 
 
 @pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])

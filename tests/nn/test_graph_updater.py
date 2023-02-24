@@ -2,17 +2,15 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torch_geometric.data.batch import Batch
 from torch_geometric.nn import TransformerConv
-
-from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
-from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
-from tdgu.nn.utils import compute_masks_from_event_type_ids
-from tdgu.nn.text import QANetTextEncoder
-from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
-
 from utils import increasing_mask
+
+from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
+from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
+from tdgu.nn.text import QANetTextEncoder
+from tdgu.nn.utils import compute_masks_from_event_type_ids
 
 
 @pytest.fixture()

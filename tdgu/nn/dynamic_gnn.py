@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-
 from torch_geometric.data import Batch
 
 from tdgu.nn.utils import PositionalEncoder
@@ -86,8 +85,7 @@ class ZeroPositionalEncoder(nn.Module):
         self.channels = channels
 
     def forward(self, positions: torch.Tensor) -> torch.Tensor:
-        """
-        Simply return zero encodings. Useful for ablation studies.
+        """Simply return zero encodings. Useful for ablation studies.
 
         positions: (*)
 
@@ -131,8 +129,7 @@ class DynamicGNN(nn.Module):
         )
 
     def forward(self, batched_graph: Batch) -> torch.Tensor:
-        """
-        Calculate the node embeddings for the given batched graph.
+        """Calculate the node embeddings for the given batched graph.
 
         batched_graph: diagonally stacked graph, Batch(
             batch: (prev_num_node)

@@ -1,13 +1,12 @@
 import pytest
 import torch
 import torch.nn.functional as F
-
 from torch_geometric.data.batch import Batch
 
-from tdgu.data import TWCmdGenGraphEventStepInput
-from tdgu.train.common import TDGULightningModule
 from tdgu.constants import EVENT_TYPES
+from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.nn.utils import masked_softmax
+from tdgu.train.common import TDGULightningModule
 
 
 @pytest.mark.parametrize("gumbel_tau", [0.3, 0.5])

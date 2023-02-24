@@ -1,27 +1,25 @@
+from typing import Any
+
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
-
-from torch.optim import AdamW, Optimizer
-from typing import Dict, Tuple, Any, List, Optional, Union
-from torch_geometric.data import Data, Batch
-from pytorch_lightning.trainer.states import RunningStage
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.trainer.states import RunningStage
+from torch.optim import AdamW, Optimizer
+from torch_geometric.data import Batch, Data
 
-from tdgu.train.common import TDGULightningModule
-from tdgu.nn.utils import shift_tokens_right, index_edge_attr
-from tdgu.nn.text import TextDecoder
-from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
-from tdgu.metrics import F1
 from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
+from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
 from tdgu.graph import batch_to_data_list
+from tdgu.metrics import F1
+from tdgu.nn.text import TextDecoder
+from tdgu.nn.utils import index_edge_attr, shift_tokens_right
+from tdgu.train.common import TDGULightningModule
 
 
 class ObsGenSelfSupervisedTDGU(pl.LightningModule):
-    """
-    A LightningModule for self supervised training of the temporal discrete graph
-    updater using the observation generation objective.
-    """
+    """A LightningModule for self supervised training of the temporal discrete
+    graph updater using the observation generation objective."""
 
     def __init__(
         self,
@@ -53,8 +51,8 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         self,
         step_input: TWCmdGenGraphEventStepInput,
         step_mask: torch.Tensor,
-        prev_batched_graph: Optional[Batch] = None,
-    ) -> Dict[str, Union[torch.Tensor, Batch, List[torch.Tensor]]]:
+        prev_batched_graph: Batch | None = None,
+    ) -> dict[str, torch.Tensor | Batch | list[torch.Tensor]]:
         results_list = self.tdgu.greedy_decode(
             step_input,
             prev_batched_graph
@@ -118,7 +116,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         }
 
     def on_train_epoch_start(self) -> None:
-        self.game_id_to_step_data_graph: Dict[int, Tuple[Dict[str, Any], Data]] = {}
+        self.game_id_to_step_data_graph: dict[int, tuple[dict[str, Any], Data]] = {}
 
     def on_validation_epoch_start(self) -> None:
         self.game_id_to_step_data_graph = {}
@@ -130,9 +128,9 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         self,
         batch: TWCmdGenObsGenBatch,
         batch_idx: int,
-        prev_batched_graph: Optional[Batch],
-    ) -> Dict[str, Union[torch.Tensor, Batch]]:
-        losses: List[torch.Tensor] = []
+        prev_batched_graph: Batch | None,
+    ) -> dict[str, torch.Tensor | Batch]:
+        losses: list[torch.Tensor] = []
         for step_input, step_mask in zip(batch.step_inputs, batch.step_mask):
             # step_mask: (batch)
             results = self(step_input, step_mask, prev_batched_graph=prev_batched_graph)
@@ -143,7 +141,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         assert prev_batched_graph is not None
         return {"loss": loss, "hiddens": prev_batched_graph.detach()}
 
-    def eval_step(self, batch: TWCmdGenObsGenBatch) -> List[Tuple[str, ...]]:
+    def eval_step(self, batch: TWCmdGenObsGenBatch) -> list[tuple[str, ...]]:
         if self.trainer.state.stage in {  # type: ignore
             RunningStage.SANITY_CHECKING,
             RunningStage.VALIDATING,
@@ -155,12 +153,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             raise ValueError(
                 f"Unsupported stage: {self.trainer.state.stage}"  # type: ignore
             )
-        losses: List[torch.Tensor] = []
+        losses: list[torch.Tensor] = []
         f1 = getattr(self, f"{log_prefix}_f1")
-        prev_batched_graph: Optional[Batch] = None
+        prev_batched_graph: Batch | None = None
         # [(id, observation, previous action, decoded graph events)]
         # id = (game|walkthrough_step|random_step)
-        table_data: List[Tuple[str, ...]] = []
+        table_data: list[tuple[str, ...]] = []
         for timestamp, (step_input, step_mask) in enumerate(
             zip(batch.step_inputs, batch.step_mask)
         ):
@@ -235,18 +233,18 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
 
     def validation_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
-    ) -> List[Tuple[str, ...]]:
+    ) -> list[tuple[str, ...]]:
         return self.eval_step(batch)
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
-    ) -> List[Tuple[str, ...]]:
+    ) -> list[tuple[str, ...]]:
         return self.eval_step(batch)
 
     def tbptt_split_batch(
         self, batch: TWCmdGenObsGenBatch, split_size: int
-    ) -> List[TWCmdGenObsGenBatch]:
-        splits: List[TWCmdGenObsGenBatch] = []
+    ) -> list[TWCmdGenObsGenBatch]:
+        splits: list[TWCmdGenObsGenBatch] = []
         for i in range(0, len(batch.step_inputs), split_size):
             splits.append(
                 TWCmdGenObsGenBatch(
@@ -267,14 +265,14 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
 
     def decode_graph_events(
         self,
-        event_type_id_list: List[torch.Tensor],
-        src_id_list: List[torch.Tensor],
-        dst_id_list: List[torch.Tensor],
-        label_word_id_list: List[torch.Tensor],
-        label_mask_list: List[torch.Tensor],
-        batched_graph_list: List[Batch],
+        event_type_id_list: list[torch.Tensor],
+        src_id_list: list[torch.Tensor],
+        dst_id_list: list[torch.Tensor],
+        label_word_id_list: list[torch.Tensor],
+        label_mask_list: list[torch.Tensor],
+        batched_graph_list: list[Batch],
         step_mask: torch.Tensor,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         event_type_id_list: [(batch, num_event_type), ...]
         src_id_list: [(batch, max_sub_graph_num_node), ...]
@@ -285,7 +283,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         step_mask: (batch)
         """
         batch_size = event_type_id_list[0].size(0)
-        batched_graph_events: List[List[str]] = [[] for _ in range(batch_size)]
+        batched_graph_events: list[list[str]] = [[] for _ in range(batch_size)]
         for (
             event_type_ids,
             src_ids,
@@ -376,7 +374,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         return [", ".join(graph_events) for graph_events in batched_graph_events]
 
     def wandb_log_gen_obs(
-        self, outputs: List[List[Tuple[str, ...]]], table_title: str
+        self, outputs: list[list[tuple[str, ...]]], table_title: str
     ) -> None:
         self.logger.log_table(  # type: ignore
             key=table_title,
@@ -391,13 +389,13 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         )
 
     def validation_epoch_end(  # type: ignore
-        self, outputs: List[List[Tuple[str, ...]]]
+        self, outputs: list[list[tuple[str, ...]]]
     ) -> None:
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "val_graph_events")
 
     def test_epoch_end(  # type: ignore
-        self, outputs: List[List[Tuple[str, ...]]]
+        self, outputs: list[list[tuple[str, ...]]]
     ) -> None:
         if isinstance(self.logger, WandbLogger):
             self.wandb_log_gen_obs(outputs, "test_graph_events")

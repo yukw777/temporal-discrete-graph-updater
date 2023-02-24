@@ -1,8 +1,6 @@
-import torch
 import networkx as nx
-
-from typing import List
-from torch_geometric.data import Data, Batch
+import torch
+from torch_geometric.data import Batch, Data
 
 
 def increasing_mask(
@@ -23,7 +21,7 @@ def increasing_mask(
         [1, 1],
     ]
     """
-    data: List[List[int]] = []
+    data: list[list[int]] = []
     for i in range(batch_size):
         if i < seq_len:
             if start_with_zero:

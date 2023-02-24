@@ -1,8 +1,7 @@
+from abc import ABC, abstractmethod
+
 import torch
 import torch.nn as nn
-
-from abc import ABC, abstractmethod
-from typing import Dict
 from transformers import PreTrainedModel
 
 from tdgu.nn.utils import (
@@ -20,7 +19,7 @@ class TextEncoder(ABC, nn.Module):
         word_ids: torch.Tensor,
         mask: torch.Tensor,
         return_pooled_output: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         word_ids: (batch_size, seq_len) or
             one-hot encoded (batch_size, seq_len, num_word)
@@ -39,10 +38,11 @@ class TextEncoder(ABC, nn.Module):
 
 
 class DepthwiseSeparableConv1d(nn.Module):
-    """
-    Depthwise, separable 1d convolution to save computation in exchange for
+    """Depthwise, separable 1d convolution to save computation in exchange for
     a bit of accuracy.
-    https://towardsdatascience.com/a-basic-introduction-to-separable-convolutions-b99ec3102728
+
+    https://towardsdatascience.com/a-basic-introduction-to-separable-
+    convolutions-b99ec3102728
     """
 
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int) -> None:
@@ -68,8 +68,8 @@ class DepthwiseSeparableConv1d(nn.Module):
 
 
 class TextEncoderConvBlock(nn.Module):
-    """
-    Convolutional blocks used in QANet.
+    """Convolutional blocks used in QANet.
+
     A layer norm followed by a depthwise, separable convolutional layer
     with a residual connection.
     """
@@ -96,9 +96,7 @@ class TextEncoderConvBlock(nn.Module):
 
 
 class TextEncoderBlock(nn.Module):
-    """
-    Based on QANet (https://arxiv.org/abs/1804.09541)
-    """
+    """Based on QANet (https://arxiv.org/abs/1804.09541)"""
 
     def __init__(
         self,
@@ -202,7 +200,7 @@ class QANetTextEncoder(TextEncoder):
         word_ids: torch.Tensor,
         mask: torch.Tensor,
         return_pooled_output: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         word_ids: (batch_size, seq_len) or
             one-hot encoded (batch_size, seq_len, num_word)
@@ -436,7 +434,7 @@ class BertTextEncoder(HuggingFaceTextEncoder):
         word_ids: torch.Tensor,
         mask: torch.Tensor,
         return_pooled_output: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         word_ids: (batch_size, seq_len) or
             one-hot encoded (batch_size, seq_len, num_word)

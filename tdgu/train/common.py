@@ -1,34 +1,31 @@
+from pathlib import Path
+from typing import Any
+
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 import torch.nn.functional as F
-
-from typing import Optional, List, Dict, Any
-from torch_geometric.nn import TransformerConv, GATv2Conv
-from torch_geometric.data import Batch
 from hydra.utils import to_absolute_path
-from pathlib import Path
-
+from torch_geometric.data import Batch
+from torch_geometric.nn import GATv2Conv, TransformerConv
 from transformers import AutoModel
 
-from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
-from tdgu.nn.text import TextEncoder, QANetTextEncoder, HF_TEXT_ENCODER_INIT_MAP
-from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
-from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.constants import EVENT_TYPE_ID_MAP
-from tdgu.nn.utils import masked_softmax, load_fasttext, masked_gumbel_softmax
+from tdgu.data import TWCmdGenGraphEventStepInput
+from tdgu.nn.graph_event_decoder import TransformerGraphEventDecoder
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
+from tdgu.nn.text import HF_TEXT_ENCODER_INIT_MAP, QANetTextEncoder, TextEncoder
+from tdgu.nn.utils import load_fasttext, masked_gumbel_softmax, masked_softmax
 from tdgu.preprocessor import BOS, EOS, PAD, UNK, Preprocessor, SpacyPreprocessor
 
 
 class TDGULightningModule(TemporalDiscreteGraphUpdater, pl.LightningModule):
-    """
-    Base LightningModule class for TDGU.
-    """
+    """Base LightningModule class for TDGU."""
 
     def __init__(
         self,
-        text_encoder_hparams: Optional[Dict[str, Any]] = None,
-        text_encoder_conf: Optional[Dict[str, Any]] = None,
+        text_encoder_hparams: dict[str, Any] | None = None,
+        text_encoder_conf: dict[str, Any] | None = None,
         hidden_dim: int = 8,
         dgnn_gnn: str = "TransformerConv",
         dgnn_timestamp_enc_dim: int = 8,
@@ -157,7 +154,7 @@ class TDGULightningModule(TemporalDiscreteGraphUpdater, pl.LightningModule):
         max_label_decode_len: int = 10,
         gumbel_greedy_decode: bool = False,
         gumbel_tau: float = 0.5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         step_input: the current step input
         prev_batch_graph: diagonally stacked batch of current graphs
@@ -256,11 +253,11 @@ class TDGULightningModule(TemporalDiscreteGraphUpdater, pl.LightningModule):
         )  # type: ignore
         # (batch)
 
-        prev_input_event_emb_seq: Optional[torch.Tensor] = None
-        prev_input_event_emb_seq_mask: Optional[torch.Tensor] = None
-        encoded_obs: Optional[torch.Tensor] = None
-        encoded_prev_action: Optional[torch.Tensor] = None
-        results_list: List[Dict[str, Any]] = []
+        prev_input_event_emb_seq: torch.Tensor | None = None
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None
+        encoded_obs: torch.Tensor | None = None
+        encoded_prev_action: torch.Tensor | None = None
+        results_list: list[dict[str, Any]] = []
         for _ in range(max_event_decode_len):
             results = self(
                 decoded_event_type_ids,

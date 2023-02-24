@@ -1,16 +1,15 @@
-import torch
-import matplotlib.pyplot as plt
-import seaborn as sb
 import random
 
-from typing import List
+import matplotlib.pyplot as plt
+import seaborn as sb
+import torch
 from torch.utils.data import DataLoader
 
-from tdgu.train.supervised import SupervisedTDGU
-from tdgu.data import TWCmdGenGraphEventDataset, TWCmdGenGraphEventDataCollator
-from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
+from tdgu.data import TWCmdGenGraphEventDataCollator, TWCmdGenGraphEventDataset
 from tdgu.nn.utils import calculate_node_id_offsets
+from tdgu.preprocessor import SpacyPreprocessor
+from tdgu.train.supervised import SupervisedTDGU
 
 
 def main(
@@ -44,12 +43,12 @@ def main(
                 batch.step_input, batch.initial_batched_graph
             )
         # self_attn_weights_list: List[torch.Tensor] = []
-        obs_graph_attn_weights_list: List[torch.Tensor] = []
-        decoded_event_type_ids_list: List[torch.Tensor] = []
-        decoded_event_src_ids_list: List[torch.Tensor] = []
-        decoded_event_dst_ids_list: List[torch.Tensor] = []
-        decoded_event_labels_list: List[List[str]] = []  # (step, batch)
-        node_id_offsets_list: List[torch.Tensor] = []
+        obs_graph_attn_weights_list: list[torch.Tensor] = []
+        decoded_event_type_ids_list: list[torch.Tensor] = []
+        decoded_event_src_ids_list: list[torch.Tensor] = []
+        decoded_event_dst_ids_list: list[torch.Tensor] = []
+        decoded_event_labels_list: list[list[str]] = []  # (step, batch)
+        node_id_offsets_list: list[torch.Tensor] = []
         for results in results_list:
             decoded_event_type_ids_list.append(results["decoded_event_type_ids"])
             decoded_event_src_ids_list.append(results["decoded_event_src_ids"])
@@ -80,7 +79,7 @@ def main(
         # (batch, num_graph_events)
         batch_decoded_event_dst_ids = torch.stack(decoded_event_dst_ids_list, dim=-1)
         # (batch, num_graph_events)
-        batch_decoded_event_labels: List[List[str]] = list(
+        batch_decoded_event_labels: list[list[str]] = list(
             map(list, zip(*decoded_event_labels_list))
         )  # (batch, step)
         batch_node_id_offsets = torch.stack(node_id_offsets_list, dim=-1)

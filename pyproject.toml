@@ -20,6 +20,8 @@ torchmetrics = "~=0.11.1"
 wandb = "^0.13.10"
 transformers = "^4.26.1"
 textworld = "^1.5.3"
+matplotlib = "^3.7.0"
+seaborn = "^0.12.2"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -30,6 +32,7 @@ black = "^23.1.0"
 ipython = "^8.10.0"
 line-profiler = "^4.0.2"
 coverage = "^7.2.0"
+pre-commit = "^3.1.0"
 
 
 [[tool.poetry.source]]
@@ -51,3 +54,6 @@ markers = [
     "slow: mark test as slow."
 ]
 addopts = "-m 'not slow'"
+
+[tool.codespell]
+skip = "vocabs/*.txt"

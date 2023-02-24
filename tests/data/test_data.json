@@ -1,1 +1,228 @@
-{"graph_index": "{\"graphs\": {\"27\": [36, 38, 51, 52, 54, 55, 56, 57, 58], \"25\": [51, 36, 38, 52], \"26\": [36, 38, 51, 52, 53], \"52\": [11, 15, 16, 19, 22, 23, 24, 27, 28], \"51\": [11, 15, 16, 18, 19, 22, 23, 24, 27], \"3\": [0, 1, 2, 4], \"1\": [0, 1, 2], \"54\": [11, 111, 16, 112, 19, 22, 23, 24, 27, 29], \"2\": [0, 1, 2, 3], \"53\": [11, 111, 16, 15, 19, 22, 23, 24, 27], \"0\": []}, \"entities\": {\"0\": \"exit\", \"1\": \"corridor\", \"2\": \"player\", \"3\": \"flour\", \"4\": \"bathroom\", \"5\": \"toilet\", \"6\": \"cookbook\", \"7\": \"counter\", \"8\": \"kitchen\", \"9\": \"fridge\", \"10\": \"closed\", \"11\": \"knife\", \"12\": \"table\", \"13\": \"oven\", \"14\": \"plain door\", \"15\": \"stove\", \"16\": \"open\", \"17\": \"meal\", \"18\": \"raw\", \"19\": \"livingroom\", \"20\": \"bedroom\", \"21\": \"pantry\", \"22\": \"shelf\", \"23\": \"roasted\", \"24\": \"sofa\", \"25\": \"salt\", \"26\": \"block of cheese\", \"27\": \"diced\", \"28\": \"water\", \"29\": \"bed\", \"30\": \"frosted-glass door\", \"31\": \"patio door\", \"32\": \"backyard\", \"33\": \"bbq\", \"34\": \"patio chair\", \"35\": \"patio table\", \"36\": \"wooden door\", \"37\": \"garden\", \"38\": \"purple potato\", \"39\": \"uncut\", \"40\": \"shed\", \"41\": \"toolbox\", \"42\": \"workbench\", \"43\": \"chicken breast\", \"44\": \"grilled\", \"45\": \"chicken leg\", \"46\": \"chicken wing\", \"47\": \"yellow bell pepper\", \"48\": \"yellow potato\", \"49\": \"screen door\", \"50\": \"fried\", \"51\": \"banana\", \"52\": \"black pepper\", \"53\": \"orange bell pepper\", \"54\": \"parsley\", \"55\": \"pork chop\", \"56\": \"red bell pepper\", \"57\": \"red potato\", \"58\": \"red tuna\", \"59\": \"white onion\", \"60\": \"consumed\", \"61\": \"street\", \"62\": \"sliding door\", \"63\": \"driveway\", \"64\": \"front door\", \"65\": \"sliced\", \"66\": \"red hot pepper\", \"67\": \"barn door\", \"68\": \"green apple\", \"69\": \"green bell pepper\", \"70\": \"chopped\", \"71\": \"red onion\", \"72\": \"olive oil\", \"73\": \"commercial glass door\", \"74\": \"supermarket\", \"75\": \"showcase\", \"76\": \"sliding patio door\", \"77\": \"red apple\", \"78\": \"cilantro\", \"79\": \"lettuce\", \"80\": \"carrot\", \"81\": \"burned\", \"82\": \"fiberglass door\", \"83\": \"vegetable oil\", \"84\": \"peanut oil\"}, \"relations\": {\"111\": [11, 8, 2], \"16\": [9, 8, 2], \"2\": [2, 1, 2], \"53\": [25, 19, 2], \"27\": [6, 12, 5], \"55\": [26, 2, 3], \"57\": [25, 2, 3], \"18\": [11, 12, 5], \"1\": [0, 1, 1], \"24\": [12, 8, 2], \"112\": [28, 9, 3], \"38\": [2, 19, 2], \"36\": [0, 19, 1], \"52\": [24, 19, 2], \"15\": [9, 10, 7], \"3\": [3, 2, 3], \"56\": [26, 18, 7], \"22\": [2, 8, 2], \"58\": [28, 2, 3], \"11\": [7, 8, 2], \"0\": [0, 1, 0], \"29\": [9, 16, 7], \"23\": [15, 8, 2], \"51\": [0, 19, 0], \"4\": [3, 1, 2], \"54\": [26, 27, 7], \"28\": [11, 2, 3], \"19\": [13, 8, 2]}, \"relation_types\": {\"0\": \"north_of\", \"1\": \"west_of\", \"2\": \"at\", \"3\": \"in\", \"4\": \"south_of\", \"5\": \"on\", \"6\": \"east_of\", \"7\": \"is\", \"8\": \"part_of\", \"9\": \"needs\"}}", "examples": [{"game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8", "step": [0, 0], "observation": "you are hungry ! let 's cook a delicious meal . check the cookbook in the kitchen for the recipe . once done , enjoy your meal ! -= corridor = - you are in a corridor . a normal kind of place . there is an exit to the north . do n't worry , there is no door . there is an exit to the west .", "previous_action": "restart", "previous_graph_seen": 0, "target_commands": ["add , exit , corridor , north_of", "add , exit , corridor , west_of", "add , player , corridor , at"]}, {"game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8", "step": [1, 0], "observation": "you are carrying : a flour", "previous_action": "inventory", "previous_graph_seen": 1, "target_commands": ["add , flour , player , in"]}, {"game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8", "step": [1, 1], "observation": "you drop the flour on the ground .", "previous_action": "drop flour", "previous_graph_seen": 2, "target_commands": ["add , flour , corridor , at", "delete , flour , player , in"]}, {"game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8", "step": [1, 2], "observation": "you pick up the flour from the ground .", "previous_action": "take flour", "previous_graph_seen": 3, "target_commands": ["add , flour , player , in", "delete , flour , corridor , at"]}, {"game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8", "step": [1, 3], "observation": "you drop the flour on the ground .", "previous_action": "drop flour", "previous_graph_seen": 2, "target_commands": ["add , flour , corridor , at", "delete , flour , player , in"]}, {"game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8", "step": [0, 0], "observation": "you are hungry ! let 's cook a delicious meal . check the cookbook in the kitchen for the recipe . once done , enjoy your meal ! -= livingroom = - you 're now in the livingroom . look over there ! a sofa . the sofa is comfy . but the thing is empty . oh ! why could n't there just be stuff on it ? you need an exit without a door ? you should try going north . you do n't like doors ? why not try going west , that entranceway is not blocked by one .", "previous_action": "restart", "previous_graph_seen": 0, "target_commands": ["add , exit , livingroom , north_of", "add , exit , livingroom , west_of", "add , player , livingroom , at", "add , sofa , livingroom , at"]}, {"game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8", "step": [0, 1], "observation": "you drop the salt on the ground .", "previous_action": "drop salt", "previous_graph_seen": 25, "target_commands": ["add , salt , livingroom , at"]}, {"game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8", "step": [0, 2], "observation": "you put the block of cheese on the sofa .", "previous_action": "put block of cheese on sofa", "previous_graph_seen": 26, "target_commands": ["add , block of cheese , diced , is", "add , block of cheese , raw , is", "add , block of cheese , sofa , on"]}, {"game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8", "step": [1, 0], "observation": "you are carrying : some water a salt a diced block of cheese", "previous_action": "inventory", "previous_graph_seen": 25, "target_commands": ["add , block of cheese , diced , is", "add , block of cheese , player , in", "add , block of cheese , raw , is", "add , salt , player , in", "add , water , player , in"]}, {"game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8", "step": [1, 1], "observation": "you put the block of cheese on the sofa .", "previous_action": "put block of cheese on sofa", "previous_graph_seen": 27, "target_commands": ["add , block of cheese , sofa , on", "delete , block of cheese , player , in"]}, {"game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8", "step": [0, 0], "observation": "you are hungry ! let 's cook a delicious meal . check the cookbook in the kitchen for the recipe . once done , enjoy your meal ! -= kitchen = - you are in a kitchen . a standard kind of place . you try to gain information on your surroundings by using a technique you call \" looking . \" you see a fridge . you can make out a closed oven , which looks conventional , right there by you . you scan the room , seeing a table . you see a cookbook and a knife on the table . hmmm ... what else , what else ? were you looking for a counter ? because look over there , it 's a counter . the counter is vast . but the thing has n't got anything on it . look over there ! a stove . the stove is conventional . looks like someone 's already been here and taken everything off it , though . hm . oh well", "previous_action": "restart", "previous_graph_seen": 0, "target_commands": ["add , cookbook , table , on", "add , counter , kitchen , at", "add , fridge , closed , is", "add , fridge , kitchen , at", "add , knife , table , on", "add , oven , kitchen , at", "add , player , kitchen , at", "add , stove , kitchen , at", "add , table , kitchen , at"]}, {"game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8", "step": [0, 1], "observation": "you take the knife from the table .", "previous_action": "take knife from table", "previous_graph_seen": 51, "target_commands": ["add , knife , player , in", "delete , knife , table , on"]}, {"game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8", "step": [0, 2], "observation": "you drop the knife on the ground .", "previous_action": "drop knife", "previous_graph_seen": 52, "target_commands": ["add , knife , kitchen , at", "delete , knife , player , in"]}, {"game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8", "step": [0, 3], "observation": "you open the fridge , revealing some water .", "previous_action": "open fridge", "previous_graph_seen": 53, "target_commands": ["add , fridge , open , is", "add , water , fridge , in", "delete , fridge , closed , is"]}, {"game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8", "step": [0, 4], "observation": "you take the cookbook from the table .", "previous_action": "take cookbook from table", "previous_graph_seen": 54, "target_commands": ["add , cookbook , player , in", "delete , cookbook , table , on"]}]}
+{
+  "examples": [
+    {
+      "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+      "observation": "you are hungry ! let 's cook a delicious meal . check the cookbook in the kitchen for the recipe . once done , enjoy your meal ! -= corridor = - you are in a corridor . a normal kind of place . there is an exit to the north . do n't worry , there is no door . there is an exit to the west .",
+      "previous_action": "restart",
+      "previous_graph_seen": 0,
+      "step": [
+        0,
+        0
+      ],
+      "target_commands": [
+        "add , exit , corridor , north_of",
+        "add , exit , corridor , west_of",
+        "add , player , corridor , at"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+      "observation": "you are carrying : a flour",
+      "previous_action": "inventory",
+      "previous_graph_seen": 1,
+      "step": [
+        1,
+        0
+      ],
+      "target_commands": [
+        "add , flour , player , in"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+      "observation": "you drop the flour on the ground .",
+      "previous_action": "drop flour",
+      "previous_graph_seen": 2,
+      "step": [
+        1,
+        1
+      ],
+      "target_commands": [
+        "add , flour , corridor , at",
+        "delete , flour , player , in"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+      "observation": "you pick up the flour from the ground .",
+      "previous_action": "take flour",
+      "previous_graph_seen": 3,
+      "step": [
+        1,
+        2
+      ],
+      "target_commands": [
+        "add , flour , player , in",
+        "delete , flour , corridor , at"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+cook+open+go6-XPXQs56DSgePt1mK.z8",
+      "observation": "you drop the flour on the ground .",
+      "previous_action": "drop flour",
+      "previous_graph_seen": 2,
+      "step": [
+        1,
+        3
+      ],
+      "target_commands": [
+        "add , flour , corridor , at",
+        "delete , flour , player , in"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+      "observation": "you are hungry ! let 's cook a delicious meal . check the cookbook in the kitchen for the recipe . once done , enjoy your meal ! -= livingroom = - you 're now in the livingroom . look over there ! a sofa . the sofa is comfy . but the thing is empty . oh ! why could n't there just be stuff on it ? you need an exit without a door ? you should try going north . you do n't like doors ? why not try going west , that entranceway is not blocked by one .",
+      "previous_action": "restart",
+      "previous_graph_seen": 0,
+      "step": [
+        0,
+        0
+      ],
+      "target_commands": [
+        "add , exit , livingroom , north_of",
+        "add , exit , livingroom , west_of",
+        "add , player , livingroom , at",
+        "add , sofa , livingroom , at"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+      "observation": "you drop the salt on the ground .",
+      "previous_action": "drop salt",
+      "previous_graph_seen": 25,
+      "step": [
+        0,
+        1
+      ],
+      "target_commands": [
+        "add , salt , livingroom , at"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+      "observation": "you put the block of cheese on the sofa .",
+      "previous_action": "put block of cheese on sofa",
+      "previous_graph_seen": 26,
+      "step": [
+        0,
+        2
+      ],
+      "target_commands": [
+        "add , block of cheese , diced , is",
+        "add , block of cheese , raw , is",
+        "add , block of cheese , sofa , on"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+      "observation": "you are carrying : some water a salt a diced block of cheese",
+      "previous_action": "inventory",
+      "previous_graph_seen": 25,
+      "step": [
+        1,
+        0
+      ],
+      "target_commands": [
+        "add , block of cheese , diced , is",
+        "add , block of cheese , player , in",
+        "add , block of cheese , raw , is",
+        "add , salt , player , in",
+        "add , water , player , in"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe3+cook+go9-MrgKh1g1iOlEunVo.z8",
+      "observation": "you put the block of cheese on the sofa .",
+      "previous_action": "put block of cheese on sofa",
+      "previous_graph_seen": 27,
+      "step": [
+        1,
+        1
+      ],
+      "target_commands": [
+        "add , block of cheese , sofa , on",
+        "delete , block of cheese , player , in"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8",
+      "observation": "you are hungry ! let 's cook a delicious meal . check the cookbook in the kitchen for the recipe . once done , enjoy your meal ! -= kitchen = - you are in a kitchen . a standard kind of place . you try to gain information on your surroundings by using a technique you call \" looking . \" you see a fridge . you can make out a closed oven , which looks conventional , right there by you . you scan the room , seeing a table . you see a cookbook and a knife on the table . hmmm ... what else , what else ? were you looking for a counter ? because look over there , it 's a counter . the counter is vast . but the thing has n't got anything on it . look over there ! a stove . the stove is conventional . looks like someone 's already been here and taken everything off it , though . hm . oh well",
+      "previous_action": "restart",
+      "previous_graph_seen": 0,
+      "step": [
+        0,
+        0
+      ],
+      "target_commands": [
+        "add , cookbook , table , on",
+        "add , counter , kitchen , at",
+        "add , fridge , closed , is",
+        "add , fridge , kitchen , at",
+        "add , knife , table , on",
+        "add , oven , kitchen , at",
+        "add , player , kitchen , at",
+        "add , stove , kitchen , at",
+        "add , table , kitchen , at"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8",
+      "observation": "you take the knife from the table .",
+      "previous_action": "take knife from table",
+      "previous_graph_seen": 51,
+      "step": [
+        0,
+        1
+      ],
+      "target_commands": [
+        "add , knife , player , in",
+        "delete , knife , table , on"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8",
+      "observation": "you drop the knife on the ground .",
+      "previous_action": "drop knife",
+      "previous_graph_seen": 52,
+      "step": [
+        0,
+        2
+      ],
+      "target_commands": [
+        "add , knife , kitchen , at",
+        "delete , knife , player , in"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8",
+      "observation": "you open the fridge , revealing some water .",
+      "previous_action": "open fridge",
+      "previous_graph_seen": 53,
+      "step": [
+        0,
+        3
+      ],
+      "target_commands": [
+        "add , fridge , open , is",
+        "add , water , fridge , in",
+        "delete , fridge , closed , is"
+      ]
+    },
+    {
+      "game": "tw-cooking-recipe1+take1+cook+cut+open-x9BZfZmVUZ5Ks1m1.z8",
+      "observation": "you take the cookbook from the table .",
+      "previous_action": "take cookbook from table",
+      "previous_graph_seen": 54,
+      "step": [
+        0,
+        4
+      ],
+      "target_commands": [
+        "add , cookbook , player , in",
+        "delete , cookbook , table , on"
+      ]
+    }
+  ],
+  "graph_index": "{\"graphs\": {\"27\": [36, 38, 51, 52, 54, 55, 56, 57, 58], \"25\": [51, 36, 38, 52], \"26\": [36, 38, 51, 52, 53], \"52\": [11, 15, 16, 19, 22, 23, 24, 27, 28], \"51\": [11, 15, 16, 18, 19, 22, 23, 24, 27], \"3\": [0, 1, 2, 4], \"1\": [0, 1, 2], \"54\": [11, 111, 16, 112, 19, 22, 23, 24, 27, 29], \"2\": [0, 1, 2, 3], \"53\": [11, 111, 16, 15, 19, 22, 23, 24, 27], \"0\": []}, \"entities\": {\"0\": \"exit\", \"1\": \"corridor\", \"2\": \"player\", \"3\": \"flour\", \"4\": \"bathroom\", \"5\": \"toilet\", \"6\": \"cookbook\", \"7\": \"counter\", \"8\": \"kitchen\", \"9\": \"fridge\", \"10\": \"closed\", \"11\": \"knife\", \"12\": \"table\", \"13\": \"oven\", \"14\": \"plain door\", \"15\": \"stove\", \"16\": \"open\", \"17\": \"meal\", \"18\": \"raw\", \"19\": \"livingroom\", \"20\": \"bedroom\", \"21\": \"pantry\", \"22\": \"shelf\", \"23\": \"roasted\", \"24\": \"sofa\", \"25\": \"salt\", \"26\": \"block of cheese\", \"27\": \"diced\", \"28\": \"water\", \"29\": \"bed\", \"30\": \"frosted-glass door\", \"31\": \"patio door\", \"32\": \"backyard\", \"33\": \"bbq\", \"34\": \"patio chair\", \"35\": \"patio table\", \"36\": \"wooden door\", \"37\": \"garden\", \"38\": \"purple potato\", \"39\": \"uncut\", \"40\": \"shed\", \"41\": \"toolbox\", \"42\": \"workbench\", \"43\": \"chicken breast\", \"44\": \"grilled\", \"45\": \"chicken leg\", \"46\": \"chicken wing\", \"47\": \"yellow bell pepper\", \"48\": \"yellow potato\", \"49\": \"screen door\", \"50\": \"fried\", \"51\": \"banana\", \"52\": \"black pepper\", \"53\": \"orange bell pepper\", \"54\": \"parsley\", \"55\": \"pork chop\", \"56\": \"red bell pepper\", \"57\": \"red potato\", \"58\": \"red tuna\", \"59\": \"white onion\", \"60\": \"consumed\", \"61\": \"street\", \"62\": \"sliding door\", \"63\": \"driveway\", \"64\": \"front door\", \"65\": \"sliced\", \"66\": \"red hot pepper\", \"67\": \"barn door\", \"68\": \"green apple\", \"69\": \"green bell pepper\", \"70\": \"chopped\", \"71\": \"red onion\", \"72\": \"olive oil\", \"73\": \"commercial glass door\", \"74\": \"supermarket\", \"75\": \"showcase\", \"76\": \"sliding patio door\", \"77\": \"red apple\", \"78\": \"cilantro\", \"79\": \"lettuce\", \"80\": \"carrot\", \"81\": \"burned\", \"82\": \"fiberglass door\", \"83\": \"vegetable oil\", \"84\": \"peanut oil\"}, \"relations\": {\"111\": [11, 8, 2], \"16\": [9, 8, 2], \"2\": [2, 1, 2], \"53\": [25, 19, 2], \"27\": [6, 12, 5], \"55\": [26, 2, 3], \"57\": [25, 2, 3], \"18\": [11, 12, 5], \"1\": [0, 1, 1], \"24\": [12, 8, 2], \"112\": [28, 9, 3], \"38\": [2, 19, 2], \"36\": [0, 19, 1], \"52\": [24, 19, 2], \"15\": [9, 10, 7], \"3\": [3, 2, 3], \"56\": [26, 18, 7], \"22\": [2, 8, 2], \"58\": [28, 2, 3], \"11\": [7, 8, 2], \"0\": [0, 1, 0], \"29\": [9, 16, 7], \"23\": [15, 8, 2], \"51\": [0, 19, 0], \"4\": [3, 1, 2], \"54\": [26, 27, 7], \"28\": [11, 2, 3], \"19\": [13, 8, 2]}, \"relation_types\": {\"0\": \"north_of\", \"1\": \"west_of\", \"2\": \"at\", \"3\": \"in\", \"4\": \"south_of\", \"5\": \"on\", \"6\": \"east_of\", \"7\": \"is\", \"8\": \"part_of\", \"9\": \"needs\"}}"
+}

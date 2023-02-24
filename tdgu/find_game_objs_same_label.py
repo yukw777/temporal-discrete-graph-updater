@@ -3,8 +3,8 @@ import os
 
 from tqdm import tqdm
 
-from tdgu.data import TWCmdGenGraphEventDataset
 from tdgu.constants import FOOD_COLORS
+from tdgu.data import TWCmdGenGraphEventDataset
 
 
 def main(data_filename: str, out_dir: str) -> None:

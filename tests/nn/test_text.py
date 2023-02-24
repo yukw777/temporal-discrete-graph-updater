@@ -1,22 +1,20 @@
+import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pytest
-
-from transformers import BertConfig, BertModel
-from transformers import AutoModel
+from transformers import AutoModel, BertConfig, BertModel
+from utils import increasing_mask
 
 from tdgu.nn.text import (
+    HF_TEXT_ENCODER_INIT_MAP,
     BertTextEncoder,
     DepthwiseSeparableConv1d,
-    TextEncoderConvBlock,
-    TextEncoderBlock,
     QANetTextEncoder,
-    TextDecoderBlock,
     TextDecoder,
-    HF_TEXT_ENCODER_INIT_MAP,
+    TextDecoderBlock,
+    TextEncoderBlock,
+    TextEncoderConvBlock,
 )
-from utils import increasing_mask
 
 
 @pytest.mark.parametrize(

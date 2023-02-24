@@ -1,40 +1,40 @@
 import json
+import random
+from collections import defaultdict
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Any
+
+import networkx as nx
 import pytorch_lightning as pl
 import torch
-import networkx as nx
-import random
-
-from typing import List, Dict, Any, Optional, Tuple, Iterator
-from collections import defaultdict
-from torch.utils.data import Dataset, DataLoader, IterableDataset
 from hydra.utils import to_absolute_path
-from dataclasses import dataclass, field
+from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_geometric.data import Batch
 
-from tdgu.preprocessor import Preprocessor
+from tdgu.constants import (
+    EAST_OF,
+    EVENT_TYPE_ID_MAP,
+    IS,
+    NEEDS,
+    NORTH_OF,
+    PART_OF,
+    SOUTH_OF,
+    TWO_ARGS_RELATIONS,
+    WEST_OF,
+)
+from tdgu.graph import process_triplet_cmd
 from tdgu.nn.utils import (
     compute_masks_from_event_type_ids,
     shift_tokens_right,
     update_batched_graph,
 )
+from tdgu.preprocessor import Preprocessor
 from tdgu.utils import draw_graph
-from tdgu.constants import (
-    EVENT_TYPE_ID_MAP,
-    TWO_ARGS_RELATIONS,
-    NORTH_OF,
-    SOUTH_OF,
-    EAST_OF,
-    WEST_OF,
-    PART_OF,
-    IS,
-    NEEDS,
-)
-from tdgu.graph import process_triplet_cmd
 
 
 class TWCmdGenGraphEventDataset(Dataset):
-    """
-    TextWorld Command Generation temporal graph event dataset.
+    """TextWorld Command Generation temporal graph event dataset.
 
     Each data point contains the following information:
         {
@@ -60,14 +60,14 @@ class TWCmdGenGraphEventDataset(Dataset):
         sort_commands: bool = False,
     ) -> None:
         self.allow_objs_with_same_label = allow_objs_with_same_label
-        with open(path, "r") as f:
+        with open(path) as f:
             raw_data = json.load(f)
-        self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
-        self.walkthrough_example_ids: List[Tuple[str, int]] = []
-        self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
+        self.walkthrough_examples: dict[tuple[str, int], dict[str, Any]] = {}
+        self.walkthrough_example_ids: list[tuple[str, int]] = []
+        self.random_examples: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(
             list
         )
-        self.idx_map: List[Tuple[str, int, int]] = []
+        self.idx_map: list[tuple[str, int, int]] = []
 
         for example in raw_data["examples"]:
             if sort_commands:
@@ -86,18 +86,18 @@ class TWCmdGenGraphEventDataset(Dataset):
                 self.random_examples[(game, walkthrough_step)].append(example)
 
     def __getitem__(
-        self, idx: int, draw_graph_filename: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, idx: int, draw_graph_filename: str | None = None
+    ) -> dict[str, Any]:
         game, walkthrough_step, random_step = self.idx_map[idx]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
         random_examples = self.random_examples[(game, walkthrough_step)][:random_step]
         game_steps = walkthrough_examples + random_examples
-        prev_graph_events: List[Dict[str, Any]] = []
+        prev_graph_events: list[dict[str, Any]] = []
         graph = nx.DiGraph()
         for timestamp, example in enumerate(game_steps):
-            graph_events: List[Dict[str, Any]] = []
+            graph_events: list[dict[str, Any]] = []
             for cmd in example["target_commands"]:
                 sub_event_seq = process_triplet_cmd(
                     graph,
@@ -145,8 +145,8 @@ class TWCmdGenGraphEventDataset(Dataset):
 
 
 class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
-    """
-    TextWorld Command Generation graph event dataset for free run evaluation.
+    """TextWorld Command Generation graph event dataset for free run
+    evaluation.
 
     Free run means we run the model from the beginning of the game (empty graph)
     till the end.
@@ -177,11 +177,11 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
         self.allow_objs_with_same_label = allow_objs_with_same_label
         self.shuffle = shuffle
         self.batch_size = batch_size
-        with open(path, "r") as f:
+        with open(path) as f:
             raw_data = json.load(f)
-        self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
-        self.walkthrough_example_ids: List[Tuple[str, int]] = []
-        self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
+        self.walkthrough_examples: dict[tuple[str, int], dict[str, Any]] = {}
+        self.walkthrough_example_ids: list[tuple[str, int]] = []
+        self.random_examples: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(
             list
         )
         self.graph_index = json.loads(raw_data["graph_index"])
@@ -201,10 +201,10 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __iter__(self) -> Iterator[List[Tuple[int, Dict[str, Any]]]]:
+    def __iter__(self) -> Iterator[list[tuple[int, dict[str, Any]]]]:
         if self.shuffle:
             random.shuffle(self.walkthrough_example_ids)
-        walkthrough_id_to_step: Dict[int, Tuple[int, List[Dict[str, Any]]]] = {}
+        walkthrough_id_to_step: dict[int, tuple[int, list[dict[str, Any]]]] = {}
         last_added_walkthrough_id = 0
         while (
             last_added_walkthrough_id < len(self.walkthrough_example_ids)
@@ -255,16 +255,16 @@ class TWCmdGenGraphEventFreeRunDataset(IterableDataset):
             walkthrough_step + 1 + len(self.random_examples[(game, walkthrough_step)])
         )
 
-    def _get_walkthrough(self, walkthrough_id: int) -> List[Dict[str, Any]]:
+    def _get_walkthrough(self, walkthrough_id: int) -> list[dict[str, Any]]:
         game, walkthrough_step = self.walkthrough_example_ids[walkthrough_id]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
         ]
         random_examples = self.random_examples[(game, walkthrough_step)]
-        data: List[Dict[str, Any]] = []
+        data: list[dict[str, Any]] = []
         graph = nx.DiGraph()
         for timestamp, example in enumerate(walkthrough_examples + random_examples):
-            graph_events: List[Dict[str, Any]] = []
+            graph_events: list[dict[str, Any]] = []
             for cmd in example["target_commands"]:
                 sub_event_seq = process_triplet_cmd(
                     graph,
@@ -326,11 +326,11 @@ class TWCmdGenObsGenDataset(Dataset):
     """
 
     def __init__(self, path: str) -> None:
-        with open(path, "r") as f:
+        with open(path) as f:
             raw_data = json.load(f)
-        self.walkthrough_examples: Dict[Tuple[str, int], Dict[str, Any]] = {}
-        self.walkthrough_example_ids: List[Tuple[str, int]] = []
-        self.random_examples: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(
+        self.walkthrough_examples: dict[tuple[str, int], dict[str, Any]] = {}
+        self.walkthrough_example_ids: list[tuple[str, int]] = []
+        self.random_examples: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(
             list
         )
 
@@ -345,7 +345,7 @@ class TWCmdGenObsGenDataset(Dataset):
                 # random example
                 self.random_examples[(game, walkthrough_step)].append(example)
 
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         game, walkthrough_step = self.walkthrough_example_ids[idx]
         walkthrough_examples = [
             self.walkthrough_examples[(game, i)] for i in range(walkthrough_step + 1)
@@ -374,15 +374,13 @@ class TWCmdGenObsGenDataset(Dataset):
         )
 
 
-def sort_target_commands(list_of_cmds: List[str]) -> List[str]:
-    """
-    Copied from the original GATA code
-    """
+def sort_target_commands(list_of_cmds: list[str]) -> list[str]:
+    """Copied from the original GATA code."""
     list_of_cmd_tokens = [item.split(" , ") for item in list_of_cmds]
 
     def key_fn(
-        cmd: List[str],
-    ) -> Tuple[bool, bool, bool, bool, bool, bool, bool, bool, str, str]:
+        cmd: list[str],
+    ) -> tuple[bool, bool, bool, bool, bool, bool, bool, bool, str, str]:
         return (
             cmd[0] == "add",  # add always before delete
             cmd[1] == "player",  # relations with player always first
@@ -406,7 +404,7 @@ def sort_target_commands(list_of_cmds: List[str]) -> List[str]:
         " , ".join(item)
         for item in sorted(list_of_cmd_tokens, key=key_fn, reverse=True)
     ]
-    res: List[str] = []
+    res: list[str] = []
     for cmd in list_of_cmds:
         if cmd not in res:
             res.append(cmd)
@@ -518,11 +516,11 @@ class TWCmdGenGraphEventGraphicalInput:
 
 @dataclass(frozen=True)
 class TWCmdGenGraphEventBatch:
-    ids: Tuple[Tuple[str, int, int], ...]
+    ids: tuple[tuple[str, int, int], ...]
     step_input: TWCmdGenGraphEventStepInput
     initial_batched_graph: Batch
-    graphical_input_seq: Tuple[TWCmdGenGraphEventGraphicalInput, ...]
-    graph_commands: Tuple[Tuple[str, ...], ...]
+    graphical_input_seq: tuple[TWCmdGenGraphEventGraphicalInput, ...]
+    graph_commands: tuple[tuple[str, ...], ...]
 
     def __eq__(self, o: object) -> bool:
         if not isinstance(o, TWCmdGenGraphEventBatch):
@@ -579,12 +577,11 @@ class TWCmdGenGraphEventBatch:
 
 def collate_step_inputs(
     preprocessor: Preprocessor,
-    obs: List[str],
-    prev_actions: List[str],
-    timestamps: List[int],
+    obs: list[str],
+    prev_actions: list[str],
+    timestamps: list[int],
 ) -> TWCmdGenGraphEventStepInput:
-    """
-    Collate step data such as observation, previous action and timestamp.
+    """Collate step data such as observation, previous action and timestamp.
 
     output: TWCmdGenGraphEventStepInput(
         obs_word_ids: (batch, obs_len),
@@ -613,10 +610,9 @@ class TWCmdGenGraphEventDataCollator:
         self.preprocessor = preprocessor
 
     def collate_graphical_input_seq(
-        self, batch: List[Dict[str, Any]], initial_batched_graph: Batch
-    ) -> Tuple[TWCmdGenGraphEventGraphicalInput, ...]:
-        """
-        Collate the graphical input sequence of the given batch.
+        self, batch: list[dict[str, Any]], initial_batched_graph: Batch
+    ) -> tuple[TWCmdGenGraphEventGraphicalInput, ...]:
+        """Collate the graphical input sequence of the given batch.
 
         output: len([TWCmdGenGraphEventGraphicalInput(
             tgt_event_type_ids: (batch),
@@ -640,7 +636,7 @@ class TWCmdGenGraphEventDataCollator:
         """
 
         # collect current step's event sequences
-        batch_event_seq: List[List[Dict[str, Any]]] = []
+        batch_event_seq: list[list[dict[str, Any]]] = []
         for step in batch:
             batch_event_seq.append(
                 step["graph_events"] + [{"type": "end", "label": ""}]
@@ -658,12 +654,12 @@ class TWCmdGenGraphEventDataCollator:
         tgt_event_timestamps = torch.tensor([step["timestamp"] for step in batch])
 
         prev_batched_graph = initial_batched_graph
-        collated: List[TWCmdGenGraphEventGraphicalInput] = []
+        collated: list[TWCmdGenGraphEventGraphicalInput] = []
         for seq_step_num in range(max_event_seq_len):
-            batch_event_type_ids: List[int] = []
-            batch_event_src_ids: List[int] = []
-            batch_event_dst_ids: List[int] = []
-            batch_event_groundtruth_labels: List[str] = []
+            batch_event_type_ids: list[int] = []
+            batch_event_src_ids: list[int] = []
+            batch_event_dst_ids: list[int] = []
+            batch_event_groundtruth_labels: list[str] = []
             for event_seq in batch_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
@@ -744,9 +740,8 @@ class TWCmdGenGraphEventDataCollator:
 
         return tuple(collated)
 
-    def collate_prev_graph_events(self, batch: List[Dict[str, Any]]) -> Batch:
-        """
-        Collate the previous graph events of the given batch into a single
+    def collate_prev_graph_events(self, batch: list[dict[str, Any]]) -> Batch:
+        """Collate the previous graph events of the given batch into a single
         batched global graph.
 
         output: Batch(
@@ -769,11 +764,11 @@ class TWCmdGenGraphEventDataCollator:
         )
 
         for seq_step_num in range(max_prev_event_seq_len):
-            batch_event_type_ids: List[int] = []
-            batch_event_src_ids: List[int] = []
-            batch_event_dst_ids: List[int] = []
-            batch_event_labels: List[str] = []
-            batch_event_timestamps: List[List[int]] = []
+            batch_event_type_ids: list[int] = []
+            batch_event_src_ids: list[int] = []
+            batch_event_dst_ids: list[int] = []
+            batch_event_labels: list[str] = []
+            batch_event_timestamps: list[list[int]] = []
             for event_seq in batch_prev_event_seq:
                 # collect event data for all the items in the batch at event i
                 if seq_step_num < len(event_seq):
@@ -806,10 +801,10 @@ class TWCmdGenGraphEventDataCollator:
 
         return batched_graph
 
-    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenGraphEventBatch:
-        """
-        Each batch has a batch of IDs, batched textual input, batched graphical
-        input, batched previous graph events and ground-truth graph commands.
+    def __call__(self, batch: list[dict[str, Any]]) -> TWCmdGenGraphEventBatch:
+        """Each batch has a batch of IDs, batched textual input, batched
+        graphical input, batched previous graph events and ground-truth graph
+        commands.
 
         TWCmdGenGraphEventBatch(
             ids=(
@@ -875,8 +870,8 @@ class TWCmdGenGraphEventDataCollator:
 
 @dataclass(frozen=True)
 class TWCmdGenObsGenBatch:
-    ids: Tuple[Tuple[str, int], ...]
-    step_inputs: Tuple[TWCmdGenGraphEventStepInput, ...]
+    ids: tuple[tuple[str, int], ...]
+    step_inputs: tuple[TWCmdGenGraphEventStepInput, ...]
     step_mask: torch.Tensor
 
     def __eq__(self, o: object) -> bool:
@@ -911,7 +906,7 @@ class TWCmdGenObsGenDataCollator:
     def __init__(self, preprocessor: Preprocessor) -> None:
         self.preprocessor = preprocessor
 
-    def __call__(self, batch: List[Dict[str, Any]]) -> TWCmdGenObsGenBatch:
+    def __call__(self, batch: list[dict[str, Any]]) -> TWCmdGenObsGenBatch:
         """
         Each batch is a tuple of step inputs and a step mask.
         (
@@ -927,8 +922,8 @@ class TWCmdGenObsGenDataCollator:
         )
         """
         max_step = max(len(walkthrough["steps"]) for walkthrough in batch)
-        collated_steps: List[TWCmdGenGraphEventStepInput] = []
-        collated_step_mask: List[List[bool]] = []
+        collated_steps: list[TWCmdGenGraphEventStepInput] = []
+        collated_step_mask: list[list[bool]] = []
         for step in range(max_step):
             collated_steps.append(
                 collate_step_inputs(
@@ -1002,7 +997,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
     def prepare_data(self) -> None:
         pass
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         if stage == "fit" or stage is None:
             self.train = TWCmdGenGraphEventDataset(
                 self.train_path,
@@ -1075,7 +1070,7 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
 
 def read_label_vocab_files(
     node_vocab_path: str, relation_vocab_path: str
-) -> Tuple[List[str], Dict[str, int]]:
+) -> tuple[list[str], dict[str, int]]:
     labels = [""]
     with open(node_vocab_path) as f:
         for line in f:
@@ -1121,7 +1116,7 @@ class TWCmdGenObsGenDataModule(pl.LightningDataModule):
     def prepare_data(self) -> None:
         pass
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         if stage == "fit" or stage is None:
             self.train = TWCmdGenObsGenDataset(self.train_path)
             self.valid = TWCmdGenObsGenDataset(self.val_path)

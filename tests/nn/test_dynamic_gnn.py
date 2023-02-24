@@ -1,10 +1,9 @@
 import pytest
 import torch
-
 from torch_geometric.data import Batch
-from torch_geometric.nn import TransformerConv, GATv2Conv
+from torch_geometric.nn import GATv2Conv, TransformerConv
 
-from tdgu.nn.dynamic_gnn import DynamicGNN, GNNStack, ZeroPositionalEncoder, GNNLayer
+from tdgu.nn.dynamic_gnn import DynamicGNN, GNNLayer, GNNStack, ZeroPositionalEncoder
 
 
 @pytest.mark.parametrize(

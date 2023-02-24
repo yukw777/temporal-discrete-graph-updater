@@ -145,7 +145,7 @@ FOOD_COLORS = {
     "tuna": {"red", "white"},
     "onion": {"red", "white", "yellow"},
     "potato": {"red", "yellow", "purple"},
-    "apple": {"red", "yello", "green"},
+    "apple": {"red", "yellow", "green"},
     "hot pepper": {"red", "green"},
     "bell pepper": {"red", "yellow", "green", "orange"},
 }

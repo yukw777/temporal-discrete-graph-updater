@@ -2,11 +2,11 @@ import pytest
 import torch
 
 from tdgu.preprocessor import (
-    clean,
-    Preprocessor,
-    HuggingFacePreprocessor,
-    SpacyPreprocessor,
     BertPreprocessor,
+    HuggingFacePreprocessor,
+    Preprocessor,
+    SpacyPreprocessor,
+    clean,
 )
 
 

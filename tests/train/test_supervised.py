@@ -1,11 +1,11 @@
-import pytest
-import shutil
-import torch
 import random
+import shutil
 
-from torch_geometric.data.batch import Data, Batch
+import pytest
+import torch
+from torch_geometric.data.batch import Batch, Data
 
-from tdgu.constants import EVENT_TYPES, EVENT_TYPE_ID_MAP
+from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 from tdgu.train.supervised import SupervisedTDGU, UncertaintyWeightedLoss
 
 
