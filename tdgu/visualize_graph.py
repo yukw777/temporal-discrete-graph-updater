@@ -1,3 +1,7 @@
+"""
+NOTE: This script does not work with the latest version of the model.
+TODO: Fix it!
+"""
 import textworld
 import torch
 import json
@@ -72,7 +76,7 @@ def main(
     verbose: bool,
 ) -> None:
     # load the model
-    lm = SupervisedTDGU.load_from_checkpoint(
+    lm: SupervisedTDGU = SupervisedTDGU.load_from_checkpoint(
         ckpt_filename, word_vocab_path=word_vocab_path
     )
     lm.eval()
@@ -149,7 +153,7 @@ def main(
                     if event_type == "node-add":
                         print((event_type, event_label))
                     elif event_type == "node-delete":
-                        event_src_label = lm.labels[
+                        event_src_label = lm.labels[  # type: ignore
                             results["updated_batched_graph"].x[event_src_id]
                         ]
                         print(
