@@ -50,4 +50,4 @@ jobs:
         run: echo '${{ steps.file_changes.outputs.files}}'
 
       - name: Run pre-commits
-        run: poetry run pre-commit --files ${{ steps.file_changes.outputs.files}}
+        run: poetry run pre-commit run --files ${{ steps.file_changes.outputs.files}}
