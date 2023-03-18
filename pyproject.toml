@@ -12,7 +12,7 @@ torch-geometric = "^2.2.0"
 pyg-lib = {version = "^0.1.0+pt113cu117", source = "pytorch-geometric"}
 torch-scatter = {version = "^2.1.0+pt113cu117", source = "pytorch-geometric"}
 torch-sparse = {version = "^0.6.16+pt113cu117", source = "pytorch-geometric"}
-pytorch-lightning = "^1.9.3"
+pytorch-lightning = "^2.0.0"
 spacy = "^3.5.0"
 networkx = "^3.0"
 hydra-core = "^1.3.1"
