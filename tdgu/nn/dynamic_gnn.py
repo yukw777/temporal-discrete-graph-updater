@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.data import Batch
+from torch_geometric.nn.conv import MessagePassing
 
 from tdgu.nn.utils import PositionalEncoder
 
@@ -8,7 +9,7 @@ from tdgu.nn.utils import PositionalEncoder
 class GNNLayer(nn.Module):
     def __init__(
         self,
-        gnn_module: nn.Module,
+        gnn_module: type[MessagePassing],
         input_dim: int,
         output_dim: int,
         edge_dim: int,
@@ -36,7 +37,7 @@ class GNNLayer(nn.Module):
 class GNNStack(nn.Module):
     def __init__(
         self,
-        gnn_module: nn.Module,
+        gnn_module: type[MessagePassing],
         node_dim: int,
         edge_dim: int,
         output_dim: int,
@@ -97,7 +98,7 @@ class ZeroPositionalEncoder(nn.Module):
 class DynamicGNN(nn.Module):
     def __init__(
         self,
-        gnn_module: nn.Module,
+        gnn_module: type[nn.Module],
         timestamp_enc_dim: int,
         event_embedding_dim: int,
         output_dim: int,
