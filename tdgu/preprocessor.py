@@ -26,6 +26,11 @@ def clean(raw_str: str | None) -> str:
     return cleaned
 
 
+def load_word_vocab(path: str) -> list[str]:
+    with open(path) as f:
+        return [word.strip() for word in f]
+
+
 class Preprocessor(ABC):
     def clean_and_preprocess(
         self, batch: list[str], device: torch.device | None = None
