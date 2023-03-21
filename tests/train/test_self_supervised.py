@@ -4,20 +4,48 @@ import pytest
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Batch
+from torch_geometric.nn import TransformerConv
 
 from tdgu.constants import EVENT_TYPE_ID_MAP
 from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
+from tdgu.nn.dynamic_gnn import DynamicGNN
+from tdgu.nn.text import QANetTextEncoder
+from tdgu.preprocessor import SpacyPreprocessor
 from tdgu.train.self_supervised import ObsGenSelfSupervisedTDGU
 
 
 @pytest.fixture
 def obs_gen_self_supervised_tdgu(tmp_path):
-    shutil.copy2("tests/data/test-fasttext.vec", tmp_path)
+    shutil.copy("tests/data/test-fasttext.vec", tmp_path)
     return ObsGenSelfSupervisedTDGU(
-        text_encoder_conf={
-            "pretrained_word_embedding_path": f"{tmp_path}/test-fasttext.vec",
-            "word_vocab_path": "tests/data/test_word_vocab.txt",
-        }
+        SpacyPreprocessor("tests/data/test_word_vocab.txt"),
+        100,
+        10,
+        5e-4,
+        1,
+        1,
+        1,
+        text_encoder=QANetTextEncoder(
+            str(tmp_path / "test-fasttext.vec"),
+            "tests/data/test_word_vocab.txt",
+            0,
+            True,
+            1,
+            3,
+            5,
+            8,
+            1,
+            8,
+        ),
+        dynamic_gnn=DynamicGNN(TransformerConv, 8, 8, 8, 1, 1),
+        hidden_dim=8,
+        graph_event_decoder_event_type_emb_dim=8,
+        graph_event_decoder_autoregressive_emb_dim=8,
+        graph_event_decoder_key_query_dim=8,
+        graph_event_decoder_num_dec_blocks=1,
+        graph_event_decoder_dec_block_num_heads=1,
+        graph_event_decoder_hidden_dim=8,
+        dropout=0.3,
     )
 
 

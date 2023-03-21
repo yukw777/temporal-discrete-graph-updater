@@ -12,9 +12,10 @@ from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
 from tdgu.graph import batch_to_data_list
 from tdgu.metrics import F1
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.nn.text import TextDecoder
 from tdgu.nn.utils import index_edge_attr, shift_tokens_right
-from tdgu.train.common import TDGULightningModule
+from tdgu.preprocessor import Preprocessor
 
 
 class ObsGenSelfSupervisedTDGU(pl.LightningModule):
@@ -23,25 +24,38 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
 
     def __init__(
         self,
-        truncated_bptt_steps: int = 1,
-        text_decoder_num_blocks: int = 1,
-        text_decoder_num_heads: int = 1,
+        preprocessor: Preprocessor,
+        max_event_decode_len: int,
+        max_label_decode_len: int,
+        learning_rate: float,
+        truncated_bptt_steps: int,
+        text_decoder_num_blocks: int,
+        text_decoder_num_heads: int,
         **kwargs,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["text_encoder_conf"])
+        self.preprocessor = preprocessor
+        self.max_event_decode_len = max_event_decode_len
+        self.max_label_decode_len = max_label_decode_len
+        self.learning_rate = learning_rate
         self.truncated_bptt_steps = truncated_bptt_steps
 
-        self.tdgu = TDGULightningModule(**kwargs)
+        self.tdgu = TemporalDiscreteGraphUpdater(
+            label_head_bos_token_id=self.preprocessor.bos_token_id,
+            label_head_eos_token_id=self.preprocessor.eos_token_id,
+            label_head_pad_token_id=self.preprocessor.pad_token_id,
+            vocab_size=self.preprocessor.vocab_size,
+            **kwargs,
+        )
         self.text_decoder = TextDecoder(
             self.tdgu.text_encoder.get_input_embeddings(),
             text_decoder_num_blocks,
             text_decoder_num_heads,
-            self.tdgu.hparams.hidden_dim,  # type: ignore
+            self.tdgu.hidden_dim,
         )
 
         self.ce_loss = nn.CrossEntropyLoss(
-            ignore_index=self.tdgu.preprocessor.pad_token_id, reduction="none"
+            ignore_index=self.preprocessor.pad_token_id, reduction="none"
         )
 
         self.val_f1 = F1()
@@ -59,25 +73,23 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             if prev_batched_graph is not None
             else Batch(
                 batch=torch.empty(0, dtype=torch.long),
-                x=torch.empty(0, 0, self.tdgu.preprocessor.vocab_size),
+                x=torch.empty(0, 0, self.tdgu.vocab_size),
                 node_label_mask=torch.empty(0, 0, dtype=torch.bool),
                 node_last_update=torch.empty(0, 2, dtype=torch.long),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
-                edge_attr=torch.empty(0, 0, self.tdgu.preprocessor.vocab_size),
+                edge_attr=torch.empty(0, 0, self.tdgu.vocab_size),
                 edge_label_mask=torch.empty(0, 0, dtype=torch.bool),
                 edge_last_update=torch.empty(0, 2, dtype=torch.long),
             ).to(self.device),
-            max_event_decode_len=self.tdgu.hparams.max_event_decode_len,  # type: ignore
-            max_label_decode_len=self.tdgu.hparams.max_label_decode_len,  # type: ignore
+            max_event_decode_len=self.max_event_decode_len,
+            max_label_decode_len=self.max_label_decode_len,
             gumbel_greedy_decode=True,
             gumbel_tau=self.gumbel_tau,
         )
 
         # calculate losses with the observation
         text_decoder_output = self.text_decoder(
-            shift_tokens_right(
-                step_input.obs_word_ids, self.tdgu.preprocessor.bos_token_id
-            ),
+            shift_tokens_right(step_input.obs_word_ids, self.preprocessor.bos_token_id),
             step_input.obs_mask,
             results_list[-1]["batch_node_embeddings"],
             results_list[-1]["batch_node_mask"],
@@ -187,12 +199,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                 is_valid_step,
             ) in zip(
                 batch.ids,
-                self.tdgu.preprocessor.batch_decode(
+                self.preprocessor.batch_decode(
                     step_input.obs_word_ids,
                     step_input.obs_mask,
                     skip_special_tokens=True,
                 ),
-                self.tdgu.preprocessor.batch_decode(
+                self.preprocessor.batch_decode(
                     step_input.prev_action_word_ids,
                     step_input.prev_action_mask,
                     skip_special_tokens=True,
@@ -206,7 +218,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                     results["updated_batched_graph_list"],
                     step_mask,
                 ),
-                self.tdgu.preprocessor.batch_decode(
+                self.preprocessor.batch_decode(
                     results["text_decoder_output"].argmax(dim=-1),
                     step_input.obs_mask,
                     skip_special_tokens=True,
@@ -261,7 +273,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         return 0.5
 
     def configure_optimizers(self) -> Optimizer:
-        return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
+        return AdamW(self.parameters(), lr=self.learning_rate)
 
     def decode_graph_events(
         self,
@@ -299,7 +311,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             label_mask_list,
             batched_graph_list,
         ):
-            batched_labels = self.tdgu.preprocessor.batch_decode(
+            batched_labels = self.preprocessor.batch_decode(
                 batched_label_word_ids.argmax(dim=-1),
                 batched_label_mask,
                 skip_special_tokens=True,
@@ -335,7 +347,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             ):
                 if not is_valid_step or event_type_id == EVENT_TYPE_ID_MAP["pad"]:
                     continue
-                node_labels = self.tdgu.preprocessor.batch_decode(
+                node_labels = self.preprocessor.batch_decode(
                     graph.x.argmax(dim=-1),
                     graph.node_label_mask,
                     skip_special_tokens=True,
@@ -365,7 +377,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                         graph.edge_label_mask,
                         torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
                     )
-                    edge_label = self.tdgu.preprocessor.batch_decode(
+                    edge_label = self.preprocessor.batch_decode(
                         edge_label_word_ids, edge_label_mask, skip_special_tokens=True
                     )[0]
                 batched_graph_events[batch_id].append(
