@@ -1,5 +1,6 @@
-from typing import Protocol
+from typing import Any
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,11 +8,13 @@ from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
 
 from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.data import TWCmdGenGraphEventStepInput
 from tdgu.nn.dynamic_gnn import DynamicGNN
 from tdgu.nn.graph_event_decoder import (
     EventNodeHead,
     EventSequentialLabelHead,
     EventTypeHead,
+    TransformerGraphEventDecoder,
 )
 from tdgu.nn.rep_aggregator import ReprAggregator
 from tdgu.nn.text import TextEncoder
@@ -24,29 +27,7 @@ from tdgu.nn.utils import (
 )
 
 
-class GraphEventDecoder(Protocol):
-    @property
-    def hidden_dim(self) -> int:
-        pass
-
-    def __call__(
-        self,
-        input_event_embedding: torch.Tensor,
-        event_mask: torch.Tensor,
-        aggr_obs_graph: torch.Tensor,
-        obs_mask: torch.Tensor,
-        aggr_prev_action_graph: torch.Tensor,
-        prev_action_mask: torch.Tensor,
-        aggr_graph_obs: torch.Tensor,
-        aggr_graph_prev_action: torch.Tensor,
-        node_mask: torch.Tensor,
-        prev_input_event_emb_seq: torch.Tensor | None = None,
-        prev_input_event_emb_seq_mask: torch.Tensor | None = None,
-    ) -> tuple[dict[str, torch.Tensor], dict[str, list[torch.Tensor]]]:
-        pass
-
-
-class TemporalDiscreteGraphUpdater(nn.Module):
+class TemporalDiscreteGraphUpdater(pl.LightningModule):
     """TemporalDiscreteGraphUpdater is essentially a Seq2Seq model which
     encodes a sequence of game steps, each with an observation and a previous
     action, and decodes a sequence of graph events."""
@@ -54,38 +35,31 @@ class TemporalDiscreteGraphUpdater(nn.Module):
     def __init__(
         self,
         text_encoder: TextEncoder,
-        gnn_module: nn.Module,
+        dynamic_gnn: DynamicGNN,
         hidden_dim: int,
-        dgnn_timestamp_enc_dim: int,
-        dgnn_num_gnn_block: int,
-        dgnn_num_gnn_head: int,
-        dgnn_zero_timestamp_encoder: bool,
-        graph_event_decoder: GraphEventDecoder,
         graph_event_decoder_event_type_emb_dim: int,
         graph_event_decoder_autoregressive_emb_dim: int,
         graph_event_decoder_key_query_dim: int,
+        graph_event_decoder_num_dec_blocks: int,
+        graph_event_decoder_dec_block_num_heads: int,
+        graph_event_decoder_hidden_dim: int,
         label_head_bos_token_id: int,
         label_head_eos_token_id: int,
         label_head_pad_token_id: int,
+        vocab_size: int,
         dropout: float,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
 
+        # vocab size
+        self.vocab_size = vocab_size
+
         # text encoder
         self.text_encoder = text_encoder
 
         # dynamic graph neural network
-        self.dynamic_gnn = DynamicGNN(
-            gnn_module,
-            dgnn_timestamp_enc_dim,
-            hidden_dim,
-            hidden_dim,
-            dgnn_num_gnn_block,
-            dgnn_num_gnn_head,
-            dropout=dropout,
-            zero_timestamp_encoder=dgnn_zero_timestamp_encoder,
-        )
+        self.dynamic_gnn = dynamic_gnn
 
         # representation aggregator
         self.repr_aggr = ReprAggregator(self.hidden_dim)
@@ -96,7 +70,14 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             graph_event_decoder_event_type_emb_dim,
             padding_idx=EVENT_TYPE_ID_MAP["pad"],
         )
-        self.graph_event_decoder = graph_event_decoder
+        self.graph_event_decoder = TransformerGraphEventDecoder(
+            graph_event_decoder_event_type_emb_dim + 3 * hidden_dim,
+            hidden_dim,
+            graph_event_decoder_num_dec_blocks,
+            graph_event_decoder_dec_block_num_heads,
+            graph_event_decoder_hidden_dim,
+            dropout=dropout,
+        )
 
         # autoregressive heads
         self.event_type_head = EventTypeHead(
@@ -726,3 +707,308 @@ class TemporalDiscreteGraphUpdater(nn.Module):
             invalid_edge_add_event_mask
         ).logical_or(invalid_edge_delete_event_mask)
         # (batch)
+
+    def greedy_decode(
+        self,
+        step_input: TWCmdGenGraphEventStepInput,
+        prev_batched_graph: Batch,
+        max_event_decode_len: int = 100,
+        max_label_decode_len: int = 10,
+        gumbel_greedy_decode: bool = False,
+        gumbel_tau: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """
+        step_input: the current step input
+        prev_batch_graph: diagonally stacked batch of current graphs
+        max_event_decode_len: max length of decoded event sequence
+        max_label_decode_len: max length of decoded labels
+        gumbel: greedy decode using gumbel softmax
+        gumbel_tau: gumbel temperature, only used if one_hot is True
+
+        output:
+        len([{
+            decoded_event_type_ids: one-hot encoded
+                (batch, num_event_type) if gumbel_greedy_decode is True
+                (batch) otherwise
+            decoded_event_src_ids: one-hot encoded
+                (batch, max_sub_graph_num_node) if gumbel_greedy_decode is True
+                (batch) otherwise
+            decoded_event_dst_ids: one-hot encoded
+                (batch, max_sub_graph_num_node) if gumbel_greedy_decode is True
+                (batch) otherwise
+            decoded_event_label_word_ids: one-hot encoded
+                (batch, decoded_label_len, num_word) if gumbel_greedy_decode is True
+                (batch, decoded_label_len) otherwise
+            decoded_event_label_mask: (batch, decoded_label_len)
+            updated_batched_graph: diagonally stacked batch of updated graphs.
+                these are the graphs used to decode the graph events above
+            batch_node_embeddings: (batch, max_sub_graph_num_node, hidden_dim)
+            batch_node_mask: (batch, max_sub_graph_num_node)
+            self_attn_weights:
+                len([(batch, 1, input_seq_len), ...]) == num_decoder_block,
+            obs_graph_attn_weights:
+                len([(batch, 1, obs_len), ...]) == num_decoder_block,
+            prev_action_graph_attn_weights:
+                len([(batch, 1, prev_action_len), ...]) == num_decoder_block,
+            graph_obs_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+            graph_prev_action_attn_weights:
+                len([(batch, 1, num_node), ...]) == num_decoder_block,
+        }, ...]) == decode_len <= max_event_decode_len
+        """
+        # initialize the initial inputs
+        batch_size = step_input.obs_word_ids.size(0)
+        if gumbel_greedy_decode:
+            decoded_event_type_ids = F.one_hot(
+                torch.full(  # type: ignore
+                    (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
+                ),
+                num_classes=len(EVENT_TYPE_ID_MAP),
+            ).float()
+            # (batch, num_event_type)
+            prev_max_sub_graph_num_node = (
+                prev_batched_graph.batch.bincount().max()
+                if prev_batched_graph.num_nodes > 0
+                else 0
+            )
+            decoded_src_ids = torch.zeros(  # type: ignore
+                batch_size, prev_max_sub_graph_num_node, device=self.device
+            )
+            # (batch, prev_max_sub_graph_num_node)
+            decoded_dst_ids = torch.zeros(  # type: ignore
+                batch_size, prev_max_sub_graph_num_node, device=self.device
+            )
+            # (batch, prev_max_sub_graph_num_node)
+            decoded_label_word_ids = torch.empty(  # type: ignore
+                batch_size, 0, self.vocab_size, device=self.device
+            )
+            # (batch, 0, num_word)
+        else:
+            decoded_event_type_ids = torch.full(  # type: ignore
+                (batch_size,), EVENT_TYPE_ID_MAP["start"], device=self.device
+            )
+            # (batch)
+            decoded_src_ids = torch.zeros(  # type: ignore
+                batch_size, device=self.device, dtype=torch.long
+            )
+            # (batch)
+            decoded_dst_ids = torch.zeros(  # type: ignore
+                batch_size, device=self.device, dtype=torch.long
+            )
+            # (batch)
+            decoded_label_word_ids = torch.empty(  # type: ignore
+                batch_size, 0, device=self.device, dtype=torch.long
+            )
+            # (batch, 0)
+        decoded_label_mask = torch.empty(  # type: ignore
+            batch_size, 0, device=self.device, dtype=torch.bool
+        )
+        # (batch, 0)
+
+        end_event_mask = torch.full(
+            (batch_size,),
+            False,
+            device=self.device,
+        )  # type: ignore
+        # (batch)
+
+        prev_input_event_emb_seq: torch.Tensor | None = None
+        prev_input_event_emb_seq_mask: torch.Tensor | None = None
+        encoded_obs: torch.Tensor | None = None
+        encoded_prev_action: torch.Tensor | None = None
+        results_list: list[dict[str, Any]] = []
+        for _ in range(max_event_decode_len):
+            results = self(
+                decoded_event_type_ids,
+                decoded_src_ids,
+                decoded_dst_ids,
+                decoded_label_word_ids,
+                decoded_label_mask,
+                prev_batched_graph,
+                step_input.obs_mask,
+                step_input.prev_action_mask,
+                step_input.timestamps,
+                obs_word_ids=step_input.obs_word_ids,
+                prev_action_word_ids=step_input.prev_action_word_ids,
+                encoded_obs=encoded_obs,
+                encoded_prev_action=encoded_prev_action,
+                prev_input_event_emb_seq=prev_input_event_emb_seq,
+                prev_input_event_emb_seq_mask=prev_input_event_emb_seq_mask,
+                max_label_decode_len=max_label_decode_len,
+                gumbel_greedy_decode=gumbel_greedy_decode,
+                gumbel_tau=gumbel_tau,
+            )
+
+            # process the decoded result for the next iteration
+            if gumbel_greedy_decode:
+                # applying mask like this is OK, since the argmax of all zeros
+                # is 0, which is the index of the pad event type.
+                decoded_event_type_ids = F.gumbel_softmax(
+                    results["event_type_logits"], hard=True, tau=gumbel_tau
+                ) * end_event_mask.logical_not().unsqueeze(1)
+                # (batch, num_event_type)
+            else:
+                decoded_event_type_ids = (
+                    results["event_type_logits"]
+                    .argmax(dim=1)
+                    .masked_fill(end_event_mask, EVENT_TYPE_ID_MAP["pad"])
+                )
+                # (batch)
+
+            if results["event_src_logits"].size(1) == 0:
+                if gumbel_greedy_decode:
+                    decoded_src_ids = torch.zeros(
+                        batch_size,
+                        0,
+                        device=self.device,
+                    )  # type: ignore
+                    # (batch, 0)
+                else:
+                    decoded_src_ids = torch.zeros(  # type: ignore
+                        batch_size, dtype=torch.long, device=self.device
+                    )
+                    # (batch)
+            else:
+                if gumbel_greedy_decode:
+                    decoded_src_ids = masked_gumbel_softmax(
+                        results["event_src_logits"],
+                        results["batch_node_mask"],
+                        hard=True,
+                        tau=gumbel_tau,
+                    )
+                    # (batch, max_sub_graph_num_node)
+                else:
+                    decoded_src_ids = masked_softmax(
+                        results["event_src_logits"], results["batch_node_mask"], dim=1
+                    ).argmax(dim=1)
+                    # (batch)
+            if results["event_dst_logits"].size(1) == 0:
+                if gumbel_greedy_decode:
+                    decoded_dst_ids = torch.zeros(  # type: ignore
+                        batch_size,
+                        0,
+                        device=self.device,
+                    )
+                    # (batch, 0)
+                else:
+                    decoded_dst_ids = torch.zeros(  # type: ignore
+                        batch_size, dtype=torch.long, device=self.device
+                    )
+                    # (batch)
+            else:
+                if gumbel_greedy_decode:
+                    decoded_dst_ids = masked_gumbel_softmax(
+                        results["event_dst_logits"],
+                        results["batch_node_mask"],
+                        hard=True,
+                        tau=gumbel_tau,
+                    )
+                    # (batch, max_sub_graph_num_node)
+                else:
+                    decoded_dst_ids = masked_softmax(
+                        results["event_dst_logits"], results["batch_node_mask"], dim=1
+                    ).argmax(dim=1)
+                    # (batch)
+            decoded_label_word_ids = results["decoded_event_label_word_ids"]
+            # (batch, decoded_label_len, num_word) if one_hot is True
+            # (batch, decoded_label_len) otherwise
+            decoded_label_mask = results["decoded_event_label_mask"]
+            # (batch, decoded_label_len)
+
+            # filter out invalid decoded events
+            if gumbel_greedy_decode:
+                if decoded_src_ids.size(1) == 0:
+                    decoded_src_ids_argmax = torch.zeros(
+                        decoded_src_ids.size(0),
+                        device=decoded_src_ids.device,
+                        dtype=torch.long,
+                    )
+                else:
+                    decoded_src_ids_argmax = decoded_src_ids.argmax(dim=-1)
+            else:
+                decoded_src_ids_argmax = decoded_src_ids
+            # (batch)
+            if gumbel_greedy_decode:
+                if decoded_dst_ids.size(1) == 0:
+                    decoded_dst_ids_argmax = torch.zeros(
+                        decoded_dst_ids.size(0),
+                        device=decoded_dst_ids.device,
+                        dtype=torch.long,
+                    )
+                else:
+                    decoded_dst_ids_argmax = decoded_dst_ids.argmax(dim=-1)
+            else:
+                decoded_dst_ids_argmax = decoded_dst_ids
+            # (batch)
+            invalid_event_mask = self.filter_invalid_events(
+                decoded_event_type_ids.argmax(dim=-1)
+                if gumbel_greedy_decode
+                else decoded_event_type_ids,
+                decoded_src_ids_argmax,
+                decoded_dst_ids_argmax,
+                results["updated_batched_graph"].batch,
+                results["updated_batched_graph"].edge_index,
+            )
+            # (batch)
+
+            if gumbel_greedy_decode:
+                decoded_event_type_ids = (
+                    decoded_event_type_ids
+                    * invalid_event_mask.logical_not().unsqueeze(1)
+                )
+            else:
+                decoded_event_type_ids = decoded_event_type_ids.masked_fill(
+                    invalid_event_mask, EVENT_TYPE_ID_MAP["pad"]
+                )
+
+            # collect the results
+            results_list.append(
+                {
+                    "decoded_event_type_ids": decoded_event_type_ids,
+                    "decoded_event_src_ids": decoded_src_ids,
+                    "decoded_event_dst_ids": decoded_dst_ids,
+                    "decoded_event_label_word_ids": decoded_label_word_ids,
+                    "decoded_event_label_mask": decoded_label_mask,
+                    "updated_batched_graph": results["updated_batched_graph"],
+                    "batch_node_embeddings": results["batch_node_embeddings"],
+                    "batch_node_mask": results["batch_node_mask"],
+                    "self_attn_weights": results["self_attn_weights"],
+                    "obs_graph_attn_weights": results["obs_graph_attn_weights"],
+                    "prev_action_graph_attn_weights": results[
+                        "prev_action_graph_attn_weights"
+                    ],
+                    "graph_obs_attn_weights": results["graph_obs_attn_weights"],
+                    "graph_prev_action_attn_weights": results[
+                        "graph_prev_action_attn_weights"
+                    ],
+                }
+            )
+
+            # update the batched graph
+            prev_batched_graph = results["updated_batched_graph"]
+
+            # update previous input event embedding sequence
+            prev_input_event_emb_seq = results["updated_prev_input_event_emb_seq"]
+            prev_input_event_emb_seq_mask = results[
+                "updated_prev_input_event_emb_seq_mask"
+            ]
+
+            # save update the encoded observation and previous action
+            encoded_obs = results["encoded_obs"]
+            encoded_prev_action = results["encoded_prev_action"]
+
+            # update end_event_mask
+            end_event_mask = end_event_mask.logical_or(
+                (
+                    decoded_event_type_ids.argmax(dim=-1)
+                    if gumbel_greedy_decode
+                    else decoded_event_type_ids
+                )
+                == EVENT_TYPE_ID_MAP["end"]
+            )
+
+            # if everything in the batch is done, break
+            if end_event_mask.all():
+                break
+
+        return results_list
