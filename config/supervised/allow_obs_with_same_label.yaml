@@ -1,0 +1,6 @@
+data:
+  init_args:
+    allow_objs_with_same_label: true
+model:
+  init_args:
+    allow_objs_with_same_label: true

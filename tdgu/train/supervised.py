@@ -98,6 +98,9 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater):
         self.test_free_run_f1 = F1()
         self.test_free_run_em = ExactMatch()
 
+        self.validation_step_outputs: list[list[tuple[str, ...]]] = []
+        self.test_step_outputs: list[list[tuple[str, ...]]] = []
+
     def teacher_force(
         self,
         step_input: TWCmdGenGraphEventStepInput,
@@ -801,15 +804,15 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater):
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch, "val")
+        self.validation_step_outputs.append(self.eval_step(batch, "val"))
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch, "test")
+        self.test_step_outputs.append(self.eval_step(batch, "test"))
 
     def wandb_log_gen_obs(
-        self, outputs: list[list[tuple[str, str, str, str]]], table_title: str
+        self, outputs: list[list[tuple[str, ...]]], table_title: str
     ) -> None:
         eval_table_artifact = wandb.Artifact(
             table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
@@ -821,10 +824,7 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater):
         eval_table_artifact.add(eval_table, "predictions")
         self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
 
-    def validation_epoch_end(  # type: ignore
-        self,
-        outputs: list[list[tuple[str, str, str, str]]],
-    ) -> None:
+    def on_validation_epoch_end(self) -> None:
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.valid_free_run,  # type: ignore
             self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
@@ -834,12 +834,12 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater):
         self.val_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_em", self.val_free_run_em)
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
+            self.wandb_log_gen_obs(
+                self.validation_step_outputs, "val_gen_graph_triples"
+            )
+        self.validation_step_outputs.clear()
 
-    def test_epoch_end(  # type: ignore
-        self,
-        outputs: list[list[tuple[str, str, str, str]]],
-    ) -> None:
+    def on_test_epoch_end(self) -> None:
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
@@ -849,7 +849,8 @@ class SupervisedTDGU(TemporalDiscreteGraphUpdater):
         self.test_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_em", self.test_free_run_em)
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
+            self.wandb_log_gen_obs(self.test_step_outputs, "test_gen_graph_triples")
+        self.test_step_outputs.clear()
 
     def configure_optimizers(self) -> Optimizer:
         return AdamW(self.parameters(), lr=self.learning_rate)
