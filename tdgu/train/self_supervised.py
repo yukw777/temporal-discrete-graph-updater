@@ -38,6 +38,9 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         self.max_event_decode_len = max_event_decode_len
         self.max_label_decode_len = max_label_decode_len
         self.learning_rate = learning_rate
+
+        # required for truncated bptt
+        self.automatic_optimization = False
         self.truncated_bptt_steps = truncated_bptt_steps
 
         self.tdgu = TemporalDiscreteGraphUpdater(
@@ -60,6 +63,9 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
 
         self.val_f1 = F1()
         self.test_f1 = F1()
+
+        self.validation_step_outputs: list[list[tuple[str, ...]]] = []
+        self.test_step_outputs: list[list[tuple[str, ...]]] = []
 
     def forward(  # type: ignore
         self,
@@ -136,22 +142,24 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def on_test_epoch_start(self) -> None:
         self.game_id_to_step_data_graph = {}
 
-    def training_step(  # type: ignore
-        self,
-        batch: TWCmdGenObsGenBatch,
-        batch_idx: int,
-        prev_batched_graph: Batch | None,
-    ) -> dict[str, torch.Tensor | Batch]:
-        losses: list[torch.Tensor] = []
-        for step_input, step_mask in zip(batch.step_inputs, batch.step_mask):
-            # step_mask: (batch)
-            results = self(step_input, step_mask, prev_batched_graph=prev_batched_graph)
-            prev_batched_graph = results["updated_batched_graph_list"][-1]
-            losses.append(results["loss"])
-        loss = torch.stack(losses).mean()
-        self.log("train_loss", loss, sync_dist=True)
-        assert prev_batched_graph is not None
-        return {"loss": loss, "hiddens": prev_batched_graph.detach()}
+    def training_step(self, batch: TWCmdGenObsGenBatch, batch_idx: int):
+        prev_batched_graph: Batch | None = None
+        for split_batch in self.tbptt_split_batch(batch, self.truncated_bptt_steps):
+            losses: list[torch.Tensor] = []
+            for step_input, step_mask in zip(
+                split_batch.step_inputs, split_batch.step_mask
+            ):
+                results = self(
+                    step_input, step_mask, prev_batched_graph=prev_batched_graph
+                )
+                losses.append(results["loss"])
+                prev_batched_graph = results["updated_batched_graph_list"][-1].detach()
+            opt = self.optimizers()
+            assert isinstance(opt, Optimizer)
+            opt.zero_grad()
+            loss = torch.stack(losses).mean()
+            self.manual_backward(loss)
+            self.log("train_loss", loss, sync_dist=True)
 
     def eval_step(self, batch: TWCmdGenObsGenBatch) -> list[tuple[str, ...]]:
         if self.trainer.state.stage in {  # type: ignore
@@ -246,12 +254,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def validation_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch)
+        self.validation_step_outputs.append(self.eval_step(batch))
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch)
+        self.test_step_outputs.append(self.eval_step(batch))
 
     def tbptt_split_batch(
         self, batch: TWCmdGenObsGenBatch, split_size: int
@@ -400,14 +408,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             data=[item for sublist in outputs for item in sublist],
         )
 
-    def validation_epoch_end(  # type: ignore
-        self, outputs: list[list[tuple[str, ...]]]
-    ) -> None:
+    def on_validation_epoch_end(self) -> None:
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "val_graph_events")
+            self.wandb_log_gen_obs(self.validation_step_outputs, "val_graph_events")
+        self.validation_step_outputs.clear()
 
-    def test_epoch_end(  # type: ignore
-        self, outputs: list[list[tuple[str, ...]]]
-    ) -> None:
+    def on_test_epoch_end(self) -> None:
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "test_graph_events")
+            self.wandb_log_gen_obs(self.test_step_outputs, "test_graph_events")
+        self.test_step_outputs.clear()

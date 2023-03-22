@@ -1,0 +1,45 @@
+class_path: tdgu.train.self_supervised.ObsGenSelfSupervisedTDGU
+init_args:
+  preprocessor:
+    class_path: tdgu.preprocessor.SpacyPreprocessor
+    init_args:
+      word_vocab_path: vocabs/word_vocab.txt
+  max_event_decode_len: 100
+  max_label_decode_len: 10
+  learning_rate: 5e-4
+  truncated_bptt_steps: 1
+  text_decoder_num_blocks: 1
+  text_decoder_num_heads: 1
+  text_encoder:
+    class_path: tdgu.nn.text.QANetTextEncoder
+    init_args:
+      pretrained_word_embedding_path: embedding/crawl-300d-2M.vec
+      vocab_path: vocabs/word_vocab.txt
+      pad_token_id: 0
+      freeze_word_embedding: true
+      num_enc_blocks: 1
+      enc_block_num_conv_layers: 5
+      enc_block_kernel_size: 5
+      enc_block_hidden_dim: 64
+      enc_block_num_heads: 1
+      hidden_dim: 64
+      dropout: 0.3
+  dynamic_gnn:
+    class_path: tdgu.nn.dynamic_gnn.DynamicGNN
+    init_args:
+      gnn_module: torch_geometric.nn.TransformerConv
+      timestamp_enc_dim: 16
+      event_embedding_dim: 64
+      output_dim: 64
+      transformer_conv_num_block: 1
+      transformer_conv_num_heads: 1
+      dropout: 0.3
+      zero_timestamp_encoder: false
+  hidden_dim: 64
+  graph_event_decoder_event_type_emb_dim: 16
+  graph_event_decoder_autoregressive_emb_dim: 128
+  graph_event_decoder_key_query_dim: 16
+  graph_event_decoder_num_dec_blocks: 1
+  graph_event_decoder_dec_block_num_heads: 1
+  graph_event_decoder_hidden_dim: 64
+  dropout: 0.0
