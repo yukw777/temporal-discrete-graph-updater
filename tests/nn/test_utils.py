@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,7 @@ from tdgu.nn.utils import (
     update_edge_index,
     update_node_features,
 )
-from tdgu.preprocessor import PAD, UNK
+from tdgu.preprocessor import PAD, UNK, load_word_vocab
 
 
 @pytest.mark.parametrize(
@@ -289,15 +290,17 @@ def test_compute_masks_from_event_type_ids(
     assert masks["label_mask"].equal(expected_label_mask)
 
 
-def test_load_fasttext(tmpdir):
-    serialized_path = Path(tmpdir / "word-emb.pt")
+@pytest.mark.parametrize("freeze", [True, False])
+def test_load_fasttext(tmpdir, freeze):
+    fasttext_path = tmpdir / "test-fasttext.vec"
+    shutil.copy("tests/data/test-fasttext.vec", fasttext_path)
+    serialized_path = Path(tmpdir / "test-fasttext.pt")
     assert not serialized_path.exists()
-    vocab = {
-        token: i for i, token in enumerate([PAD, UNK, "my", "name", "is", "peter"])
-    }
-    emb = load_fasttext(
-        "tests/data/test-fasttext.vec", serialized_path, vocab, vocab[PAD]
-    )
+    vocab_path = "tests/data/test_word_vocab.txt"
+    vocab = {token: i for i, token in enumerate(load_word_vocab(vocab_path))}
+    emb = load_fasttext(str(fasttext_path), vocab_path, 0, freeze)
+    for p in emb.parameters():
+        assert p.requires_grad is not freeze
     word_ids = torch.tensor(
         [
             [
@@ -313,9 +316,11 @@ def test_load_fasttext(tmpdir):
         emb(torch.tensor(vocab[UNK])).unsqueeze(0).expand(4, -1)
     )
     # name
-    assert embedded[0, 4].equal(emb(torch.tensor(3)))
+    assert embedded[0, 4].equal(emb(torch.tensor(vocab["name"])))
     # my name is peter
-    assert embedded[1, :4].equal(emb(torch.tensor([2, 3, 4, 5])))
+    assert embedded[1, :4].equal(
+        emb(torch.tensor([vocab[word] for word in "my name is peter".split()]))
+    )
     # pad, should be zero
     assert embedded[1, 4].equal(torch.zeros(300))
 

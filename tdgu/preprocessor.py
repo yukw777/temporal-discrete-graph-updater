@@ -26,6 +26,11 @@ def clean(raw_str: str | None) -> str:
     return cleaned
 
 
+def load_word_vocab(path: str) -> list[str]:
+    with open(path) as f:
+        return [word.strip() for word in f]
+
+
 class Preprocessor(ABC):
     def clean_and_preprocess(
         self, batch: list[str], device: torch.device | None = None
@@ -92,10 +97,10 @@ class Preprocessor(ABC):
 
 
 class SpacyPreprocessor(Preprocessor):
-    def __init__(self, word_vocab: list[str]) -> None:
+    def __init__(self, word_vocab_path: str) -> None:
+        self.word_vocab = load_word_vocab(word_vocab_path)
         self.tokenizer = English().tokenizer
-        self.word_vocab = word_vocab
-        self.word_to_id_dict = {w: i for i, w in enumerate(word_vocab)}
+        self.word_to_id_dict = {w: i for i, w in enumerate(self.word_vocab)}
         self.special_token_ids = {
             self.bos_token_id,
             self.eos_token_id,
@@ -190,12 +195,6 @@ class SpacyPreprocessor(Preprocessor):
     @property
     def unk_token_id(self) -> int:
         return self.word_to_id_dict[UNK]
-
-    @classmethod
-    def load_from_file(cls, word_vocab_path: str) -> "SpacyPreprocessor":
-        with open(word_vocab_path) as f:
-            word_vocab = [word.strip() for word in f]
-        return cls(word_vocab)
 
 
 class HuggingFacePreprocessor(Preprocessor):

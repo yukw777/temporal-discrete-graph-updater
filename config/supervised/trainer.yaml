@@ -1,0 +1,6 @@
+callbacks:
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      monitor: val_free_run_f1
+      mode: max
+      filename: tdgu-{epoch}-{val_free_run_f1:.2f}

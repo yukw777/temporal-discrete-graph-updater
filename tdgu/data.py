@@ -8,7 +8,6 @@ from typing import Any
 import networkx as nx
 import pytorch_lightning as pl
 import torch
-from hydra.utils import to_absolute_path
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_geometric.data import Batch
 
@@ -979,13 +978,13 @@ class TWCmdGenGraphEventDataModule(pl.LightningDataModule):
         sort_commands: bool = False,
     ) -> None:
         super().__init__()
-        self.train_path = to_absolute_path(train_path)
+        self.train_path = train_path
         self.train_batch_size = train_batch_size
         self.train_num_worker = train_num_worker
-        self.val_path = to_absolute_path(val_path)
+        self.val_path = val_path
         self.val_batch_size = val_batch_size
         self.val_num_worker = val_num_worker
-        self.test_path = to_absolute_path(test_path)
+        self.test_path = test_path
         self.test_batch_size = test_batch_size
         self.test_num_worker = test_num_worker
         self.allow_objs_with_same_label = allow_objs_with_same_label
@@ -1100,13 +1099,13 @@ class TWCmdGenObsGenDataModule(pl.LightningDataModule):
         preprocessor: Preprocessor,
     ) -> None:
         super().__init__()
-        self.train_path = to_absolute_path(train_path)
+        self.train_path = train_path
         self.train_batch_size = train_batch_size
         self.train_num_worker = train_num_worker
-        self.val_path = to_absolute_path(val_path)
+        self.val_path = val_path
         self.val_batch_size = val_batch_size
         self.val_num_worker = val_num_worker
-        self.test_path = to_absolute_path(test_path)
+        self.test_path = test_path
         self.test_batch_size = test_batch_size
         self.test_num_worker = test_num_worker
 

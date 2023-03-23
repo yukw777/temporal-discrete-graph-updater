@@ -28,35 +28,52 @@ from tdgu.graph import (
     update_rdf_graph,
 )
 from tdgu.metrics import F1, DynamicGraphNodeF1, ExactMatch
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.nn.utils import (
     calculate_node_id_offsets,
     index_edge_attr,
     masked_log_softmax,
     masked_softmax,
 )
-from tdgu.train.common import TDGULightningModule
+from tdgu.preprocessor import Preprocessor
 
 
-class SupervisedTDGU(TDGULightningModule):
+class SupervisedTDGU(TemporalDiscreteGraphUpdater):
     """A LightningModule for supervised training of the temporal discrete graph
     updater."""
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        preprocessor: Preprocessor,
+        max_event_decode_len: int,
+        max_label_decode_len: int,
+        learning_rate: float,
+        allow_objs_with_same_label: bool,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            label_head_bos_token_id=preprocessor.bos_token_id,
+            label_head_eos_token_id=preprocessor.eos_token_id,
+            label_head_pad_token_id=preprocessor.pad_token_id,
+            vocab_size=preprocessor.vocab_size,
+            **kwargs,
+        )
+        self.preprocessor = preprocessor
+        self.max_event_decode_len = max_event_decode_len
+        self.max_label_decode_len = max_label_decode_len
+        self.learning_rate = learning_rate
+        self.allow_objs_with_same_label = allow_objs_with_same_label
+
         self.criterion = UncertaintyWeightedLoss()
 
         self.val_event_type_f1 = MulticlassF1Score(len(EVENT_TYPES), average="micro")
         self.val_src_node_f1 = DynamicGraphNodeF1()
         self.val_dst_node_f1 = DynamicGraphNodeF1()
-        self.val_label_f1 = MulticlassF1Score(
-            self.preprocessor.vocab_size, average="micro"
-        )
+        self.val_label_f1 = MulticlassF1Score(self.vocab_size, average="micro")
         self.test_event_type_f1 = MulticlassF1Score(len(EVENT_TYPES), average="micro")
         self.test_src_node_f1 = DynamicGraphNodeF1()
         self.test_dst_node_f1 = DynamicGraphNodeF1()
-        self.test_label_f1 = MulticlassF1Score(
-            self.preprocessor.vocab_size, average="micro"
-        )
+        self.test_label_f1 = MulticlassF1Score(self.vocab_size, average="micro")
 
         self.val_graph_tf_exact_match = ExactMatch()
         self.val_token_tf_exact_match = ExactMatch()
@@ -80,6 +97,9 @@ class SupervisedTDGU(TDGULightningModule):
         self.val_free_run_em = ExactMatch()
         self.test_free_run_f1 = F1()
         self.test_free_run_em = ExactMatch()
+
+        self.validation_step_outputs: list[list[tuple[str, ...]]] = []
+        self.test_step_outputs: list[list[tuple[str, ...]]] = []
 
     def teacher_force(
         self,
@@ -140,7 +160,7 @@ class SupervisedTDGU(TDGULightningModule):
                         graphical_input.groundtruth_event_label_tgt_mask
                     ),
                 },
-                max_label_decode_len=self.hparams.max_label_decode_len,  # type: ignore
+                max_label_decode_len=self.max_label_decode_len,
             )
 
             # add results to the list
@@ -571,7 +591,7 @@ class SupervisedTDGU(TDGULightningModule):
         gd_results_list = self.greedy_decode(
             batch.step_input,
             batch.initial_batched_graph,
-            max_event_decode_len=self.hparams.max_event_decode_len,  # type: ignore
+            max_event_decode_len=self.max_event_decode_len,
         )
 
         # calculate graph tuples from greedy decoded graph events
@@ -710,9 +730,7 @@ class SupervisedTDGU(TDGULightningModule):
                     step_data, graph = game_id_to_step_data_graph.pop(finished_game_id)
                     generated_rdfs = networkx_to_rdf(
                         self.data_to_networkx(graph),
-                        allow_objs_with_same_label=(
-                            self.hparams.allow_objs_with_same_label  # type: ignore
-                        ),
+                        allow_objs_with_same_label=self.allow_objs_with_same_label,
                     )
                     groundtruth_rdfs = update_rdf_graph(
                         set(step_data["previous_graph_seen"]),
@@ -786,15 +804,15 @@ class SupervisedTDGU(TDGULightningModule):
     def validation_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch, "val")
+        self.validation_step_outputs.append(self.eval_step(batch, "val"))
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenGraphEventBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch, "test")
+        self.test_step_outputs.append(self.eval_step(batch, "test"))
 
     def wandb_log_gen_obs(
-        self, outputs: list[list[tuple[str, str, str, str]]], table_title: str
+        self, outputs: list[list[tuple[str, ...]]], table_title: str
     ) -> None:
         eval_table_artifact = wandb.Artifact(
             table_title + f"_{self.logger.experiment.id}", "predictions"  # type: ignore
@@ -806,10 +824,7 @@ class SupervisedTDGU(TDGULightningModule):
         eval_table_artifact.add(eval_table, "predictions")
         self.logger.experiment.log_artifact(eval_table_artifact)  # type: ignore
 
-    def validation_epoch_end(  # type: ignore
-        self,
-        outputs: list[list[tuple[str, str, str, str]]],
-    ) -> None:
+    def on_validation_epoch_end(self) -> None:
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.valid_free_run,  # type: ignore
             self.trainer.datamodule.val_free_run_dataloader(),  # type: ignore
@@ -819,12 +834,12 @@ class SupervisedTDGU(TDGULightningModule):
         self.val_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("val_free_run_em", self.val_free_run_em)
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "val_gen_graph_triples")
+            self.wandb_log_gen_obs(
+                self.validation_step_outputs, "val_gen_graph_triples"
+            )
+        self.validation_step_outputs.clear()
 
-    def test_epoch_end(  # type: ignore
-        self,
-        outputs: list[list[tuple[str, str, str, str]]],
-    ) -> None:
+    def on_test_epoch_end(self) -> None:
         generated_rdfs_list, groundtruth_rdfs_list = self.eval_free_run(
             self.trainer.datamodule.test_free_run,  # type: ignore
             self.trainer.datamodule.test_free_run_dataloader(),  # type: ignore
@@ -834,10 +849,11 @@ class SupervisedTDGU(TDGULightningModule):
         self.test_free_run_em.update(generated_rdfs_list, groundtruth_rdfs_list)
         self.log("test_free_run_em", self.test_free_run_em)
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "test_gen_graph_triples")
+            self.wandb_log_gen_obs(self.test_step_outputs, "test_gen_graph_triples")
+        self.test_step_outputs.clear()
 
     def configure_optimizers(self) -> Optimizer:
-        return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
+        return AdamW(self.parameters(), lr=self.learning_rate)
 
     @staticmethod
     def generate_predict_table_rows(

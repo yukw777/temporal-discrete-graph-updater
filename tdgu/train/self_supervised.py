@@ -12,9 +12,10 @@ from tdgu.constants import EVENT_TYPE_ID_MAP, EVENT_TYPES
 from tdgu.data import TWCmdGenGraphEventStepInput, TWCmdGenObsGenBatch
 from tdgu.graph import batch_to_data_list
 from tdgu.metrics import F1
+from tdgu.nn.graph_updater import TemporalDiscreteGraphUpdater
 from tdgu.nn.text import TextDecoder
 from tdgu.nn.utils import index_edge_attr, shift_tokens_right
-from tdgu.train.common import TDGULightningModule
+from tdgu.preprocessor import Preprocessor
 
 
 class ObsGenSelfSupervisedTDGU(pl.LightningModule):
@@ -23,29 +24,48 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
 
     def __init__(
         self,
-        truncated_bptt_steps: int = 1,
-        text_decoder_num_blocks: int = 1,
-        text_decoder_num_heads: int = 1,
+        preprocessor: Preprocessor,
+        max_event_decode_len: int,
+        max_label_decode_len: int,
+        learning_rate: float,
+        truncated_bptt_steps: int,
+        text_decoder_num_blocks: int,
+        text_decoder_num_heads: int,
         **kwargs,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["text_encoder_conf"])
+        self.preprocessor = preprocessor
+        self.max_event_decode_len = max_event_decode_len
+        self.max_label_decode_len = max_label_decode_len
+        self.learning_rate = learning_rate
+
+        # required for truncated bptt
+        self.automatic_optimization = False
         self.truncated_bptt_steps = truncated_bptt_steps
 
-        self.tdgu = TDGULightningModule(**kwargs)
+        self.tdgu = TemporalDiscreteGraphUpdater(
+            label_head_bos_token_id=self.preprocessor.bos_token_id,
+            label_head_eos_token_id=self.preprocessor.eos_token_id,
+            label_head_pad_token_id=self.preprocessor.pad_token_id,
+            vocab_size=self.preprocessor.vocab_size,
+            **kwargs,
+        )
         self.text_decoder = TextDecoder(
             self.tdgu.text_encoder.get_input_embeddings(),
             text_decoder_num_blocks,
             text_decoder_num_heads,
-            self.tdgu.hparams.hidden_dim,  # type: ignore
+            self.tdgu.hidden_dim,
         )
 
         self.ce_loss = nn.CrossEntropyLoss(
-            ignore_index=self.tdgu.preprocessor.pad_token_id, reduction="none"
+            ignore_index=self.preprocessor.pad_token_id, reduction="none"
         )
 
         self.val_f1 = F1()
         self.test_f1 = F1()
+
+        self.validation_step_outputs: list[list[tuple[str, ...]]] = []
+        self.test_step_outputs: list[list[tuple[str, ...]]] = []
 
     def forward(  # type: ignore
         self,
@@ -59,25 +79,23 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             if prev_batched_graph is not None
             else Batch(
                 batch=torch.empty(0, dtype=torch.long),
-                x=torch.empty(0, 0, self.tdgu.preprocessor.vocab_size),
+                x=torch.empty(0, 0, self.tdgu.vocab_size),
                 node_label_mask=torch.empty(0, 0, dtype=torch.bool),
                 node_last_update=torch.empty(0, 2, dtype=torch.long),
                 edge_index=torch.empty(2, 0, dtype=torch.long),
-                edge_attr=torch.empty(0, 0, self.tdgu.preprocessor.vocab_size),
+                edge_attr=torch.empty(0, 0, self.tdgu.vocab_size),
                 edge_label_mask=torch.empty(0, 0, dtype=torch.bool),
                 edge_last_update=torch.empty(0, 2, dtype=torch.long),
             ).to(self.device),
-            max_event_decode_len=self.tdgu.hparams.max_event_decode_len,  # type: ignore
-            max_label_decode_len=self.tdgu.hparams.max_label_decode_len,  # type: ignore
+            max_event_decode_len=self.max_event_decode_len,
+            max_label_decode_len=self.max_label_decode_len,
             gumbel_greedy_decode=True,
             gumbel_tau=self.gumbel_tau,
         )
 
         # calculate losses with the observation
         text_decoder_output = self.text_decoder(
-            shift_tokens_right(
-                step_input.obs_word_ids, self.tdgu.preprocessor.bos_token_id
-            ),
+            shift_tokens_right(step_input.obs_word_ids, self.preprocessor.bos_token_id),
             step_input.obs_mask,
             results_list[-1]["batch_node_embeddings"],
             results_list[-1]["batch_node_mask"],
@@ -124,22 +142,24 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def on_test_epoch_start(self) -> None:
         self.game_id_to_step_data_graph = {}
 
-    def training_step(  # type: ignore
-        self,
-        batch: TWCmdGenObsGenBatch,
-        batch_idx: int,
-        prev_batched_graph: Batch | None,
-    ) -> dict[str, torch.Tensor | Batch]:
-        losses: list[torch.Tensor] = []
-        for step_input, step_mask in zip(batch.step_inputs, batch.step_mask):
-            # step_mask: (batch)
-            results = self(step_input, step_mask, prev_batched_graph=prev_batched_graph)
-            prev_batched_graph = results["updated_batched_graph_list"][-1]
-            losses.append(results["loss"])
-        loss = torch.stack(losses).mean()
-        self.log("train_loss", loss, sync_dist=True)
-        assert prev_batched_graph is not None
-        return {"loss": loss, "hiddens": prev_batched_graph.detach()}
+    def training_step(self, batch: TWCmdGenObsGenBatch, batch_idx: int):
+        prev_batched_graph: Batch | None = None
+        for split_batch in self.tbptt_split_batch(batch, self.truncated_bptt_steps):
+            losses: list[torch.Tensor] = []
+            for step_input, step_mask in zip(
+                split_batch.step_inputs, split_batch.step_mask
+            ):
+                results = self(
+                    step_input, step_mask, prev_batched_graph=prev_batched_graph
+                )
+                losses.append(results["loss"])
+                prev_batched_graph = results["updated_batched_graph_list"][-1].detach()
+            opt = self.optimizers()
+            assert isinstance(opt, Optimizer)
+            opt.zero_grad()
+            loss = torch.stack(losses).mean()
+            self.manual_backward(loss)
+            self.log("train_loss", loss, sync_dist=True)
 
     def eval_step(self, batch: TWCmdGenObsGenBatch) -> list[tuple[str, ...]]:
         if self.trainer.state.stage in {  # type: ignore
@@ -187,12 +207,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                 is_valid_step,
             ) in zip(
                 batch.ids,
-                self.tdgu.preprocessor.batch_decode(
+                self.preprocessor.batch_decode(
                     step_input.obs_word_ids,
                     step_input.obs_mask,
                     skip_special_tokens=True,
                 ),
-                self.tdgu.preprocessor.batch_decode(
+                self.preprocessor.batch_decode(
                     step_input.prev_action_word_ids,
                     step_input.prev_action_mask,
                     skip_special_tokens=True,
@@ -206,7 +226,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                     results["updated_batched_graph_list"],
                     step_mask,
                 ),
-                self.tdgu.preprocessor.batch_decode(
+                self.preprocessor.batch_decode(
                     results["text_decoder_output"].argmax(dim=-1),
                     step_input.obs_mask,
                     skip_special_tokens=True,
@@ -234,12 +254,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
     def validation_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch)
+        self.validation_step_outputs.append(self.eval_step(batch))
 
     def test_step(  # type: ignore
         self, batch: TWCmdGenObsGenBatch, batch_idx: int
     ) -> list[tuple[str, ...]]:
-        return self.eval_step(batch)
+        self.test_step_outputs.append(self.eval_step(batch))
 
     def tbptt_split_batch(
         self, batch: TWCmdGenObsGenBatch, split_size: int
@@ -261,7 +281,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
         return 0.5
 
     def configure_optimizers(self) -> Optimizer:
-        return AdamW(self.parameters(), lr=self.hparams.learning_rate)  # type: ignore
+        return AdamW(self.parameters(), lr=self.learning_rate)
 
     def decode_graph_events(
         self,
@@ -299,7 +319,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             label_mask_list,
             batched_graph_list,
         ):
-            batched_labels = self.tdgu.preprocessor.batch_decode(
+            batched_labels = self.preprocessor.batch_decode(
                 batched_label_word_ids.argmax(dim=-1),
                 batched_label_mask,
                 skip_special_tokens=True,
@@ -335,7 +355,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             ):
                 if not is_valid_step or event_type_id == EVENT_TYPE_ID_MAP["pad"]:
                     continue
-                node_labels = self.tdgu.preprocessor.batch_decode(
+                node_labels = self.preprocessor.batch_decode(
                     graph.x.argmax(dim=-1),
                     graph.node_label_mask,
                     skip_special_tokens=True,
@@ -365,7 +385,7 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
                         graph.edge_label_mask,
                         torch.stack([src_id.unsqueeze(0), dst_id.unsqueeze(0)]),
                     )
-                    edge_label = self.tdgu.preprocessor.batch_decode(
+                    edge_label = self.preprocessor.batch_decode(
                         edge_label_word_ids, edge_label_mask, skip_special_tokens=True
                     )[0]
                 batched_graph_events[batch_id].append(
@@ -388,14 +408,12 @@ class ObsGenSelfSupervisedTDGU(pl.LightningModule):
             data=[item for sublist in outputs for item in sublist],
         )
 
-    def validation_epoch_end(  # type: ignore
-        self, outputs: list[list[tuple[str, ...]]]
-    ) -> None:
+    def on_validation_epoch_end(self) -> None:
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "val_graph_events")
+            self.wandb_log_gen_obs(self.validation_step_outputs, "val_graph_events")
+        self.validation_step_outputs.clear()
 
-    def test_epoch_end(  # type: ignore
-        self, outputs: list[list[tuple[str, ...]]]
-    ) -> None:
+    def on_test_epoch_end(self) -> None:
         if isinstance(self.logger, WandbLogger):
-            self.wandb_log_gen_obs(outputs, "test_graph_events")
+            self.wandb_log_gen_obs(self.test_step_outputs, "test_graph_events")
+        self.test_step_outputs.clear()

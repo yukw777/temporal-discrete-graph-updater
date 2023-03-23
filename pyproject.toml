@@ -15,13 +15,13 @@ torch-sparse = {version = "^0.6.16+pt113cu117", source = "pytorch-geometric"}
 pytorch-lightning = "^2.0.0"
 spacy = "^3.5.0"
 networkx = "^3.0"
-hydra-core = "^1.3.1"
 torchmetrics = "~=0.11.1"
 wandb = "^0.13.10"
 transformers = "^4.26.1"
 textworld = "^1.5.3"
 matplotlib = "^3.7.0"
 seaborn = "^0.12.2"
+jsonargparse = {version = "^4.20.0", extras = ["signatures"]}
 
 [tool.poetry.group.dev]
 optional = true
@@ -59,3 +59,9 @@ addopts = "-m 'not slow'"
 
 [tool.codespell]
 skip = "vocabs/*.txt"
+
+[tool.isort]
+# wandb by default creates a directory called "wandb"
+# which confuses isort, causing it to classify wandb
+# as a first-party library.
+known_third_party = ["wandb"]

@@ -21,7 +21,7 @@ def main(
     device: str,
 ) -> None:
     dataset = TWCmdGenGraphEventDataset(data_filename)
-    preprocessor = SpacyPreprocessor.load_from_file(word_vocab_path)
+    preprocessor = SpacyPreprocessor(word_vocab_path)
     sampled_ids = random.sample(range(len(dataset)), num_datapoints)
     dataloader = DataLoader(  # type: ignore
         [dataset[i] for i in sampled_ids],  # type: ignore

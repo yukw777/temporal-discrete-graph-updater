@@ -7,6 +7,7 @@ from transformers import PreTrainedModel
 from tdgu.nn.utils import (
     PositionalEncoder,
     generate_square_subsequent_mask,
+    load_fasttext,
     masked_mean,
 )
 from tdgu.preprocessor import BertPreprocessor, HuggingFacePreprocessor
@@ -164,7 +165,10 @@ class TextEncoderBlock(nn.Module):
 class QANetTextEncoder(TextEncoder):
     def __init__(
         self,
-        pretrained_word_embeddings: nn.Embedding,
+        pretrained_word_embedding_path: str,
+        vocab_path: str,
+        pad_token_id: int,
+        freeze_word_embedding: bool,
         num_enc_blocks: int,
         enc_block_num_conv_layers: int,
         enc_block_kernel_size: int,
@@ -175,7 +179,12 @@ class QANetTextEncoder(TextEncoder):
     ) -> None:
         super().__init__()
         self.enc_block_hidden_dim = enc_block_hidden_dim
-        self.pretrained_word_embeddings = pretrained_word_embeddings
+        self.pretrained_word_embeddings = load_fasttext(
+            pretrained_word_embedding_path,
+            vocab_path,
+            pad_token_id,
+            freeze_word_embedding,
+        )
         self.hidden_dim = hidden_dim
 
         self.word_embedding_linear = nn.Linear(

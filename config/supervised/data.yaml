@@ -1,0 +1,17 @@
+class_path: tdgu.data.TWCmdGenGraphEventDataModule
+init_args:
+  train_path: data/cmd_gen.0.2/train.json
+  train_batch_size: 64
+  train_num_worker: 4
+  val_path: data/cmd_gen.0.2/valid.json
+  val_batch_size: 1024
+  val_num_worker: 4
+  test_path: data/cmd_gen.0.2/test.json
+  test_batch_size: 1024
+  test_num_worker: 4
+  preprocessor:
+    class_path: tdgu.preprocessor.SpacyPreprocessor
+    init_args:
+      word_vocab_path: vocabs/word_vocab.txt
+  allow_objs_with_same_label: false
+  sort_commands: false

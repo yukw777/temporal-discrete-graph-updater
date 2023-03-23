@@ -1,0 +1,6 @@
+callbacks:
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      monitor: val_loss
+      mode: min
+      filename: tdgu-self-supervised-obs-gen-{epoch}-{val_loss:.2f}

@@ -1,3 +1,5 @@
+import shutil
+
 import pytest
 import torch
 import torch.nn as nn
@@ -96,9 +98,10 @@ def test_text_enc_block(
         (3, 5, 5, 10, 5, 8, 3, 7),
     ],
 )
-@pytest.mark.parametrize("dropout", [None, 0.0, 0.3, 0.5])
+@pytest.mark.parametrize("dropout", [0.0, 0.3, 0.5])
 @pytest.mark.parametrize("return_pooled_output", [True, False])
 def test_qanet_text_encoder(
+    tmp_path,
     return_pooled_output,
     dropout,
     num_enc_blocks,
@@ -111,29 +114,22 @@ def test_qanet_text_encoder(
     seq_len,
     one_hot,
 ):
-    vocab_size = 10
-    word_emb_dim = 12
-    if dropout is None:
-        text_encoder = QANetTextEncoder(
-            nn.Embedding(vocab_size, word_emb_dim),
-            num_enc_blocks,
-            enc_block_num_conv_layers,
-            enc_block_kernel_size,
-            enc_block_hidden_dim,
-            enc_block_num_heads,
-            hidden_dim,
-        )
-    else:
-        text_encoder = QANetTextEncoder(
-            nn.Embedding(vocab_size, word_emb_dim),
-            num_enc_blocks,
-            enc_block_num_conv_layers,
-            enc_block_kernel_size,
-            enc_block_hidden_dim,
-            enc_block_num_heads,
-            hidden_dim,
-            dropout=dropout,
-        )
+    shutil.copy("tests/data/test-fasttext.vec", tmp_path)
+    shutil.copy("tests/data/test_word_vocab.txt", tmp_path)
+    text_encoder = QANetTextEncoder(
+        str(tmp_path / "test-fasttext.vec"),
+        str(tmp_path / "test_word_vocab.txt"),
+        0,
+        True,
+        num_enc_blocks,
+        enc_block_num_conv_layers,
+        enc_block_kernel_size,
+        enc_block_hidden_dim,
+        enc_block_num_heads,
+        hidden_dim,
+        dropout=dropout,
+    )
+    vocab_size = text_encoder.pretrained_word_embeddings.num_embeddings
     # random word ids
     word_ids = torch.randint(0, vocab_size, size=(batch_size, seq_len))
     if one_hot:

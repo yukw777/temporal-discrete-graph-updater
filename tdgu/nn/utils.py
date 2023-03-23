@@ -10,6 +10,7 @@ from torch_geometric.utils import to_dense_batch
 from tqdm import tqdm
 
 from tdgu.constants import EVENT_TYPE_ID_MAP
+from tdgu.preprocessor import load_word_vocab
 
 
 def masked_mean(input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -118,14 +119,16 @@ def compute_masks_from_event_type_ids(
 
 
 def load_fasttext(
-    fname: str, serialized_path: Path, vocab: dict[str, int], pad_token_id: int
+    pretrained_emb_path: str, vocab_path: str, pad_token_id: int, freeze: bool
 ) -> nn.Embedding:
+    pretrained = Path(pretrained_emb_path)
+    serialized_path = pretrained.parent / (pretrained.stem + ".pt")
     # check if we have already serialized it
     if serialized_path.exists():
         with open(serialized_path, "rb") as serialized:
             return torch.load(serialized)
 
-    with open(fname) as f:
+    with open(pretrained_emb_path) as f:
         _, emb_dim = map(int, f.readline().split())
 
         data = {}
@@ -134,11 +137,14 @@ def load_fasttext(
             data[parts[0]] = parts[1]
     # embedding for pad is initialized to 0
     # embeddings for OOVs are randomly initialized from N(0, 1)
+    vocab = load_word_vocab(vocab_path)
     emb = nn.Embedding(len(vocab), emb_dim, padding_idx=pad_token_id)
-    for word, i in tqdm(vocab.items(), desc="constructing word embeddings"):
+    for i, word in tqdm(enumerate(vocab), desc="constructing word embeddings"):
         if word in data:
             with torch.no_grad():
                 emb.weight[i] = torch.tensor(list(map(float, data[word].split())))
+    if freeze:
+        emb.requires_grad_(requires_grad=False)
 
     # save it before returning
     torch.save(emb, serialized_path)

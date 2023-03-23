@@ -29,15 +29,15 @@ The Temporal Discrete Graph Updater (TDGU) is a text-to-graph model that increme
 Install dependencies.
 
 ```bash
+# Install poetry https://python-poetry.org/
+curl -sSL https://install.python-poetry.org | python3 -
+
 # Clone the repository
 git clone https://github.com/yukw777/temporal-discrete-graph-updater
 cd temporal-discrete-graph-updater
 
-# TDGU supports python 3.8.
-# Install CUDA dependencies
-python install_cuda_deps.py
-# Install the tdgu module in the editable mode
-pip install -e .
+# Install TDGU using poetry
+poetry install
 ```
 
 Download the dataset.
@@ -63,49 +63,40 @@ unzip crawl-300d-2M.vec.zip
 Next, run the training script.
 
 ```bash
-python -m tdgu.train_tdgu \
-+trainer.gpus=1 # use one gpu
+python scripts/main.py fit \
+--model config/supervised/main-model.yaml \
+--data config/supervised/data.yaml
+--trainer.accelerator gpu
 ```
 
 If you want to log to [Weights & Biases](https://wandb.ai/), simply set the logger.
 
 ```bash
-python -m tdgu.train_tdgu \
-trainer/logger=wandb \
-+trainer.gpus=1
+python scripts/main.py fit \
+--model config/supervised/main-model.yaml \
+--data config/supervised/data.yaml
+--trainer.accelerator gpu \
+--config config/supervised/wandb-logger.yaml
 ```
 
 ## Configuration
 
-This project uses [Hydra](https://hydra.cc/) as its configuration system. Take a look at [project/conf](project/conf) for the default configuration, which can be used to reproduce the main results of the paper.
+This project uses [PyTorch Lightning CLI](https://lightning.ai/docs/pytorch/stable/cli/lightning_cli.html) as its configuration system. Take a look at [config](config) for the default configuration, which can be used to reproduce the main results of the paper.
 
 ## Developing
 
 ### Local Development Environment Setup
 
 ```bash
+# Install poetry https://python-poetry.org/
+curl -sSL https://install.python-poetry.org | python3 -
+
 # Clone the repository
 git clone https://github.com/yukw777/temporal-discrete-graph-updater
 cd temporal-discrete-graph-updater
 
-# Create a virtualenv with python 3.8 (recommended)
-# NOTE: this is just an example using virtualenv. Use your tool of choice for creating a python virtual environment.
-virtualenv -p python3.8 venv
-source venv/bin/activate
-
-# Install dependencies
-# TDGU supports python 3.8.
-# For CUDA 10.2:
-pip install torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-1.10.0+cu102.html
-# For CUDA 11.3
-pip install torch==1.10.2+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
-pip install torch-scatter torch-sparse torch-geometric -f https://data.pyg.org/whl/torch-1.10.0+cu113.html
-
-# Install the tdgu module in the editable mode
-pip install -e .
-
-# Install development requirements
-pip install -r requirements-dev.txt
+# Install TDGU with dev dependencies using poetry
+poetry install --with dev
 ```
 
 ### Testing
@@ -114,19 +105,23 @@ We use [`pytest`](https://docs.pytest.org/) to write and run tests. Once your lo
 
 All the tests are run as part of the CI/CD pipeline, so it's highly recommended that you make sure all the tests locally before opening a merge request.
 
-### Code Linter
+### Code Quality
+
+We use various tools to ensure code quality. All of these tools can be run automatically at every commit by using [pre-commit](https://pre-commit.com/). Simply run `pre-commit install` after installing TDGU to set it up. You can also set these tools up with your favorite IDE. Please see below for instructions.
+
+#### Code Linter
 
 We use [`flake8`](https://flake8.pycqa.org/) to lint our code. While you can manually run it, it's highly recommended that you set up your text editor or IDE to run it automatically after each save. See the list below for documentations on how to set `flake8` up for various text editors and IDEs.
 
 - [VSCode](https://code.visualstudio.com/docs/python/linting)
 
-### Code Formatter
+#### Code Formatter
 
 We use [`black`](https://github.com/psf/black) to automatically format our code. While you can manually run it, it's highly recommended that you set up your text editor or IDE to run it automatically after each save. See the list below for documentations on how to set `black` up for various text editors and IDEs.
 
 - [VSCode](https://dev.to/adamlombard/how-to-use-the-black-python-code-formatter-in-vscode-3lo0)
 
-### Static Type Checker
+#### Static Type Checker
 
 We use [`mypy`](http://mypy-lang.org/) as our static type checker. It uses Python's [type hints](https://docs.python.org/3.9/library/typing.html) to perform static type checks. Please note that we use python3.9 which has some new type hints that do not exist in the previous versions. While you can manually run it, it's highly recommended that you set up your text editor or IDE to run it automatically after each save. See the list below for documentations on how to set `mypy` up for various text editors and IDEs.
 
@@ -144,7 +139,7 @@ We use [`mypy`](http://mypy-lang.org/) as our static type checker. It uses Pytho
 
 ### Git Branching Strategy
 
-We follow a very simple git branching strategy where changes to the code base are made in a *short-lived* branch off the `main` branch. These branches should be merged as soon as possible via pull requests. A typical workflow is described below:
+We follow a very simple git branching strategy where changes to the code base are made in a _short-lived_ branch off the `main` branch. These branches should be merged as soon as possible via pull requests. A typical workflow is described below:
 
 1. Create a new branch for your changes.
 

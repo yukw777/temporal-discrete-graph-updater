@@ -10,6 +10,16 @@ from tdgu.preprocessor import (
 )
 
 
+@pytest.fixture
+def simple_spacy_preprocessor(tmp_path):
+    vocab_path = tmp_path / "vocab.txt"
+    with open(vocab_path, "w") as f:
+        for word in ["<pad>", "<unk>", "my", "name", "is", "peter", "<bos>", "<eos>"]:
+            f.write(word + "\n")
+
+    return SpacyPreprocessor(str(vocab_path))
+
+
 @pytest.mark.parametrize(
     "batch,expected_preprocessed,expected_mask",
     [
@@ -30,11 +40,10 @@ from tdgu.preprocessor import (
         ),
     ],
 )
-def test_spacy_preprocessor_preprocess(batch, expected_preprocessed, expected_mask):
-    sp = SpacyPreprocessor(
-        ["<pad>", "<unk>", "my", "name", "is", "peter", "<bos>", "<eos>"]
-    )
-    preprocessed, mask = sp.preprocess(batch)
+def test_spacy_preprocessor_preprocess(
+    simple_spacy_preprocessor, batch, expected_preprocessed, expected_mask
+):
+    preprocessed, mask = simple_spacy_preprocessor.preprocess(batch)
     assert preprocessed.equal(expected_preprocessed)
     assert mask.equal(expected_mask)
 
@@ -72,18 +81,15 @@ def test_hf_preprocessor_preprocess(batch, expected_preprocessed, expected_mask)
 
 
 def test_spacy_preprocessor_load_from_file():
-    sp = SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
+    sp = SpacyPreprocessor("vocabs/word_vocab.txt")
     assert sp.vocab_size == 772
 
 
-def test_spacy_preprocessor_load():
-    sp = SpacyPreprocessor(
-        ["<pad>", "<unk>", "my", "name", "is", "peter", "<bos>", "<eos>"]
-    )
-    assert sp.pad_token_id == 0
-    assert sp.unk_token_id == 1
-    assert sp.bos_token_id == 6
-    assert sp.eos_token_id == 7
+def test_spacy_preprocessor_load(simple_spacy_preprocessor):
+    assert simple_spacy_preprocessor.pad_token_id == 0
+    assert simple_spacy_preprocessor.unk_token_id == 1
+    assert simple_spacy_preprocessor.bos_token_id == 6
+    assert simple_spacy_preprocessor.eos_token_id == 7
 
 
 def test_hf_preprocessor_load():
@@ -261,7 +267,7 @@ def test_mock_clean_and_preprocess(batch, expected_preprocessed, expected_mask):
 def test_spacy_preprocessor_batch_decode(
     token_ids, mask, skip_special_tokens, expected
 ):
-    sp = SpacyPreprocessor.load_from_file("tests/data/test_word_vocab.txt")
+    sp = SpacyPreprocessor("tests/data/test_word_vocab.txt")
     assert (
         sp.batch_decode(token_ids, mask, skip_special_tokens=skip_special_tokens)
         == expected

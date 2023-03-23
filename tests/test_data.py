@@ -25,7 +25,7 @@ from tdgu.preprocessor import SpacyPreprocessor
 
 @pytest.fixture
 def spacy_preprocessor():
-    return SpacyPreprocessor.load_from_file("vocabs/word_vocab.txt")
+    return SpacyPreprocessor("vocabs/word_vocab.txt")
 
 
 @pytest.fixture
