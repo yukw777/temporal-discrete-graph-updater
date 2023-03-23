@@ -59,3 +59,9 @@ addopts = "-m 'not slow'"
 
 [tool.codespell]
 skip = "vocabs/*.txt"
+
+[tool.isort]
+# wandb by default creates a directory called "wandb"
+# which confuses isort, causing it to classify wandb
+# as a first-party library.
+known_third_party = ["wandb"]
