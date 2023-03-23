@@ -7,11 +7,11 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "~=3.10.0"
-torch = "^1.13.1"
-torch-geometric = "^2.2.0"
-pyg-lib = {version = "^0.1.0+pt113cu117", source = "pytorch-geometric"}
-torch-scatter = {version = "^2.1.0+pt113cu117", source = "pytorch-geometric"}
-torch-sparse = {version = "^0.6.16+pt113cu117", source = "pytorch-geometric"}
+torch = "^2.0.0"
+torch-geometric = "^2.3.0"
+pyg-lib = {version = "^0.2.0+pt200cu117", source = "pytorch-geometric"}
+torch-scatter = {version = "^2.1.1+pt200cu117", source = "pytorch-geometric"}
+torch-sparse = {version = "^0.6.17+pt200cu117", source = "pytorch-geometric"}
 pytorch-lightning = "^2.0.0"
 spacy = "^3.5.0"
 networkx = "^3.0"
@@ -39,7 +39,7 @@ pytest-cov = "^4.0.0"
 
 [[tool.poetry.source]]
 name = "pytorch-geometric"
-url = "https://data.pyg.org/whl/torch-1.13.0+cu117.html"
+url = "https://data.pyg.org/whl/torch-2.0.0+cu117.html"
 default = false
 secondary = false
 
