@@ -11,6 +11,7 @@ Badges upon publication
 ARXIV
 [![Paper](http://img.shields.io/badge/arxiv-math.co:1480.1111-B31B1B.svg)](https://www.nature.com/articles/nature14539)
 -->
+[![Paper](http://img.shields.io/badge/paper-arxiv.2311.01928-B31B1B.svg)](https://arxiv.org/abs/2311.01928)
 
 ![CI testing](https://github.com/yukw777/pl-hydra-seed/actions/workflows/ci-testing.yml/badge.svg)
 
